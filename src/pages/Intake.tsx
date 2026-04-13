@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { useSearchParams } from "react-router-dom";
-import { supabasePublic as supabase } from "@/integrations/supabase/publicClient";
+import { PUBLIC_SUPABASE_CLIENT_NAME, supabasePublic } from "@/integrations/supabase/publicClient";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { motion, AnimatePresence } from "framer-motion";
@@ -45,6 +45,23 @@ const initialForm: FormData = {
   structure_type: "", num_bores: 1, expected_depth_m: "",
   num_floors: 0, basement_floors: 0, soil_type_hint: "", remarks: "",
 };
+
+async function getPublicClientDebugContext() {
+  const { data, error } = await supabasePublic.auth.getSession();
+
+  if (error) {
+    console.warn("[Intake] Unable to inspect public client session state", {
+      client: PUBLIC_SUPABASE_CLIENT_NAME,
+      error: error.message,
+    });
+  }
+
+  return {
+    client: PUBLIC_SUPABASE_CLIENT_NAME,
+    hasSession: Boolean(data.session),
+    sessionUserId: data.session?.user.id ?? null,
+  };
+}
 
 function Stepper({ value, onChange, min, max }: { value: number; onChange: (v: number) => void; min: number; max: number }) {
   return (
@@ -113,12 +130,20 @@ export default function Intake() {
   useEffect(() => {
     async function validate() {
       if (!tokenStr) { setTokenError("invalid"); setLoading(false); return; }
-      const { data, error } = await supabase
+      const { data, error } = await supabasePublic
         .from("intake_tokens").select("id, status, expires_at, client_id")
         .eq("token", tokenStr).maybeSingle();
       if (error || !data) setTokenError("invalid");
       else if (data.status === "used") setTokenError("used");
       else if (new Date(data.expires_at) < new Date()) setTokenError("expired");
+      else if (!data.client_id) {
+        console.error("[Intake] Token is missing client_id and cannot create an enquiry", {
+          client: PUBLIC_SUPABASE_CLIENT_NAME,
+          tokenId: data.id,
+          status: data.status,
+        });
+        setTokenError("invalid");
+      }
       else setTokenData(data);
       setLoading(false);
     }
@@ -151,7 +176,22 @@ export default function Intake() {
     if (!validateStep(step) || !tokenData) return;
     setSubmitting(true);
     try {
-      const { data: sub, error: subErr } = await supabase.from("intake_submissions").insert({
+      const clientDebug = await getPublicClientDebugContext();
+      const clientId = tokenData.client_id;
+
+      if (clientDebug.hasSession) {
+        console.warn("[Intake] Public intake client unexpectedly has a session loaded", clientDebug);
+      }
+
+      if (!clientId) {
+        console.error("[Intake] Intake submission aborted because client_id is missing", {
+          ...clientDebug,
+          tokenId: tokenData.id,
+        });
+        throw new Error("This intake link is missing a client reference. Please contact Tiavda Enterprises.");
+      }
+
+      const submissionPayload = {
         token_id: tokenData.id,
         site_address: form.site_address.trim(),
         site_city: form.site_city.trim(),
@@ -164,14 +204,32 @@ export default function Intake() {
         expected_depth_m: form.expected_depth_m ? Number(form.expected_depth_m) : null,
         soil_type_hint: (form.soil_type_hint || null) as any,
         remarks: form.remarks.trim() || null,
-        client_id: tokenData.client_id,
-      }).select("id").single();
+        client_id: clientId,
+      };
+
+      console.log("[Intake] INSERT intake_submissions", {
+        ...clientDebug,
+        table: "intake_submissions",
+        data: submissionPayload,
+      });
+
+      const { data: sub, error: subErr } = await supabasePublic.from("intake_submissions").insert(submissionPayload).select("id").single();
       if (subErr) throw subErr;
 
-      await supabase.from("intake_tokens").update({ status: "used", used_at: new Date().toISOString() }).eq("id", tokenData.id);
+      const tokenUpdatePayload = { status: "used", used_at: new Date().toISOString() };
 
-      const { data: enq, error: enqErr } = await supabase.from("enquiries").insert({
-        client_id: tokenData.client_id!,
+      console.log("[Intake] UPDATE intake_tokens", {
+        ...clientDebug,
+        table: "intake_tokens",
+        match: { id: tokenData.id },
+        data: tokenUpdatePayload,
+      });
+
+      const { error: tokenErr } = await supabasePublic.from("intake_tokens").update(tokenUpdatePayload).eq("id", tokenData.id);
+      if (tokenErr) throw tokenErr;
+
+      const enquiryPayload = {
+        client_id: clientId,
         site_city: form.site_city.trim(),
         site_address: form.site_address.trim(),
         structure_type: form.structure_type as any,
@@ -180,7 +238,15 @@ export default function Intake() {
         soil_type_hint: (form.soil_type_hint || null) as any,
         remarks: form.remarks.trim() || null,
         submission_id: sub.id,
-      }).select("ref_number").single();
+      };
+
+      console.log("[Intake] INSERT enquiries", {
+        ...clientDebug,
+        table: "enquiries",
+        data: enquiryPayload,
+      });
+
+      const { data: enq, error: enqErr } = await supabasePublic.from("enquiries").insert(enquiryPayload).select("ref_number").single();
       if (enqErr) throw enqErr;
 
       setRefNumber(enq.ref_number);

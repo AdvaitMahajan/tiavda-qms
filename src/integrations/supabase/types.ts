@@ -956,7 +956,23 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      submit_intake_form: {
+        Args: {
+          p_basement_floors: number
+          p_expected_depth_m: number
+          p_num_bores: number
+          p_num_floors: number
+          p_remarks: string
+          p_site_address: string
+          p_site_city: string
+          p_site_pincode: string
+          p_site_state: string
+          p_soil_type_hint: Database["public"]["Enums"]["soil_type"]
+          p_structure_type: Database["public"]["Enums"]["structure_type"]
+          p_token: string
+        }
+        Returns: Json
+      }
     }
     Enums: {
       comm_channel: "email" | "whatsapp" | "in_app"

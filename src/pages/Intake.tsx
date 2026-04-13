@@ -33,6 +33,11 @@ type FormData = {
   remarks: string;
 };
 
+type SubmitIntakeRpcResult = {
+  ref_number?: string | null;
+  error?: string | null;
+};
+
 const STRUCTURE_TYPES = [
   { value: "residential", label: "Residential", icon: Home },
   { value: "commercial", label: "Commercial", icon: Building2 },
@@ -173,83 +178,58 @@ export default function Intake() {
   const goBack = () => { setDirection(-1); setStep((s) => Math.max(1, s - 1)); };
 
   const handleSubmit = async () => {
-    if (!validateStep(step) || !tokenData) return;
+    if (!validateStep(step) || !tokenData || !tokenStr) return;
     setSubmitting(true);
     try {
       const clientDebug = await getPublicClientDebugContext();
-      const clientId = tokenData.client_id;
-
-      if (clientDebug.hasSession) {
-        console.warn("[Intake] Public intake client unexpectedly has a session loaded", clientDebug);
-      }
-
-      if (!clientId) {
-        console.error("[Intake] Intake submission aborted because client_id is missing", {
-          ...clientDebug,
-          tokenId: tokenData.id,
-        });
-        throw new Error("This intake link is missing a client reference. Please contact Tiavda Enterprises.");
-      }
-
-      const submissionPayload = {
-        token_id: tokenData.id,
-        site_address: form.site_address.trim(),
-        site_city: form.site_city.trim(),
-        site_state: form.site_state.trim() || null,
-        site_pincode: form.site_pincode.trim() || null,
-        structure_type: form.structure_type as any,
-        num_floors: form.num_floors,
-        basement_floors: form.basement_floors,
-        num_bores: form.num_bores,
-        expected_depth_m: form.expected_depth_m ? Number(form.expected_depth_m) : null,
-        soil_type_hint: (form.soil_type_hint || null) as any,
-        remarks: form.remarks.trim() || null,
-        client_id: clientId,
+      const rpcPayload = {
+        p_token: tokenStr,
+        p_site_address: form.site_address.trim(),
+        p_site_city: form.site_city.trim(),
+        p_site_state: form.site_state.trim() || null,
+        p_site_pincode: form.site_pincode.trim() || null,
+        p_structure_type: form.structure_type,
+        p_num_floors: form.num_floors,
+        p_basement_floors: form.basement_floors,
+        p_num_bores: form.num_bores,
+        p_expected_depth_m: form.expected_depth_m ? Number(form.expected_depth_m) : null,
+        p_soil_type_hint: form.soil_type_hint || null,
+        p_remarks: form.remarks.trim() || null,
       };
 
-      console.log("[Intake] INSERT intake_submissions", {
+      console.log("[Intake] RPC submit_intake_form", {
         ...clientDebug,
-        table: "intake_submissions",
-        data: submissionPayload,
+        fn: "submit_intake_form",
+        data: rpcPayload,
       });
 
-      const { data: sub, error: subErr } = await supabasePublic.from("intake_submissions").insert(submissionPayload).select("id").single();
-      if (subErr) throw subErr;
+      const { data, error } = await (supabasePublic as typeof supabasePublic & {
+        rpc: (
+          fn: string,
+          args: Record<string, unknown>,
+        ) => Promise<{
+          data: SubmitIntakeRpcResult | SubmitIntakeRpcResult[] | null;
+          error: { message?: string } | null;
+        }>;
+      }).rpc("submit_intake_form", rpcPayload);
 
-      const tokenUpdatePayload = { status: "used", used_at: new Date().toISOString() };
+      if (error) throw error;
 
-      console.log("[Intake] UPDATE intake_tokens", {
-        ...clientDebug,
-        table: "intake_tokens",
-        match: { id: tokenData.id },
-        data: tokenUpdatePayload,
-      });
+      const result = Array.isArray(data) ? data[0] : data;
 
-      const { error: tokenErr } = await supabasePublic.from("intake_tokens").update(tokenUpdatePayload).eq("id", tokenData.id);
-      if (tokenErr) throw tokenErr;
+      if (!result) {
+        throw new Error("Submission failed. Please try again.");
+      }
 
-      const enquiryPayload = {
-        client_id: clientId,
-        site_city: form.site_city.trim(),
-        site_address: form.site_address.trim(),
-        structure_type: form.structure_type as any,
-        num_bores: form.num_bores,
-        expected_depth_m: form.expected_depth_m ? Number(form.expected_depth_m) : null,
-        soil_type_hint: (form.soil_type_hint || null) as any,
-        remarks: form.remarks.trim() || null,
-        submission_id: sub.id,
-      };
+      if (result.error) {
+        throw new Error(result.error);
+      }
 
-      console.log("[Intake] INSERT enquiries", {
-        ...clientDebug,
-        table: "enquiries",
-        data: enquiryPayload,
-      });
+      if (!result.ref_number) {
+        throw new Error("Submission succeeded but no reference number was returned.");
+      }
 
-      const { data: enq, error: enqErr } = await supabasePublic.from("enquiries").insert(enquiryPayload).select("ref_number").single();
-      if (enqErr) throw enqErr;
-
-      setRefNumber(enq.ref_number);
+      setRefNumber(result.ref_number);
       setSubmitted(true);
     } catch (err: any) {
       toast.error(err.message || "Submission failed. Please try again.");

@@ -38,7 +38,7 @@ export default function Login() {
 
   const handleVerify = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (otp.length !== 6) return;
+    if (otp.length !== 8) return;
     setLoading(true);
     const { error } = await supabase.auth.verifyOtp({
       email,
@@ -92,7 +92,7 @@ export default function Login() {
               Enter the 6-digit code sent to <strong>{email}</strong>
             </p>
             <div className="flex justify-center">
-              <InputOTP maxLength={6} value={otp} onChange={setOtp}>
+              <InputOTP maxLength={8} value={otp} onChange={setOtp}>
                 <InputOTPGroup>
                   <InputOTPSlot index={0} />
                   <InputOTPSlot index={1} />
@@ -100,12 +100,14 @@ export default function Login() {
                   <InputOTPSlot index={3} />
                   <InputOTPSlot index={4} />
                   <InputOTPSlot index={5} />
+                  <InputOTPSlot index={6} />
+                  <InputOTPSlot index={7} />
                 </InputOTPGroup>
               </InputOTP>
             </div>
             <Button
               type="submit"
-              disabled={loading || otp.length !== 6}
+              disabled={loading || otp.length !== 8}
               className="w-full rounded-lg bg-gold text-card font-medium hover:bg-gold/90"
             >
               {loading ? "Verifying…" : "Verify & Enter"}

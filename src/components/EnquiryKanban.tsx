@@ -21,7 +21,18 @@ import { CSS } from "@dnd-kit/utilities";
 import { useDroppable } from "@dnd-kit/core";
 import { motion, AnimatePresence } from "framer-motion";
 import type { EnquiryRow, LeadStatus } from "@/pages/Enquiries";
-import { STATUS_COLORS, STATUS_LABELS, ALL_STATUSES } from "@/pages/Enquiries";
+import { STATUS_LABELS, ALL_STATUSES } from "@/pages/Enquiries";
+
+const COUNT_BADGE_CLASSES: Record<LeadStatus, string> = {
+  new: "bg-slate-100 text-slate-700 border border-slate-200",
+  pending: "bg-blue-100 text-blue-700 border border-blue-200",
+  sent: "bg-indigo-100 text-indigo-700 border border-indigo-200",
+  follow_up: "bg-amber-100 text-amber-700 border border-amber-200",
+  approved: "bg-purple-100 text-purple-700 border border-purple-200",
+  confirmed: "bg-green-100 text-green-700 border border-green-200",
+  lost: "bg-red-100 text-red-700 border border-red-200",
+  completed: "bg-teal-100 text-teal-700 border border-teal-200",
+};
 
 const VALID_TRANSITIONS: Record<LeadStatus, LeadStatus[]> = {
   new: ["pending", "lost"],
@@ -203,14 +214,16 @@ export function EnquiryKanban({ rows, isLoading }: Props) {
 
   if (isLoading) {
     return (
-      <div className="flex gap-4 overflow-x-auto pb-6 px-1 -mx-1" style={{ minHeight: "500px" }}>
-        {ALL_STATUSES.map((s) => (
-          <div key={s} className="min-w-[260px] w-[260px] flex-shrink-0 space-y-3">
-            <Skeleton className="h-8 w-full" />
-            <Skeleton className="h-24 w-full" />
-            <Skeleton className="h-24 w-full" />
-          </div>
-        ))}
+      <div className="w-full overflow-x-auto">
+        <div className="flex gap-3 pb-4" style={{ minWidth: "max-content" }}>
+          {ALL_STATUSES.map((s) => (
+            <div key={s} className="flex flex-col w-[200px] flex-shrink-0 space-y-3">
+              <Skeleton className="h-8 w-full" />
+              <Skeleton className="h-24 w-full" />
+              <Skeleton className="h-24 w-full" />
+            </div>
+          ))}
+        </div>
       </div>
     );
   }
@@ -229,16 +242,18 @@ export function EnquiryKanban({ rows, isLoading }: Props) {
         onDragOver={handleDragOver}
         onDragEnd={handleDragEnd}
       >
-        <div className="flex gap-4 overflow-x-auto pb-6 px-1 -mx-1" style={{ minHeight: "500px" }}>
-          {columns.map(({ status, cards }) => (
-            <KanbanColumn
-              key={status}
-              status={status}
-              cards={cards}
-              isOver={overColumn === status}
-              onCardClick={(id) => navigate(`/enquiries/${id}`)}
-            />
-          ))}
+        <div className="w-full overflow-x-auto">
+          <div className="flex gap-3 pb-4" style={{ minWidth: "max-content" }}>
+            {columns.map(({ status, cards }) => (
+              <KanbanColumn
+                key={status}
+                status={status}
+                cards={cards}
+                isOver={overColumn === status}
+                onCardClick={(id) => navigate(`/enquiries/${id}`)}
+              />
+            ))}
+          </div>
         </div>
 
         <DragOverlay>
@@ -299,26 +314,26 @@ function KanbanColumn({ status, cards, isOver, onCardClick }: {
   const { setNodeRef } = useDroppable({ id: status });
 
   return (
-    <div
-      ref={setNodeRef}
-      className={`min-w-[260px] w-[260px] flex-shrink-0 rounded-xl transition-colors ${
-        isOver ? "bg-blue-50 ring-2 ring-dashed ring-blue-400" : "bg-[#F8FAFC]"
-      }`}
-    >
+    <div className="flex flex-col w-[200px] flex-shrink-0">
       {/* Column header */}
-      <div className="flex items-center justify-between px-3 py-2.5 border-b border-[#CBD5E1]">
-        <span className="text-sm font-semibold text-[#0F2A47]">{STATUS_LABELS[status]}</span>
-        <span className={`${STATUS_COLORS[status]} text-white text-[10px] font-bold px-2 py-0.5 rounded-full`}>
+      <div className="flex items-center justify-between px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-t-xl border-b-0">
+        <span className="text-xs font-semibold text-slate-600 uppercase tracking-wide">
+          {STATUS_LABELS[status]}
+        </span>
+        <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${COUNT_BADGE_CLASSES[status]}`}>
           {cards.length}
         </span>
       </div>
 
       {/* Column body */}
-      <div className="p-2 space-y-2 min-h-[60px]">
+      <div
+        ref={setNodeRef}
+        className={`flex-1 border border-slate-200 rounded-b-xl p-2 min-h-[400px] transition-colors ${
+          isOver ? "bg-blue-50 ring-2 ring-dashed ring-blue-400" : "bg-slate-50"
+        }`}
+      >
         {cards.length === 0 ? (
-          <div className={`rounded-lg border-2 border-dashed p-4 text-center text-xs text-[#64748B] transition-colors ${
-            isOver ? "border-blue-400 bg-blue-50/50" : "border-[#CBD5E1]"
-          }`}>
+          <div className="border-2 border-dashed border-slate-200 rounded-lg p-3 text-center text-xs text-slate-300 min-h-[60px] flex items-center justify-center">
             Drop here
           </div>
         ) : (
@@ -347,16 +362,16 @@ function KanbanCard({ row, onClick }: { row: EnquiryRow; onClick: () => void }) 
       {...attributes}
       {...listeners}
       whileDrag={{ scale: 1.02 }}
-      className="bg-white border border-[#CBD5E1] rounded-lg p-3 shadow-sm cursor-grab active:cursor-grabbing hover:shadow-md transition-shadow duration-200"
+      className="bg-white rounded-lg p-3 shadow-sm border border-slate-100 mb-2 cursor-grab hover:shadow-md hover:border-slate-300 transition-all duration-150 active:cursor-grabbing active:scale-95"
       onClick={onClick}
     >
-      <p className="font-mono text-[11px] text-[#64748B]">{row.ref_number}</p>
-      <p className="font-semibold text-sm text-[#0F2A47] truncate">{row.client_name}</p>
-      <p className="text-xs text-[#64748B]">{row.site_city}</p>
+      <div className="text-[10px] font-mono text-slate-400 mb-1">{row.ref_number}</div>
+      <div className="text-sm font-semibold text-[#0F2A47] leading-snug">{row.client_name}</div>
+      <div className="text-xs text-slate-400 mt-0.5">{row.site_city}</div>
       {row.quote_amount && (
-        <p className="text-[13px] font-medium text-[--navy] mt-1">
+        <div className="text-xs font-mono font-semibold text-[#0F2A47] mt-2 pt-2 border-t border-slate-100">
           {formatCurrency(Number(row.quote_amount))}
-        </p>
+        </div>
       )}
       {row.next_follow_up && <FollowUpTag date={row.next_follow_up} />}
     </motion.div>
@@ -382,9 +397,9 @@ function FollowUpTag({ date }: { date: string }) {
   const label = d.toLocaleDateString("en-GB", { day: "numeric", month: "short" });
 
   return (
-    <p className={`text-[11px] mt-1.5 ${isOverdue ? "text-red-600" : isToday ? "text-amber-600" : "text-muted-foreground"}`}>
-      {isOverdue && <span className="inline-block w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse mr-1 align-middle" />}
+    <div className={`text-[10px] mt-1.5 flex items-center gap-1 ${isOverdue ? "text-red-500" : isToday ? "text-amber-600" : "text-slate-400"}`}>
+      {isOverdue && <span className="w-1.5 h-1.5 rounded-full bg-red-400 animate-pulse inline-block" />}
       {label}
-    </p>
+    </div>
   );
 }

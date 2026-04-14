@@ -50,12 +50,23 @@ function Counter({ target }: { target: number }) {
 // ─── Stat cards query ───
 
 const STAT_CARD_DEFS = [
-  { label: "New Enquiries", icon: FileText, bgClass: "bg-blue-50", iconClass: "text-blue-600" },
-  { label: "Quotes Sent", icon: Send, bgClass: "bg-indigo-50", iconClass: "text-indigo-600" },
-  { label: "Follow-ups Today", icon: CalendarClock, bgClass: "bg-amber-50", iconClass: "text-amber-600" },
-  { label: "Payments Pending", icon: CreditCard, bgClass: "bg-yellow-50", iconClass: "text-yellow-700" },
-  { label: "Active Jobs", icon: Briefcase, bgClass: "bg-green-50", iconClass: "text-green-700" },
+  { label: "New Enquiries", icon: FileText, bgClass: "bg-blue-50", iconClass: "text-blue-500", accentClass: "bg-blue-400" },
+  { label: "Quotes Sent", icon: Send, bgClass: "bg-indigo-50", iconClass: "text-indigo-500", accentClass: "bg-indigo-400" },
+  { label: "Follow-ups Today", icon: CalendarClock, bgClass: "bg-amber-50", iconClass: "text-amber-500", accentClass: "bg-amber-400" },
+  { label: "Payments Pending", icon: CreditCard, bgClass: "bg-yellow-50", iconClass: "text-yellow-500", accentClass: "bg-yellow-400" },
+  { label: "Active Jobs", icon: Briefcase, bgClass: "bg-green-50", iconClass: "text-green-500", accentClass: "bg-green-400" },
 ];
+
+const PIPELINE_PILL_CLASSES: Record<LeadStatus, string> = {
+  new: "bg-slate-100 text-slate-700 border-slate-200",
+  pending: "bg-blue-100 text-blue-700 border-blue-200",
+  sent: "bg-indigo-100 text-indigo-700 border-indigo-200",
+  follow_up: "bg-amber-100 text-amber-700 border-amber-200",
+  approved: "bg-purple-100 text-purple-700 border-purple-200",
+  confirmed: "bg-green-100 text-green-700 border-green-200",
+  lost: "bg-red-100 text-red-700 border-red-200",
+  completed: "bg-teal-100 text-teal-700 border-teal-200",
+};
 
 function useStatCards() {
   return useQuery({
@@ -78,10 +89,6 @@ function useStatCards() {
 
 type LeadStatus = "new" | "pending" | "sent" | "follow_up" | "approved" | "confirmed" | "lost" | "completed";
 
-const STATUS_COLORS: Record<LeadStatus, string> = {
-  new: "bg-slate-500", pending: "bg-blue-600", sent: "bg-indigo-600", follow_up: "bg-amber-600",
-  approved: "bg-purple-600", confirmed: "bg-green-700", lost: "bg-red-600", completed: "bg-teal-600",
-};
 const STATUS_LABELS: Record<LeadStatus, string> = {
   new: "New", pending: "Pending", sent: "Sent", follow_up: "Follow Up",
   approved: "Approved", confirmed: "Confirmed", lost: "Lost", completed: "Completed",
@@ -303,46 +310,55 @@ export default function Dashboard() {
       <h1 className="font-sora text-[1.875rem] font-bold" style={{ color: "#0F2A47" }}>Dashboard</h1>
 
       {/* ── Section 1: Stat Cards ── */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-8">
         {stats.isLoading
           ? Array.from({ length: 5 }).map((_, i) => <SkeletonCard key={i} />)
           : STAT_CARD_DEFS.map((def, i) => {
               const Icon = def.icon;
               const value = stats.data?.[i] ?? 0;
               return (
-                <div key={def.label} className="rounded-2xl border border-[#CBD5E1] bg-white p-6 shadow-sm relative hover:shadow-md transition-shadow duration-200">
-                  <div className={`absolute top-4 right-4 h-10 w-10 rounded-full ${def.bgClass} flex items-center justify-center`}>
-                    <Icon className={`h-5 w-5 ${def.iconClass}`} />
+                <div
+                  key={def.label}
+                  className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm flex flex-col gap-3 hover:shadow-md transition-shadow duration-200"
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-medium text-slate-500">{def.label}</span>
+                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${def.bgClass}`}>
+                      <Icon className={`w-5 h-5 ${def.iconClass}`} />
+                    </div>
                   </div>
-                  <div className="text-5xl font-bold font-sora" style={{ lineHeight: 1.1, color: "#0F2A47" }}>
+                  <div className="text-4xl font-bold text-[#0F2A47]" style={{ fontFamily: "Sora, sans-serif" }}>
                     <AnimatedNumber value={value} />
                   </div>
-                  <p className="mt-1 text-sm text-[#64748B]">{def.label}</p>
+                  <div className={`h-1 rounded-full ${def.accentClass} opacity-60`} />
                 </div>
               );
             })}
       </div>
 
       {/* ── Section 2: Pipeline Strip ── */}
-      <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-thin">
+      <div className="flex items-center gap-2 mb-8 overflow-x-auto pb-1">
         {pipeline.isLoading
           ? Array.from({ length: 8 }).map((_, i) => <Skeleton key={i} className="h-8 w-28 rounded-full flex-shrink-0" />)
-          : pipeline.data?.map(({ status, count }) => (
-              <button
-                key={status}
-                onClick={() => navigate("/enquiries")}
-                className={`flex items-center gap-1.5 px-4 py-1.5 rounded-full text-white text-xs font-medium flex-shrink-0 hover:opacity-90 transition-opacity ${STATUS_COLORS[status]}`}
-              >
-                {STATUS_LABELS[status]}
-                <span className="bg-white/25 rounded-full px-2 py-0.5 text-[10px] font-bold">{count}</span>
-              </button>
-            ))}
+          : ALL_STATUSES.map((status) => {
+              const count = pipeline.data?.find((p) => p.status === status)?.count ?? 0;
+              return (
+                <button
+                  key={status}
+                  onClick={() => navigate("/enquiries")}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-full text-xs font-semibold whitespace-nowrap border transition-all hover:scale-105 ${PIPELINE_PILL_CLASSES[status]}`}
+                >
+                  <span>{STATUS_LABELS[status]}</span>
+                  <span className="bg-white bg-opacity-60 rounded-full px-1.5 py-0.5 text-xs font-bold">{count}</span>
+                </button>
+              );
+            })}
       </div>
 
       {/* ── Section 3: Two column row ── */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
         {/* Today's Actions — 2/3 */}
-        <Card className="lg:col-span-2 rounded-2xl shadow-sm border-border">
+        <Card className="lg:col-span-2 bg-white rounded-2xl border border-slate-200 shadow-sm">
           <CardContent className="p-6">
             <div className="flex items-center gap-2 mb-4">
               <CalendarClock className="h-5 w-5 text-amber-600" />
@@ -382,7 +398,7 @@ export default function Dashboard() {
         </Card>
 
         {/* Job Reminders — 1/3 */}
-        <Card className="rounded-2xl shadow-sm border-border">
+        <Card className="bg-white rounded-2xl border border-slate-200 shadow-sm">
           <CardContent className="p-6">
             <div className="flex items-center gap-2 mb-4">
               <Bell className="h-5 w-5 text-red-500" />

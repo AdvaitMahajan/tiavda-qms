@@ -3,7 +3,6 @@ import { useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { formatCurrency, relativeTime } from "@/lib/utils";
-import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -188,79 +187,161 @@ export default function Enquiries() {
   }, [queryClient]);
 
   const totalCount = rows?.length ?? 0;
+  const pipelineCounts = useMemo(() => {
+    const counts = { active: 0, follow_up: 0, confirmed: 0 };
+    for (const r of rows ?? []) {
+      if (r.status === "pending" || r.status === "sent") counts.active++;
+      else if (r.status === "follow_up") counts.follow_up++;
+      else if (r.status === "confirmed") counts.confirmed++;
+    }
+    return counts;
+  }, [rows]);
 
   return (
-    <div className="min-h-screen" style={{ background: "#F0F4F8" }}>
-      {/* Header card */}
+    <div className="min-h-screen p-6" style={{ background: "#F0F4F8" }}>
+      {/* Gradient header */}
       <div
         style={{
-          background: "#FFFFFF",
-          borderRadius: "16px",
-          padding: "20px 24px",
-          border: "1px solid #E0E7EF",
-          boxShadow: "0 2px 8px rgba(0,0,0,0.06)",
+          background: "linear-gradient(135deg, #0A1929 0%, #1565C0 100%)",
+          borderRadius: "20px",
+          padding: "28px 32px",
           marginBottom: "24px",
           display: "flex",
           alignItems: "center",
           justifyContent: "space-between",
+          boxShadow: "0 8px 32px rgba(10,25,41,0.25)",
+          position: "relative",
+          overflow: "hidden",
           flexWrap: "wrap",
           gap: "16px",
         }}
       >
-        <div>
-          <h1 className="font-bold" style={{ fontFamily: "Sora, sans-serif", fontSize: "24px", color: "#0A1929" }}>
+        <div
+          style={{
+            position: "absolute", width: "300px", height: "300px",
+            borderRadius: "50%", background: "rgba(255,255,255,0.04)",
+            top: "-100px", right: "-80px", pointerEvents: "none",
+          }}
+        />
+
+        <div style={{ position: "relative", zIndex: 1 }}>
+          <h1 className="font-bold" style={{ fontFamily: "Sora, sans-serif", fontSize: "28px", color: "white" }}>
             Enquiries
           </h1>
-          <p className="text-sm mt-0.5" style={{ color: "#546E7A" }}>
+          <p className="text-sm mt-1" style={{ color: "rgba(255,255,255,0.6)" }}>
             {isLoading ? "Loading…" : `${totalCount} total enquiries`}
           </p>
+
+          {/* Stat pills */}
+          <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", marginTop: "12px" }}>
+            {[
+              { emoji: "🔵", label: "Active", count: pipelineCounts.active },
+              { emoji: "🟡", label: "Follow-up", count: pipelineCounts.follow_up },
+              { emoji: "🟢", label: "Confirmed", count: pipelineCounts.confirmed },
+            ].map((p) => (
+              <span
+                key={p.label}
+                className="text-xs font-medium px-3 py-1 rounded-full"
+                style={{
+                  background: "rgba(255,255,255,0.12)",
+                  color: "white",
+                  border: "1px solid rgba(255,255,255,0.2)",
+                }}
+              >
+                {p.emoji} {p.count} {p.label}
+              </span>
+            ))}
+          </div>
         </div>
-        <div className="flex items-center gap-2 flex-wrap">
-          <div className="relative">
+
+        <div className="flex items-center gap-3 flex-wrap" style={{ position: "relative", zIndex: 1 }}>
+          {/* Glass search */}
+          <div style={{ position: "relative" }}>
             <Search
-              className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4"
-              style={{ color: "#546E7A" }}
+              style={{
+                position: "absolute", left: "12px", top: "50%", transform: "translateY(-50%)",
+                width: "16px", height: "16px", color: "rgba(255,255,255,0.4)",
+              }}
             />
-            <Input
+            <input
+              className="glass-input"
               placeholder="Search ref, client, city…"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="pl-9 w-56"
-              style={{ borderColor: "#E0E7EF", fontSize: "13px" }}
+              style={{
+                background: "rgba(255,255,255,0.12)",
+                border: "1px solid rgba(255,255,255,0.2)",
+                borderRadius: "10px",
+                padding: "8px 14px 8px 36px",
+                color: "white",
+                fontSize: "13px",
+                width: "220px",
+                outline: "none",
+              }}
             />
           </div>
 
           <StatusFilterPopover selected={statusFilter} onChange={setStatusFilter} />
 
           {view === "list" && (
-            <Button
-              variant="outline"
-              size="sm"
+            <button
               onClick={() => exportCSV(filtered)}
-              style={{ borderColor: "#E0E7EF", color: "#546E7A", fontSize: "13px" }}
+              style={{
+                background: "rgba(255,255,255,0.12)",
+                border: "1px solid rgba(255,255,255,0.2)",
+                borderRadius: "10px",
+                padding: "8px 14px",
+                color: "rgba(255,255,255,0.85)",
+                fontSize: "13px",
+                fontWeight: 500,
+                display: "flex",
+                alignItems: "center",
+                gap: "6px",
+                cursor: "pointer",
+              }}
             >
-              <Download className="h-4 w-4 mr-1" /> CSV
-            </Button>
+              <Download className="h-4 w-4" /> CSV
+            </button>
           )}
 
-          <div className="flex rounded-xl overflow-hidden" style={{ border: "1px solid #E0E7EF" }}>
+          {/* View toggle */}
+          <div
+            style={{
+              background: "rgba(255,255,255,0.12)",
+              border: "1px solid rgba(255,255,255,0.2)",
+              borderRadius: "10px",
+              padding: "4px",
+              display: "flex",
+              gap: "2px",
+            }}
+          >
             <button
-              className="flex items-center justify-center h-9 w-9 transition-all"
-              style={{
-                background: view === "list" ? "linear-gradient(135deg,#1565C0,#2979FF)" : "transparent",
-                color: view === "list" ? "white" : "#546E7A",
-              }}
               onClick={() => setView("list")}
+              style={{
+                background: view === "list" ? "rgba(255,255,255,0.2)" : "transparent",
+                color: view === "list" ? "white" : "rgba(255,255,255,0.5)",
+                border: "none",
+                padding: "6px 8px",
+                borderRadius: "6px",
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+              }}
             >
               <List className="h-4 w-4" />
             </button>
             <button
-              className="flex items-center justify-center h-9 w-9 transition-all"
-              style={{
-                background: view === "board" ? "linear-gradient(135deg,#1565C0,#2979FF)" : "transparent",
-                color: view === "board" ? "white" : "#546E7A",
-              }}
               onClick={() => setView("board")}
+              style={{
+                background: view === "board" ? "rgba(255,255,255,0.2)" : "transparent",
+                color: view === "board" ? "white" : "rgba(255,255,255,0.5)",
+                border: "none",
+                padding: "6px 8px",
+                borderRadius: "6px",
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+              }}
             >
               <LayoutGrid className="h-4 w-4" />
             </button>
@@ -285,22 +366,32 @@ function StatusFilterPopover({ selected, onChange }: { selected: LeadStatus[]; o
   return (
     <Popover>
       <PopoverTrigger asChild>
-        <Button
-          variant="outline"
-          size="sm"
-          className="relative"
-          style={{ borderColor: "#E0E7EF", color: "#546E7A", fontSize: "13px" }}
+        <button
+          style={{
+            background: "rgba(255,255,255,0.12)",
+            border: "1px solid rgba(255,255,255,0.2)",
+            borderRadius: "10px",
+            padding: "8px 14px",
+            color: "rgba(255,255,255,0.85)",
+            fontSize: "13px",
+            fontWeight: 500,
+            display: "flex",
+            alignItems: "center",
+            gap: "6px",
+            cursor: "pointer",
+            position: "relative",
+          }}
         >
-          <Filter className="h-4 w-4 mr-1" /> Status
+          <Filter className="h-4 w-4" /> Status
           {selected.length > 0 && (
             <span
               className="absolute -top-1.5 -right-1.5 text-white text-[10px] rounded-full w-4 h-4 flex items-center justify-center"
-              style={{ background: "linear-gradient(135deg,#1565C0,#2979FF)" }}
+              style={{ background: "linear-gradient(135deg,#FF8F00,#FFB300)" }}
             >
               {selected.length}
             </span>
           )}
-        </Button>
+        </button>
       </PopoverTrigger>
       <PopoverContent className="w-48 p-2" align="end">
         {ALL_STATUSES.map((s) => (

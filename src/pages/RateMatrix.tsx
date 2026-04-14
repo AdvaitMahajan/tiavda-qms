@@ -337,9 +337,10 @@ export default function RateMatrix() {
             {/* Rate cards grid */}
             <div style={{
               display: "grid",
-              gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))",
+              gridTemplateColumns: "repeat(auto-fill, minmax(380px, 1fr))",
               gap: "12px",
               marginBottom: "8px",
+              width: "100%",
             }}>
               {cityRates.map((r) => {
                 const pill = STRUCTURE_PILL[r.structure_type] ?? STRUCTURE_PILL.other;
@@ -351,6 +352,7 @@ export default function RateMatrix() {
                       border: "1px solid #E0E7EF",
                       boxShadow: "0 2px 8px rgba(0,0,0,0.05)",
                       overflow: "hidden", transition: "all 200ms", position: "relative",
+                      width: "100%",
                     }}
                     onMouseEnter={(e) => {
                       e.currentTarget.style.boxShadow = "0 8px 24px rgba(0,0,0,0.1)";

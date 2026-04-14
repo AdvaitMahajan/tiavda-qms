@@ -116,6 +116,30 @@ export function FollowUpsTab({ enquiryId }: { enquiryId: string }) {
         newNextDate = nextDate;
       }
 
+      // Auto-reschedule on no_response if enabled in app_settings
+      if (outcome === "no_response" && !scheduleNext) {
+        const { data: settingsRows } = await supabase
+          .from("app_settings")
+          .select("key,value")
+          .in("key", ["auto_followup_no_response", "auto_followup_no_response_days"]);
+        const settingsMap = new Map(settingsRows?.map((r) => [r.key, r.value]) ?? []);
+        const autoReschedule = (settingsMap.get("auto_followup_no_response") ?? "true") !== "false";
+        const rescheduleDays = parseInt(settingsMap.get("auto_followup_no_response_days") ?? "4", 10) || 4;
+        if (autoReschedule) {
+          const next = new Date();
+          next.setDate(next.getDate() + rescheduleDays);
+          const autoNextDate = next.toISOString().slice(0, 10);
+          await supabase.from("follow_ups").insert({
+            enquiry_id: enquiryId,
+            scheduled_date: autoNextDate,
+            auto_scheduled: true,
+            outcome: "pending",
+            notes: "Auto: rescheduled after no response",
+          });
+          newNextDate = autoNextDate;
+        }
+      }
+
       // Update enquiry next_follow_up
       if (outcome === "closed" && !scheduleNext) {
         await supabase.from("enquiries").update({ next_follow_up: null }).eq("id", enquiryId);

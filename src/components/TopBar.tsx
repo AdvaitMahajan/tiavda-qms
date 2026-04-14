@@ -8,6 +8,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   Bell, CalendarClock, UserPlus, CheckCircle, FolderX,
 } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import type { Tables } from "@/integrations/supabase/types";
 
 type Notification = Tables<"notifications">;
@@ -28,16 +29,23 @@ const pageBreadcrumbs: Record<string, string[]> = {
   "/settings": ["Home", "Settings"],
 };
 
-function getNotifIcon(type: string) {
-  switch (type) {
-    case "follow_up_due": return <CalendarClock style={{ width: "14px", height: "14px" }} className="text-amber-500" />;
-    case "job_reminder": return <Bell style={{ width: "14px", height: "14px" }} className="text-red-500" />;
-    case "intake_received": return <UserPlus style={{ width: "14px", height: "14px" }} className="text-blue-600" />;
-    case "payment_received": return <CheckCircle style={{ width: "14px", height: "14px" }} className="text-green-600" />;
-    case "drive_folder_failed": return <FolderX style={{ width: "14px", height: "14px" }} className="text-red-600" />;
-    default: return <Bell style={{ width: "14px", height: "14px" }} className="text-muted-foreground" />;
-  }
-}
+// ─── Notification type config ─────────────────────────────────────────────────
+
+const typeConfig: Record<string, { icon: LucideIcon; bg: string; color: string }> = {
+  follow_up_due:    { icon: CalendarClock, bg: "#FFF3E0", color: "#E65100" },
+  job_reminder_1day: { icon: Bell,          bg: "#FEF2F2", color: "#C62828" },
+  job_reminder_2day: { icon: Bell,          bg: "#FFF3E0", color: "#E65100" },
+  job_reminder_3day: { icon: Bell,          bg: "#FFFDE0", color: "#F59E0B" },
+  // legacy key still used in DB
+  job_reminder:      { icon: Bell,          bg: "#FEF2F2", color: "#C62828" },
+  intake_received:   { icon: UserPlus,      bg: "#EBF2FF", color: "#1565C0" },
+  payment_received:  { icon: CheckCircle,   bg: "#E8F5E9", color: "#00897B" },
+  drive_folder_failed: { icon: FolderX,     bg: "#FEF2F2", color: "#C62828" },
+};
+
+const DEFAULT_CONFIG = { icon: Bell, bg: "#F1F5F9", color: "#546E7A" };
+
+// ─── Component ────────────────────────────────────────────────────────────────
 
 export function TopBar() {
   const { pathname } = useLocation();
@@ -46,6 +54,7 @@ export function TopBar() {
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
   const [bellBounce, setBellBounce] = useState(false);
+  const [bellHover, setBellHover] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   const title =
@@ -60,7 +69,7 @@ export function TopBar() {
 
   const userInitial = user?.email ? user.email[0].toUpperCase() : "U";
 
-  // Unread count
+  // ── Unread count ──
   const { data: unreadCount = 0 } = useQuery({
     queryKey: ["notif-count"],
     queryFn: async () => {
@@ -75,7 +84,7 @@ export function TopBar() {
     enabled: !!user,
   });
 
-  // Notifications list (only when dropdown open)
+  // ── Notifications list (only when dropdown open) ──
   const { data: notifications = [], refetch: refetchNotifs } = useQuery({
     queryKey: ["notif-list"],
     queryFn: async () => {
@@ -91,7 +100,7 @@ export function TopBar() {
     enabled: !!user && open,
   });
 
-  // Realtime subscription
+  // ── Realtime subscription ──
   useEffect(() => {
     if (!user) return;
     const channel = supabase
@@ -111,7 +120,7 @@ export function TopBar() {
     return () => { supabase.removeChannel(channel); };
   }, [user, queryClient, open, refetchNotifs]);
 
-  // Click outside to close
+  // ── Click outside to close ──
   useEffect(() => {
     if (!open) return;
     const handler = (e: MouseEvent) => {
@@ -125,7 +134,11 @@ export function TopBar() {
 
   const handleMarkAllRead = async () => {
     if (!user) return;
-    await supabase.from("notifications").update({ read: true }).eq("user_id", user.id).eq("read", false);
+    await supabase
+      .from("notifications")
+      .update({ read: true })
+      .eq("user_id", user.id)
+      .eq("read", false);
     queryClient.invalidateQueries({ queryKey: ["notif-count"] });
     refetchNotifs();
   };
@@ -169,32 +182,49 @@ export function TopBar() {
 
       {/* Right side */}
       <div className="flex items-center gap-2">
-        {/* Notification bell */}
+
+        {/* ── Notification bell ── */}
         <div className="relative" ref={dropdownRef}>
           <motion.button
             onClick={() => { setOpen(!open); if (!open) refetchNotifs(); }}
-            className="relative flex items-center justify-center"
+            onMouseEnter={() => setBellHover(true)}
+            onMouseLeave={() => setBellHover(false)}
+            animate={bellBounce ? { scale: [1, 1.3, 1] } : { scale: 1 }}
+            transition={{ type: "spring", stiffness: 300, damping: 10 }}
             style={{
               width: "36px",
               height: "36px",
               borderRadius: "10px",
-              background: "#F0F4F8",
+              background: bellHover ? "#E3EAF2" : "#F0F4F8",
+              border: "1px solid #E0E7EF",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              cursor: "pointer",
+              position: "relative",
+              transition: "background 150ms",
             }}
-            animate={bellBounce ? { scale: [1, 1.3, 1] } : { scale: 1 }}
-            transition={{ type: "spring", stiffness: 300, damping: 10 }}
           >
             <Bell style={{ width: "16px", height: "16px", color: "#546E7A" }} />
+
+            {/* Unread badge */}
             {unreadCount > 0 && (
               <span
-                className="absolute flex items-center justify-center text-white font-bold"
                 style={{
+                  position: "absolute",
                   top: "-4px",
                   right: "-4px",
-                  width: "16px",
-                  height: "16px",
+                  width: "18px",
+                  height: "18px",
                   borderRadius: "50%",
                   background: "linear-gradient(135deg, #FF8F00, #FFB300)",
+                  color: "white",
                   fontSize: "9px",
+                  fontWeight: 700,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  border: "2px solid white",
                 }}
               >
                 {unreadCount > 9 ? "9+" : unreadCount}
@@ -202,6 +232,7 @@ export function TopBar() {
             )}
           </motion.button>
 
+          {/* ── Dropdown panel ── */}
           <AnimatePresence>
             {open && (
               <motion.div
@@ -209,70 +240,111 @@ export function TopBar() {
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 exit={{ opacity: 0, y: -8, scale: 0.96 }}
                 transition={{ duration: 0.15 }}
-                className="absolute right-0 top-full mt-2 z-50 overflow-hidden"
+                className="absolute right-0 top-full mt-2 z-50"
                 style={{
                   width: "380px",
-                  background: "#FFFFFF",
+                  padding: 0,
+                  background: "white",
+                  borderRadius: "16px",
                   border: "1px solid #E0E7EF",
-                  boxShadow: "0 12px 40px rgba(0,0,0,0.12)",
-                  borderRadius: "14px",
+                  boxShadow: "0 16px 48px rgba(0,0,0,0.12)",
+                  overflow: "hidden",
                 }}
               >
                 {/* Header */}
                 <div
-                  className="flex items-center justify-between px-4 py-3"
-                  style={{ borderBottom: "1px solid #E0E7EF" }}
+                  style={{
+                    padding: "16px 20px",
+                    background: "linear-gradient(135deg, #0A1929, #1565C0)",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                  }}
                 >
-                  <span className="font-semibold text-sm" style={{ color: "#0A1929" }}>Notifications</span>
-                  {unreadCount > 0 && (
-                    <button
-                      onClick={handleMarkAllRead}
-                      className="text-xs transition-colors"
-                      style={{ color: "#1565C0" }}
-                    >
-                      Mark all read
-                    </button>
-                  )}
+                  <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                    <Bell style={{ width: "16px", height: "16px", color: "white" }} />
+                    <span style={{ fontSize: "14px", fontWeight: 600, color: "white" }}>
+                      Notifications
+                    </span>
+                  </div>
+                  <button
+                    onClick={handleMarkAllRead}
+                    style={{
+                      fontSize: "12px",
+                      color: "rgba(255,255,255,0.6)",
+                      background: "transparent",
+                      border: "none",
+                      cursor: "pointer",
+                      transition: "color 150ms",
+                    }}
+                    onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.color = "white"; }}
+                    onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.color = "rgba(255,255,255,0.6)"; }}
+                  >
+                    Mark all read
+                  </button>
                 </div>
 
                 {/* List */}
-                <div className="max-h-[420px] overflow-y-auto">
+                <div style={{ maxHeight: "400px", overflowY: "auto" }}>
                   {notifications.length === 0 ? (
-                    <div className="py-8 text-center">
-                      <p className="text-sm font-medium" style={{ color: "#00897B" }}>You're all caught up! ✓</p>
+                    <div style={{ padding: "40px 20px", textAlign: "center" }}>
+                      <Bell
+                        style={{
+                          width: "32px",
+                          height: "32px",
+                          color: "#CBD5E1",
+                          display: "block",
+                          margin: "0 auto",
+                        }}
+                      />
+                      <p style={{ fontSize: "14px", fontWeight: 600, color: "#546E7A", marginTop: "12px" }}>
+                        You're all caught up!
+                      </p>
+                      <p style={{ fontSize: "12px", color: "#94A3B8", marginTop: "4px" }}>
+                        No new notifications
+                      </p>
                     </div>
                   ) : (
-                    notifications.map((n) => (
-                      <button
-                        key={n.id}
-                        onClick={() => handleClickNotif(n)}
-                        className="w-full flex items-start gap-3 px-4 py-3 text-left transition-colors last:border-0"
-                        style={{ borderBottom: "1px solid rgba(224,231,239,0.5)" }}
-                        onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = "#F8FAFC"; }}
-                        onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = "transparent"; }}
-                      >
-                        {/* Unread dot */}
-                        <div className="flex-shrink-0 pt-1.5">
-                          {!n.read ? (
-                            <span className="block w-2 h-2 rounded-full" style={{ background: "#1565C0" }} />
-                          ) : (
-                            <span className="block w-2 h-2" />
-                          )}
-                        </div>
-                        {/* Icon */}
-                        <div className="flex-shrink-0 pt-0.5">{getNotifIcon(n.type)}</div>
-                        {/* Content */}
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium truncate" style={{ color: "#0A1929" }}>{n.title}</p>
-                          <p className="text-xs line-clamp-2" style={{ color: "#546E7A" }}>{n.body}</p>
-                        </div>
-                        {/* Time */}
-                        <span className="text-[11px] flex-shrink-0 pt-0.5" style={{ color: "#546E7A" }}>
-                          {relativeTime(n.created_at)}
-                        </span>
-                      </button>
-                    ))
+                    notifications.map((n) => {
+                      const isUnread = !n.read;
+                      const cfg = typeConfig[n.type] ?? DEFAULT_CONFIG;
+                      const IconComp = cfg.icon;
+                      return (
+                        <NotifItem
+                          key={n.id}
+                          n={n}
+                          isUnread={isUnread}
+                          cfg={cfg}
+                          IconComp={IconComp}
+                          onClick={() => handleClickNotif(n)}
+                        />
+                      );
+                    })
                   )}
+                </div>
+
+                {/* Footer */}
+                <div
+                  style={{
+                    padding: "12px 20px",
+                    borderTop: "1px solid #F0F4F8",
+                    background: "#F8FAFC",
+                    textAlign: "center",
+                  }}
+                >
+                  <button
+                    style={{
+                      fontSize: "12px",
+                      fontWeight: 500,
+                      color: "#1565C0",
+                      background: "transparent",
+                      border: "none",
+                      cursor: "pointer",
+                    }}
+                    onClick={() => setOpen(false)}
+                  >
+                    View all notifications
+                  </button>
                 </div>
               </motion.div>
             )}
@@ -294,5 +366,111 @@ export function TopBar() {
         </div>
       </div>
     </header>
+  );
+}
+
+// ─── NotifItem sub-component ──────────────────────────────────────────────────
+
+function NotifItem({
+  n,
+  isUnread,
+  cfg,
+  IconComp,
+  onClick,
+}: {
+  n: Notification;
+  isUnread: boolean;
+  cfg: { bg: string; color: string };
+  IconComp: LucideIcon;
+  onClick: () => void;
+}) {
+  const [hovered, setHovered] = useState(false);
+
+  return (
+    <div
+      onClick={onClick}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      style={{
+        padding: "14px 20px",
+        borderBottom: "1px solid #F8FAFC",
+        display: "flex",
+        alignItems: "flex-start",
+        gap: "12px",
+        cursor: "pointer",
+        transition: "background 150ms",
+        background: hovered ? "#F8FAFC" : isUnread ? "#FAFBFF" : "white",
+      }}
+    >
+      {/* Icon tile */}
+      <div
+        style={{
+          width: "28px",
+          height: "28px",
+          borderRadius: "8px",
+          background: cfg.bg,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          flexShrink: 0,
+          marginTop: "2px",
+        }}
+      >
+        <IconComp style={{ width: "14px", height: "14px", color: cfg.color }} />
+      </div>
+
+      {/* Content */}
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div
+          style={{
+            fontSize: "14px",
+            fontWeight: 600,
+            color: isUnread ? "#0A1929" : "#546E7A",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+          }}
+        >
+          {n.title}
+        </div>
+        <div
+          style={{
+            fontSize: "12px",
+            marginTop: "2px",
+            color: "#546E7A",
+            display: "-webkit-box",
+            WebkitLineClamp: 2,
+            WebkitBoxOrient: "vertical" as const,
+            overflow: "hidden",
+          }}
+        >
+          {n.body}
+        </div>
+      </div>
+
+      {/* Right: dot + time */}
+      <div
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "flex-end",
+          flexShrink: 0,
+        }}
+      >
+        {isUnread && (
+          <div
+            style={{
+              width: "8px",
+              height: "8px",
+              borderRadius: "50%",
+              background: "#1565C0",
+            }}
+          />
+        )}
+        <div style={{ fontSize: "10px", color: "#94A3B8", marginTop: "4px" }}>
+          {relativeTime(n.created_at)}
+        </div>
+      </div>
+    </div>
   );
 }

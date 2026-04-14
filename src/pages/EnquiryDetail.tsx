@@ -498,14 +498,26 @@ export default function EnquiryDetail() {
       const prevStatus = enquiry.status;
       await supabase.from("enquiries").update({ status: "sent" as any }).eq("id", enquiry.id);
 
-      const followUpDate = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
-      await supabase.from("follow_ups").insert({
-        enquiry_id: enquiry.id,
-        scheduled_date: followUpDate,
-        auto_scheduled: true,
-        notes: "Auto: post-quote follow-up",
-        outcome: "pending" as any,
-      });
+      // Read automation settings before inserting follow-up
+      const { data: settingsRows } = await supabase
+        .from("app_settings")
+        .select("key,value")
+        .in("key", ["auto_followup_after_quote", "auto_followup_days"]);
+      const settingsMap = new Map(settingsRows?.map((r) => [r.key, r.value]) ?? []);
+      const autoFollowupEnabled = (settingsMap.get("auto_followup_after_quote") ?? "true") !== "false";
+      const followupDays = parseInt(settingsMap.get("auto_followup_days") ?? "3", 10) || 3;
+
+      if (autoFollowupEnabled) {
+        const scheduled = new Date();
+        scheduled.setDate(scheduled.getDate() + followupDays);
+        await supabase.from("follow_ups").insert({
+          enquiry_id: enquiry.id,
+          scheduled_date: scheduled.toISOString().slice(0, 10),
+          auto_scheduled: true,
+          outcome: "pending" as any,
+          notes: "Auto: post-quote follow-up",
+        });
+      }
 
       await supabase.from("enquiry_events").insert({
         enquiry_id: enquiry.id,

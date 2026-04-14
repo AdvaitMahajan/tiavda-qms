@@ -113,3 +113,9 @@ input:focus, textarea:focus, select:focus {
 .glass-input::placeholder {
   color: rgba(255, 255, 255, 0.4);
 }
+
+@keyframes pulse-glow {
+  0%,100% { box-shadow: 0 4px 16px rgba(255,143,0,0.4); }
+  50%     { box-shadow: 0 6px 24px rgba(255,143,0,0.7); }
+}
+.save-pending { animation: pulse-glow 2s ease-in-out infinite; }

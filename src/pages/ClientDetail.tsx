@@ -187,9 +187,19 @@ export default function ClientDetail() {
               </Button>
             </div>
             <p className="text-xs text-muted-foreground">Expires: {formatDate(activeToken!.expires_at)}</p>
-            <Button variant="outline" size="sm" onClick={generateToken} disabled={generatingLink}>
-              <RefreshCw className={cn("mr-1.5 h-3.5 w-3.5", generatingLink && "animate-spin")} /> Regenerate
-            </Button>
+            <div className="flex gap-2 flex-wrap">
+              <Button variant="outline" size="sm" onClick={generateToken} disabled={generatingLink}>
+                <RefreshCw className={cn("mr-1.5 h-3.5 w-3.5", generatingLink && "animate-spin")} /> Regenerate
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => navigate(`/intake?t=${activeToken!.token}`)}
+                style={{ borderColor: "#2E7FC1", color: "#2E7FC1" }}
+              >
+                Fill Form on Behalf of Client
+              </Button>
+            </div>
           </div>
         ) : (
           <div>

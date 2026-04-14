@@ -3,15 +3,10 @@ import { useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import { cn, formatDate } from "@/lib/utils";
-import { Search, Users, Plus } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { Search, Users, Plus, Phone, Mail, MapPin, UserPlus, Link2 } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
-import { Badge } from "@/components/ui/badge";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Input } from "@/components/ui/input";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
-import { EmptyState } from "@/components/ui/EmptyState";
 import { SkeletonRow } from "@/components/ui/SkeletonLoader";
 
 function validateIndianMobile(phone: string): boolean {
@@ -22,6 +17,14 @@ function normalizePhone(phone: string): string {
   const cleaned = phone.replace(/[\s-]/g, "");
   if (/^\d{10}$/.test(cleaned)) return "+91" + cleaned;
   return cleaned;
+}
+
+function avatarGradient(name: string): string {
+  const c = (name?.[0] ?? "?").toUpperCase();
+  if (c >= "A" && c <= "F") return "linear-gradient(135deg,#1565C0,#2979FF)";
+  if (c >= "G" && c <= "L") return "linear-gradient(135deg,#6A1B9A,#AB47BC)";
+  if (c >= "M" && c <= "R") return "linear-gradient(135deg,#00897B,#26A69A)";
+  return "linear-gradient(135deg,#E65100,#FF8F00)";
 }
 
 type ClientForm = { name: string; phone: string; email: string; company: string; city: string; state: string; whatsapp_number: string; notes: string };
@@ -35,6 +38,7 @@ export default function Clients() {
   const [form, setForm] = useState<ClientForm>(emptyForm);
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
+  const [viewHover, setViewHover] = useState<string | null>(null);
 
   const { data: clients = [], isLoading } = useQuery({
     queryKey: ["clients"],
@@ -50,6 +54,15 @@ export default function Clients() {
     const q = search.toLowerCase();
     return clients.filter((c) => c.name.toLowerCase().includes(q) || c.phone.toLowerCase().includes(q) || c.city.toLowerCase().includes(q));
   }, [clients, search]);
+
+  // Stat counts
+  const now = new Date();
+  const addedThisMonth = clients.filter((c) => {
+    const d = new Date(c.created_at);
+    return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+  }).length;
+  // TODO wire count — no has_active_intake_token field available on clients table
+  const withActiveLinks = "—";
 
   const validateForm = (): boolean => {
     const errs: Record<string, string> = {};
@@ -79,140 +92,236 @@ export default function Clients() {
 
   const updateForm = (patch: Partial<ClientForm>) => setForm((p) => ({ ...p, ...patch }));
 
+  const openAddPanel = () => { setForm(emptyForm); setFormErrors({}); setPanelOpen(true); };
+
+  const goldBtn: React.CSSProperties = {
+    background: "linear-gradient(135deg, #FF8F00, #FFB300)",
+    color: "white", border: "none", borderRadius: "10px",
+    padding: "9px 18px", fontSize: "13px", fontWeight: 600,
+    cursor: "pointer", display: "flex", alignItems: "center", gap: "6px",
+    boxShadow: "0 4px 16px rgba(255,143,0,0.4)", whiteSpace: "nowrap",
+  };
+
   return (
-    <div className="min-h-screen" style={{ background: "#F0F4F8" }}>
-      {/* Header card */}
+    <div style={{ background: "#F0F4F8", minHeight: "100vh", padding: "24px" }}>
+
+      {/* Header card — dark gradient */}
       <div
         style={{
-          background: "#FFFFFF",
-          borderRadius: "16px",
-          padding: "20px 24px",
-          border: "1px solid #E0E7EF",
-          boxShadow: "0 2px 8px rgba(0,0,0,0.06)",
-          marginBottom: "24px",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          flexWrap: "wrap",
-          gap: "16px",
+          background: "linear-gradient(135deg, #0A1929 0%, #1565C0 100%)",
+          borderRadius: "20px", padding: "28px 32px", marginBottom: "24px",
+          display: "flex", alignItems: "center", justifyContent: "space-between",
+          boxShadow: "0 8px 32px rgba(10,25,41,0.25)", flexWrap: "wrap", gap: "16px",
         }}
       >
         <div>
-          <h1 className="font-bold" style={{ fontFamily: "Sora, sans-serif", fontSize: "24px", color: "#0A1929" }}>
+          <h1 style={{ fontFamily: "Sora, sans-serif", fontWeight: 700, fontSize: "28px", color: "white", margin: 0 }}>
             Clients
           </h1>
-          <p className="text-sm mt-0.5" style={{ color: "#546E7A" }}>
-            {isLoading ? "Loading…" : `${clients.length} total clients`}
+          <p style={{ color: "rgba(255,255,255,0.6)", fontSize: "13px", marginTop: "4px" }}>
+            Manage your client relationships
           </p>
         </div>
-        <div className="flex items-center gap-2 flex-wrap">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4" style={{ color: "#546E7A" }} />
-            <Input
-              placeholder="Search by name, phone, or city…"
-              className="pl-9 w-56"
+        <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+          {/* Glass search input */}
+          <div style={{ position: "relative" }}>
+            <Search style={{ position: "absolute", left: "12px", top: "50%", transform: "translateY(-50%)", width: "14px", height: "14px", color: "rgba(255,255,255,0.4)" }} />
+            <input
+              className="glass-input"
+              style={{
+                background: "rgba(255,255,255,0.12)",
+                border: "1px solid rgba(255,255,255,0.2)",
+                borderRadius: "10px",
+                padding: "8px 14px 8px 36px",
+                color: "white", fontSize: "13px", width: "220px",
+                backdropFilter: "blur(10px)",
+                outline: "none",
+              }}
+              placeholder="Search clients..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              style={{ borderColor: "#E0E7EF", fontSize: "13px" }}
             />
           </div>
-          <button
-            onClick={() => { setForm(emptyForm); setFormErrors({}); setPanelOpen(true); }}
-            className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition-all"
-            style={{
-              background: "linear-gradient(135deg,#1565C0,#2979FF)",
-              color: "white",
-              boxShadow: "0 4px 12px rgba(21,101,192,0.3)",
-            }}
-            onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.transform = "translateY(-1px)"; }}
-            onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.transform = "translateY(0)"; }}
-          >
-            <Plus className="h-4 w-4" /> Add Client
+          {/* Add Client button */}
+          <button onClick={openAddPanel} style={goldBtn}>
+            <Plus className="w-4 h-4" /> Add Client
           </button>
         </div>
       </div>
 
-      {isLoading ? (
-        <div
-          style={{
-            background: "#FFFFFF",
-            borderRadius: "16px",
-            boxShadow: "0 2px 8px rgba(0,0,0,0.06)",
-            border: "1px solid #E0E7EF",
-            overflow: "hidden",
-          }}
-        >
-          {Array.from({ length: 6 }).map((_, i) => <SkeletonRow key={i} />)}
+      {/* Stats row — 3 cards */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "16px", marginBottom: "24px" }}>
+        {/* Total Clients */}
+        <div style={{
+          background: "white", borderRadius: "14px", padding: "16px 20px",
+          border: "1px solid #E0E7EF", boxShadow: "0 2px 8px rgba(0,0,0,0.05)",
+          display: "flex", alignItems: "center", justifyContent: "space-between",
+        }}>
+          <div>
+            <div style={{ fontFamily: "Sora, sans-serif", fontWeight: 700, fontSize: "28px", color: "#0A1929", lineHeight: 1 }}>{clients.length}</div>
+            <div style={{ fontSize: "10px", color: "#546E7A", textTransform: "uppercase", letterSpacing: "0.08em", marginTop: "6px" }}>Total Clients</div>
+          </div>
+          <div style={{ width: "40px", height: "40px", borderRadius: "50%", background: "#EBF2FF", display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <Users style={{ width: "18px", height: "18px", color: "#1565C0" }} />
+          </div>
         </div>
-      ) : filtered.length === 0 ? (
-        <EmptyState
-          icon={Users}
-          title={search ? "No clients match your search." : "No clients yet."}
-          subtitle={!search ? "Generate an intake link to add your first client." : undefined}
-        />
-      ) : (
-        <div
-          style={{
-            background: "#FFFFFF",
-            borderRadius: "16px",
-            boxShadow: "0 2px 8px rgba(0,0,0,0.06)",
-            border: "1px solid #E0E7EF",
-            overflow: "hidden",
-          }}
-        >
-          <Table>
-            <TableHeader>
-              <TableRow style={{ background: "#F8FAFC" }}>
-                {["Name", "Phone", "Email", "City", "Source", "Created", "Actions"].map((h) => (
-                  <TableHead
+
+        {/* Added This Month */}
+        <div style={{
+          background: "white", borderRadius: "14px", padding: "16px 20px",
+          border: "1px solid #E0E7EF", boxShadow: "0 2px 8px rgba(0,0,0,0.05)",
+          display: "flex", alignItems: "center", justifyContent: "space-between",
+        }}>
+          <div>
+            <div style={{ fontFamily: "Sora, sans-serif", fontWeight: 700, fontSize: "28px", color: "#0A1929", lineHeight: 1 }}>{addedThisMonth}</div>
+            <div style={{ fontSize: "10px", color: "#546E7A", textTransform: "uppercase", letterSpacing: "0.08em", marginTop: "6px" }}>Added This Month</div>
+          </div>
+          <div style={{ width: "40px", height: "40px", borderRadius: "50%", background: "#FFF3E0", display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <UserPlus style={{ width: "18px", height: "18px", color: "#E65100" }} />
+          </div>
+        </div>
+
+        {/* With Active Links */}
+        <div style={{
+          background: "white", borderRadius: "14px", padding: "16px 20px",
+          border: "1px solid #E0E7EF", boxShadow: "0 2px 8px rgba(0,0,0,0.05)",
+          display: "flex", alignItems: "center", justifyContent: "space-between",
+        }}>
+          <div>
+            <div style={{ fontFamily: "Sora, sans-serif", fontWeight: 700, fontSize: "28px", color: "#0A1929", lineHeight: 1 }}>{withActiveLinks}</div>
+            <div style={{ fontSize: "10px", color: "#546E7A", textTransform: "uppercase", letterSpacing: "0.08em", marginTop: "6px" }}>With Active Links</div>
+          </div>
+          <div style={{ width: "40px", height: "40px", borderRadius: "50%", background: "#E8F5E9", display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <Link2 style={{ width: "18px", height: "18px", color: "#00897B" }} />
+          </div>
+        </div>
+      </div>
+
+      {/* Table card */}
+      <div style={{
+        background: "white", borderRadius: "16px", border: "1px solid #E0E7EF",
+        boxShadow: "0 2px 8px rgba(0,0,0,0.06)", overflow: "hidden",
+      }}>
+        {isLoading ? (
+          Array.from({ length: 6 }).map((_, i) => <SkeletonRow key={i} />)
+        ) : filtered.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-16 text-center">
+            <Users className="w-12 h-12" style={{ color: "#CBD5E1" }} />
+            <p className="font-semibold mt-4" style={{ color: "#546E7A" }}>No clients yet</p>
+            <p className="text-sm mt-1" style={{ color: "#94A3B8" }}>
+              {search ? "No clients match your search." : "Add your first client to get started"}
+            </p>
+            {!search && (
+              <button onClick={openAddPanel} style={{ ...goldBtn, marginTop: "20px" }}>
+                <Plus className="w-4 h-4" /> Add Client
+              </button>
+            )}
+          </div>
+        ) : (
+          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+            <thead>
+              <tr style={{ background: "#F8FAFC", borderBottom: "2px solid #E0E7EF" }}>
+                {["Name", "Phone", "Email", "City", "Source", "Actions"].map((h) => (
+                  <th
                     key={h}
-                    className={h === "Actions" ? "text-right" : ""}
-                    style={{ fontSize: "10px", color: "#546E7A", textTransform: "uppercase", letterSpacing: "0.08em", fontWeight: 600 }}
+                    className="text-left"
+                    style={{
+                      fontSize: "10px", fontWeight: 600, textTransform: "uppercase",
+                      letterSpacing: "0.1em", padding: "14px 24px", color: "#546E7A",
+                    }}
                   >
                     {h}
-                  </TableHead>
+                  </th>
                 ))}
-              </TableRow>
-            </TableHeader>
-            <TableBody>
+              </tr>
+            </thead>
+            <tbody>
               {filtered.map((c) => (
-                <TableRow
+                <tr
                   key={c.id}
-                  className="cursor-pointer transition-colors duration-100"
-                  style={{ borderBottom: "1px solid #F0F4F8" }}
+                  style={{ borderBottom: "1px solid #F0F4F8", cursor: "pointer", transition: "background 100ms" }}
                   onClick={() => navigate(`/clients/${c.id}`)}
                   onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = "#F8FAFC"; }}
                   onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = "transparent"; }}
                 >
-                  <TableCell className="font-medium" style={{ color: "#0A1929" }}>{c.name}</TableCell>
-                  <TableCell className="font-mono text-sm" style={{ color: "#546E7A" }}>{c.phone}</TableCell>
-                  <TableCell className="text-sm" style={{ color: "#546E7A" }}>{c.email || "—"}</TableCell>
-                  <TableCell style={{ color: "#546E7A" }}>{c.city}</TableCell>
-                  <TableCell>
-                    <Badge
-                      variant="secondary"
-                      className={cn("text-xs", c.source === "intake_form" ? "bg-blue-100 text-blue-700" : "bg-muted/20 text-muted-foreground")}
-                    >
-                      {c.source === "intake_form" ? "Form" : "Manual"}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="text-sm" style={{ color: "#546E7A" }}>{formatDate(c.created_at)}</TableCell>
-                  <TableCell className="text-right">
-                    <Button
-                      variant="ghost"
-                      size="sm"
+                  {/* Name */}
+                  <td style={{ padding: "14px 24px" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                      <div style={{
+                        width: "36px", height: "36px", borderRadius: "50%",
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                        color: "white", fontFamily: "Sora, sans-serif", fontWeight: 700, fontSize: "14px",
+                        background: avatarGradient(c.name), flexShrink: 0,
+                      }}>
+                        {c.name[0]?.toUpperCase() ?? "?"}
+                      </div>
+                      <div>
+                        <div style={{ fontWeight: 600, fontSize: "14px", color: "#0A1929" }}>{c.name}</div>
+                        <div style={{ fontSize: "12px", color: "#546E7A" }}>{c.company || c.city}</div>
+                      </div>
+                    </div>
+                  </td>
+                  {/* Phone */}
+                  <td style={{ padding: "14px 24px" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                      <Phone style={{ width: "14px", height: "14px", color: "#546E7A", flexShrink: 0 }} />
+                      <span style={{ fontSize: "13px", color: "#546E7A", fontFamily: "JetBrains Mono, monospace" }}>{c.phone}</span>
+                    </div>
+                  </td>
+                  {/* Email */}
+                  <td style={{ padding: "14px 24px", maxWidth: "200px" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                      <Mail style={{ width: "14px", height: "14px", color: "#546E7A", flexShrink: 0 }} />
+                      <span style={{ fontSize: "13px", color: "#546E7A", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.email || "—"}</span>
+                    </div>
+                  </td>
+                  {/* City */}
+                  <td style={{ padding: "14px 24px" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                      <MapPin style={{ width: "12px", height: "12px", color: "#546E7A", flexShrink: 0 }} />
+                      <span style={{ fontSize: "13px", color: "#546E7A" }}>{c.city}</span>
+                    </div>
+                  </td>
+                  {/* Source */}
+                  <td style={{ padding: "14px 24px" }}>
+                    {c.source === "intake_form" ? (
+                      <span
+                        className="text-[10px] font-semibold px-2.5 py-1 rounded-full uppercase tracking-wide"
+                        style={{ background: "#EBF2FF", color: "#1565C0", border: "1px solid #BFDBFE" }}
+                      >
+                        Form
+                      </span>
+                    ) : (
+                      <span
+                        className="text-[10px] font-semibold px-2.5 py-1 rounded-full uppercase tracking-wide"
+                        style={{ background: "#F1F5F9", color: "#546E7A", border: "1px solid #E2E8F0" }}
+                      >
+                        Manual
+                      </span>
+                    )}
+                  </td>
+                  {/* Actions */}
+                  <td style={{ padding: "14px 24px" }}>
+                    <button
+                      style={{
+                        background: viewHover === c.id ? "#E3EAF2" : "#F0F4F8",
+                        color: "#0A1929", border: "1px solid #E0E7EF",
+                        borderRadius: "8px", padding: "5px 14px", fontSize: "12px", fontWeight: 600,
+                        cursor: "pointer", transition: "all 150ms",
+                      }}
+                      onMouseEnter={() => setViewHover(c.id)}
+                      onMouseLeave={() => setViewHover(null)}
                       onClick={(e) => { e.stopPropagation(); navigate(`/clients/${c.id}`); }}
-                      style={{ color: "#1565C0", fontSize: "13px" }}
                     >
                       View
-                    </Button>
-                  </TableCell>
-                </TableRow>
+                    </button>
+                  </td>
+                </tr>
               ))}
-            </TableBody>
-          </Table>
-        </div>
-      )}
+            </tbody>
+          </table>
+        )}
+      </div>
 
       {/* Add Client Sheet */}
       <Sheet open={panelOpen} onOpenChange={setPanelOpen}>
@@ -253,7 +362,6 @@ export default function Clients() {
             </div>
           </div>
           <div
-            className="px-1 pt-4"
             style={{ background: "#F8FAFC", borderTop: "1px solid #E0E7EF", margin: "0 -24px -24px", padding: "16px 24px" }}
           >
             <button

@@ -2,13 +2,10 @@ import { useState, useEffect, useMemo } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { formatCurrency } from "@/lib/utils";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-
-import { AlertTriangle, Plus, Loader2, Table2 } from "lucide-react";
+import { AlertTriangle, Plus, Loader2, Table2, X } from "lucide-react";
 import type { Tables } from "@/integrations/supabase/types";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { SkeletonRow } from "@/components/ui/SkeletonLoader";
@@ -17,6 +14,36 @@ type Rate = Tables<"rate_matrix">;
 
 const STRUCTURE_TYPES = ["residential", "commercial", "industrial", "infrastructure", "other"] as const;
 const SOIL_TYPES = ["soil", "rock", "mixed"] as const;
+
+const structureTypeLabels: Record<string, string> = {
+  residential: "Residential",
+  commercial: "Commercial",
+  industrial: "Industrial",
+  infrastructure: "Infrastructure",
+  other: "Other",
+};
+
+const soilTypeLabels: Record<string, string> = {
+  soil: "Soil",
+  rock: "Rock",
+  mixed: "Mixed",
+};
+
+const STRUCTURE_GRADIENT: Record<string, string> = {
+  residential:    "linear-gradient(90deg,#1565C0,#2979FF)",
+  commercial:     "linear-gradient(90deg,#6A1B9A,#AB47BC)",
+  industrial:     "linear-gradient(90deg,#E65100,#FF8F00)",
+  infrastructure: "linear-gradient(90deg,#00897B,#26A69A)",
+  other:          "linear-gradient(90deg,#546E7A,#78909C)",
+};
+
+const STRUCTURE_PILL: Record<string, { bg: string; color: string }> = {
+  residential:    { bg: "#EBF2FF", color: "#1565C0" },
+  commercial:     { bg: "#F3E8FF", color: "#6A1B9A" },
+  industrial:     { bg: "#FFF3E0", color: "#E65100" },
+  infrastructure: { bg: "#E0F2F1", color: "#00897B" },
+  other:          { bg: "#F1F5F9", color: "#546E7A" },
+};
 
 const emptyForm = {
   city: "", state: "", structure_type: "", soil_type: "",
@@ -32,6 +59,7 @@ export default function RateMatrix() {
   const [form, setForm] = useState(emptyForm);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [missingCities, setMissingCities] = useState<string[]>([]);
+  const [deactivateHover, setDeactivateHover] = useState<string | null>(null);
 
   const fetchRates = async () => {
     setLoading(true);
@@ -119,155 +147,166 @@ export default function RateMatrix() {
 
   const inr = (n: number | null) => n != null ? formatCurrency(n) : "—";
 
-  const tableStyle = {
-    background: "#FFFFFF",
-    borderRadius: "16px",
-    boxShadow: "0 2px 8px rgba(0,0,0,0.06)",
-    border: "1px solid #E0E7EF",
-    overflow: "hidden" as const,
-  };
+  const formLabel = (text: string, required?: boolean) => (
+    <label style={{ display: "block", marginBottom: "6px", fontSize: "11px", fontWeight: 600, color: "#546E7A", textTransform: "uppercase" as const, letterSpacing: "0.05em" }}>
+      {text} {required && <span style={{ color: "#C62828" }}>*</span>}
+    </label>
+  );
 
   return (
-    <div className="min-h-screen space-y-6" style={{ background: "#F0F4F8" }}>
-      {/* Header card */}
+    <div style={{ background: "#F0F4F8", minHeight: "100vh", padding: "24px" }}>
+
+      {/* Header card — dark gradient */}
       <div
         style={{
-          background: "#FFFFFF",
-          borderRadius: "16px",
-          padding: "20px 24px",
-          border: "1px solid #E0E7EF",
-          boxShadow: "0 2px 8px rgba(0,0,0,0.06)",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          flexWrap: "wrap",
-          gap: "16px",
+          background: "linear-gradient(135deg, #0A1929 0%, #1565C0 100%)",
+          borderRadius: "20px", padding: "28px 32px", marginBottom: "24px",
+          display: "flex", alignItems: "center", justifyContent: "space-between",
+          boxShadow: "0 8px 32px rgba(10,25,41,0.25)", flexWrap: "wrap", gap: "16px",
         }}
       >
         <div>
-          <h1 className="font-bold" style={{ fontFamily: "Sora, sans-serif", fontSize: "24px", color: "#0A1929" }}>
+          <h1 style={{ fontFamily: "Sora, sans-serif", fontWeight: 700, fontSize: "28px", color: "white", margin: 0 }}>
             Rate Matrix
           </h1>
-          <p className="text-sm mt-0.5" style={{ color: "#546E7A" }}>
-            {loading ? "Loading…" : `${rates.length} active rates`}
+          <p style={{ color: "rgba(255,255,255,0.6)", fontSize: "13px", marginTop: "4px" }}>
+            Configure pricing rates by city and project type
           </p>
         </div>
-        <Dialog open={open} onOpenChange={setOpen}>
-          <DialogTrigger asChild>
-            <button
-              className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition-all"
-              style={{
-                background: "linear-gradient(135deg,#1565C0,#2979FF)",
-                color: "white",
-                boxShadow: "0 4px 12px rgba(21,101,192,0.3)",
-              }}
-              onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.transform = "translateY(-1px)"; }}
-              onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.transform = "translateY(0)"; }}
+        <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+          {missingCities.length > 0 && (
+            <div style={{ display: "flex", alignItems: "center", gap: "8px", background: "rgba(255,243,224,0.15)", border: "1px solid rgba(255,204,2,0.4)", borderRadius: "10px", padding: "7px 14px" }}>
+              <AlertTriangle style={{ width: "14px", height: "14px", color: "#FFB300", flexShrink: 0 }} />
+              <span style={{ fontSize: "12px", color: "#FFB300", fontWeight: 500 }}>
+                {missingCities.length} city gap{missingCities.length > 1 ? "s" : ""}
+              </span>
+            </div>
+          )}
+          <Dialog open={open} onOpenChange={setOpen}>
+            <DialogTrigger asChild>
+              <button
+                style={{
+                  background: "linear-gradient(135deg, #FF8F00, #FFB300)",
+                  color: "white", border: "none", borderRadius: "10px",
+                  padding: "9px 18px", fontSize: "13px", fontWeight: 600,
+                  cursor: "pointer", display: "flex", alignItems: "center", gap: "6px",
+                  boxShadow: "0 4px 16px rgba(255,143,0,0.4)", whiteSpace: "nowrap",
+                }}
+                onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.transform = "translateY(-1px)"; }}
+                onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.transform = "translateY(0)"; }}
+              >
+                <Plus className="h-4 w-4" /> Add Rate
+              </button>
+            </DialogTrigger>
+            <DialogContent
+              className="max-w-lg max-h-[90vh] overflow-y-auto"
+              style={{ borderRadius: "20px", padding: "32px", boxShadow: "0 24px 64px rgba(0,0,0,0.2)" }}
             >
-              <Plus className="h-4 w-4" /> Add Rate
-            </button>
-          </DialogTrigger>
-          <DialogContent
-            className="max-w-lg max-h-[90vh] overflow-y-auto"
-            style={{ borderRadius: "20px", padding: "32px", boxShadow: "0 24px 64px rgba(0,0,0,0.2)" }}
-          >
-            <DialogHeader>
-              <DialogTitle style={{ fontFamily: "Sora, sans-serif", color: "#0A1929", fontSize: "18px", fontWeight: 700, marginBottom: "8px" }}>
-                Add Rate
-              </DialogTitle>
-            </DialogHeader>
-            <div className="space-y-4 pt-2">
-              <div className="grid grid-cols-2 gap-4">
+              <DialogHeader>
+                <DialogTitle style={{ fontFamily: "Sora, sans-serif", color: "#0A1929", fontSize: "18px", fontWeight: 700, marginBottom: "8px" }}>
+                  Add Rate
+                </DialogTitle>
+              </DialogHeader>
+              <div className="space-y-4 pt-2">
+                {/* Row 1: City full width */}
                 <div>
-                  <label className="mb-1.5 block" style={{ fontSize: "11px", fontWeight: 600, color: "#546E7A", textTransform: "uppercase", letterSpacing: "0.05em" }}>
-                    City <span style={{ color: "#C62828" }}>*</span>
-                  </label>
+                  {formLabel("City", true)}
                   <Input value={form.city} onChange={(e) => updateForm({ city: e.target.value })} style={{ borderColor: "#E0E7EF", borderRadius: "10px" }} />
                   {errors.city && <p className="mt-1 text-xs" style={{ color: "#C62828" }}>{errors.city}</p>}
                 </div>
-                <div>
-                  <label className="mb-1.5 block" style={{ fontSize: "11px", fontWeight: 600, color: "#546E7A", textTransform: "uppercase", letterSpacing: "0.05em" }}>
-                    State
-                  </label>
-                  <Input value={form.state} onChange={(e) => updateForm({ state: e.target.value })} style={{ borderColor: "#E0E7EF", borderRadius: "10px" }} />
+                {/* Row 2: Structure Type | Soil Type */}
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    {formLabel("Structure Type", true)}
+                    <Select value={form.structure_type} onValueChange={(v) => updateForm({ structure_type: v })}>
+                      <SelectTrigger style={{ borderColor: "#E0E7EF", borderRadius: "10px" }}><SelectValue placeholder="Select" /></SelectTrigger>
+                      <SelectContent>{STRUCTURE_TYPES.map((t) => <SelectItem key={t} value={t} className="capitalize">{structureTypeLabels[t]}</SelectItem>)}</SelectContent>
+                    </Select>
+                    {errors.structure_type && <p className="mt-1 text-xs" style={{ color: "#C62828" }}>{errors.structure_type}</p>}
+                  </div>
+                  <div>
+                    {formLabel("Soil Type", true)}
+                    <Select value={form.soil_type} onValueChange={(v) => updateForm({ soil_type: v })}>
+                      <SelectTrigger style={{ borderColor: "#E0E7EF", borderRadius: "10px" }}><SelectValue placeholder="Select" /></SelectTrigger>
+                      <SelectContent>{SOIL_TYPES.map((t) => <SelectItem key={t} value={t} className="capitalize">{soilTypeLabels[t]}</SelectItem>)}</SelectContent>
+                    </Select>
+                    {errors.soil_type && <p className="mt-1 text-xs" style={{ color: "#C62828" }}>{errors.soil_type}</p>}
+                  </div>
                 </div>
+                {/* Row 3: Rate Per Bore | Rate Reporting */}
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    {formLabel("Rate Per Bore ₹", true)}
+                    <Input type="number" min={1} value={form.rate_per_bore} onChange={(e) => updateForm({ rate_per_bore: e.target.value })} style={{ borderColor: "#E0E7EF", borderRadius: "10px" }} />
+                    {errors.rate_per_bore && <p className="mt-1 text-xs" style={{ color: "#C62828" }}>{errors.rate_per_bore}</p>}
+                  </div>
+                  <div>
+                    {formLabel("Rate Reporting ₹", true)}
+                    <Input type="number" min={1} value={form.rate_reporting} onChange={(e) => updateForm({ rate_reporting: e.target.value })} style={{ borderColor: "#E0E7EF", borderRadius: "10px" }} />
+                    {errors.rate_reporting && <p className="mt-1 text-xs" style={{ color: "#C62828" }}>{errors.rate_reporting}</p>}
+                  </div>
+                </div>
+                {/* Row 4: Rate Per Metre Soil | Rate Per Metre Rock */}
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    {formLabel("Per Metre Soil ₹", true)}
+                    <Input type="number" min={1} value={form.rate_per_metre_soil} onChange={(e) => updateForm({ rate_per_metre_soil: e.target.value })} style={{ borderColor: "#E0E7EF", borderRadius: "10px" }} />
+                    {errors.rate_per_metre_soil && <p className="mt-1 text-xs" style={{ color: "#C62828" }}>{errors.rate_per_metre_soil}</p>}
+                  </div>
+                  <div>
+                    {formLabel("Per Metre Rock ₹", true)}
+                    <Input type="number" min={1} value={form.rate_per_metre_rock} onChange={(e) => updateForm({ rate_per_metre_rock: e.target.value })} style={{ borderColor: "#E0E7EF", borderRadius: "10px" }} />
+                    {errors.rate_per_metre_rock && <p className="mt-1 text-xs" style={{ color: "#C62828" }}>{errors.rate_per_metre_rock}</p>}
+                  </div>
+                </div>
+                {/* Row 5: Travel Per Km | Minimum Charge */}
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    {formLabel("Travel Per Km ₹")}
+                    <Input type="number" min={0} value={form.rate_travel_per_km} onChange={(e) => updateForm({ rate_travel_per_km: e.target.value })} style={{ borderColor: "#E0E7EF", borderRadius: "10px" }} />
+                  </div>
+                  <div>
+                    {formLabel("Minimum Charge ₹")}
+                    <Input type="number" min={0} value={form.minimum_charge} onChange={(e) => updateForm({ minimum_charge: e.target.value })} style={{ borderColor: "#E0E7EF", borderRadius: "10px" }} />
+                  </div>
+                </div>
+                <button
+                  onClick={handleSave}
+                  disabled={saving}
+                  className="w-full py-2.5 rounded-xl text-sm font-semibold transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+                  style={{
+                    background: "linear-gradient(135deg,#1565C0,#2979FF)",
+                    color: "white",
+                    boxShadow: "0 4px 12px rgba(21,101,192,0.3)",
+                  }}
+                >
+                  {saving ? <><Loader2 className="h-4 w-4 animate-spin" />Saving…</> : "Save Rate"}
+                </button>
               </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="mb-1.5 block" style={{ fontSize: "11px", fontWeight: 600, color: "#546E7A", textTransform: "uppercase", letterSpacing: "0.05em" }}>
-                    Structure Type <span style={{ color: "#C62828" }}>*</span>
-                  </label>
-                  <Select value={form.structure_type} onValueChange={(v) => updateForm({ structure_type: v })}>
-                    <SelectTrigger style={{ borderColor: "#E0E7EF", borderRadius: "10px" }}><SelectValue placeholder="Select" /></SelectTrigger>
-                    <SelectContent>{STRUCTURE_TYPES.map((t) => <SelectItem key={t} value={t} className="capitalize">{t}</SelectItem>)}</SelectContent>
-                  </Select>
-                  {errors.structure_type && <p className="mt-1 text-xs" style={{ color: "#C62828" }}>{errors.structure_type}</p>}
-                </div>
-                <div>
-                  <label className="mb-1.5 block" style={{ fontSize: "11px", fontWeight: 600, color: "#546E7A", textTransform: "uppercase", letterSpacing: "0.05em" }}>
-                    Soil Type <span style={{ color: "#C62828" }}>*</span>
-                  </label>
-                  <Select value={form.soil_type} onValueChange={(v) => updateForm({ soil_type: v })}>
-                    <SelectTrigger style={{ borderColor: "#E0E7EF", borderRadius: "10px" }}><SelectValue placeholder="Select" /></SelectTrigger>
-                    <SelectContent>{SOIL_TYPES.map((t) => <SelectItem key={t} value={t} className="capitalize">{t}</SelectItem>)}</SelectContent>
-                  </Select>
-                  {errors.soil_type && <p className="mt-1 text-xs" style={{ color: "#C62828" }}>{errors.soil_type}</p>}
-                </div>
-              </div>
-              {[
-                ["rate_per_bore", "Rate Per Bore ₹", true],
-                ["rate_per_metre_soil", "Rate Per Metre Soil ₹", true],
-                ["rate_per_metre_rock", "Rate Per Metre Rock ₹", true],
-                ["rate_reporting", "Rate Reporting ₹", true],
-                ["rate_travel_per_km", "Rate Travel Per Km ₹", false],
-                ["minimum_charge", "Minimum Charge ₹", false],
-              ].map(([key, label, req]) => (
-                <div key={key as string}>
-                  <label className="mb-1.5 block" style={{ fontSize: "11px", fontWeight: 600, color: "#546E7A", textTransform: "uppercase", letterSpacing: "0.05em" }}>
-                    {label as string} {req ? <span style={{ color: "#C62828" }}>*</span> : ""}
-                  </label>
-                  <Input
-                    type="number"
-                    min={1}
-                    value={form[key as keyof typeof form]}
-                    onChange={(e) => updateForm({ [key as string]: e.target.value })}
-                    style={{ borderColor: "#E0E7EF", borderRadius: "10px" }}
-                  />
-                  {errors[key as string] && <p className="mt-1 text-xs" style={{ color: "#C62828" }}>{errors[key as string]}</p>}
-                </div>
-              ))}
-              <button
-                onClick={handleSave}
-                disabled={saving}
-                className="w-full py-2.5 rounded-xl text-sm font-semibold transition-all disabled:opacity-50 flex items-center justify-center gap-2"
-                style={{
-                  background: "linear-gradient(135deg,#1565C0,#2979FF)",
-                  color: "white",
-                  boxShadow: "0 4px 12px rgba(21,101,192,0.3)",
-                }}
-              >
-                {saving ? <><Loader2 className="h-4 w-4 animate-spin" />Saving…</> : "Save Rate"}
-              </button>
-            </div>
-          </DialogContent>
-        </Dialog>
+            </DialogContent>
+          </Dialog>
+        </div>
       </div>
 
+      {/* Coverage warning banner */}
       {missingCities.length > 0 && (
         <div
-          className="flex items-start gap-3 rounded-xl p-4"
-          style={{ background: "#FFF3E0", border: "1px solid #FFCC80" }}
+          style={{
+            background: "linear-gradient(135deg,#FFF3E0,#FFF8E1)",
+            border: "1px solid #FFCC02", borderRadius: "12px",
+            padding: "12px 16px", display: "flex", alignItems: "center", gap: "10px",
+            marginBottom: "20px",
+          }}
         >
-          <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" style={{ color: "#E65100" }} />
-          <p className="text-sm" style={{ color: "#0A1929" }}>
-            <span className="font-semibold">Missing rates for:</span>{" "}
-            {missingCities.join(", ")}. Quotations cannot be generated for these cities.
+          <AlertTriangle style={{ width: "16px", height: "16px", color: "#E65100", flexShrink: 0 }} />
+          <p style={{ fontSize: "13px", color: "#E65100", fontWeight: 500, margin: 0 }}>
+            Missing rates for: <strong>{missingCities.join(", ")}</strong>. Quotations cannot be generated for these cities.
           </p>
         </div>
       )}
 
       {loading ? (
-        <div style={tableStyle}>
+        <div style={{ background: "white", borderRadius: "16px", border: "1px solid #E0E7EF", overflow: "hidden" }}>
           {Array.from({ length: 5 }).map((_, i) => <SkeletonRow key={i} />)}
         </div>
       ) : rates.length === 0 ? (
@@ -278,54 +317,134 @@ export default function RateMatrix() {
         />
       ) : (
         Object.entries(grouped).map(([city, cityRates]) => (
-          <div key={city} className="space-y-2">
-            <h2 className="font-bold text-lg" style={{ fontFamily: "Sora, sans-serif", color: "#0A1929" }}>{city}</h2>
-            <div style={tableStyle}>
-              <Table>
-                <TableHeader>
-                  <TableRow style={{ background: "#F8FAFC" }}>
-                    {["Structure Type", "Soil Type", "Per Bore ₹", "Per Metre Soil ₹", "Per Metre Rock ₹", "Reporting ₹", "Min Charge ₹", "Actions"].map((h, i) => (
-                      <TableHead
-                        key={h}
-                        className={i >= 2 && i <= 6 ? "text-right" : ""}
-                        style={{ fontSize: "10px", color: "#546E7A", textTransform: "uppercase", letterSpacing: "0.08em", fontWeight: 600 }}
-                      >
-                        {h}
-                      </TableHead>
-                    ))}
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {cityRates.map((r) => (
-                    <TableRow
-                      key={r.id}
-                      className="transition-colors duration-100"
-                      style={{ borderBottom: "1px solid #F0F4F8" }}
-                      onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = "#F8FAFC"; }}
-                      onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = "transparent"; }}
-                    >
-                      <TableCell className="capitalize" style={{ color: "#0A1929" }}>{r.structure_type}</TableCell>
-                      <TableCell className="capitalize" style={{ color: "#546E7A" }}>{r.soil_type}</TableCell>
-                      <TableCell className="text-right font-mono" style={{ color: "#0A1929" }}>{inr(r.rate_per_bore)}</TableCell>
-                      <TableCell className="text-right font-mono" style={{ color: "#0A1929" }}>{inr(r.rate_per_metre_soil)}</TableCell>
-                      <TableCell className="text-right font-mono" style={{ color: "#0A1929" }}>{inr(r.rate_per_metre_rock)}</TableCell>
-                      <TableCell className="text-right font-mono" style={{ color: "#0A1929" }}>{inr(r.rate_reporting)}</TableCell>
-                      <TableCell className="text-right font-mono" style={{ color: "#0A1929" }}>{inr(r.minimum_charge)}</TableCell>
-                      <TableCell>
+          <div key={city}>
+            {/* City header */}
+            <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "12px", marginTop: "24px" }}>
+              <div style={{
+                background: "linear-gradient(135deg,#0A1929,#1565C0)",
+                color: "white", borderRadius: "10px",
+                padding: "6px 14px", fontSize: "12px", fontWeight: 700,
+                fontFamily: "Sora, sans-serif",
+              }}>
+                {city}
+              </div>
+              <div style={{ flex: 1, height: "1px", background: "#E0E7EF" }} />
+              <span style={{ fontSize: "11px", color: "#546E7A" }}>
+                {cityRates.length} rate{cityRates.length > 1 ? "s" : ""}
+              </span>
+            </div>
+
+            {/* Rate cards grid */}
+            <div style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))",
+              gap: "12px",
+              marginBottom: "8px",
+            }}>
+              {cityRates.map((r) => {
+                const pill = STRUCTURE_PILL[r.structure_type] ?? STRUCTURE_PILL.other;
+                return (
+                  <div
+                    key={r.id}
+                    style={{
+                      background: "white", borderRadius: "14px",
+                      border: "1px solid #E0E7EF",
+                      boxShadow: "0 2px 8px rgba(0,0,0,0.05)",
+                      overflow: "hidden", transition: "all 200ms", position: "relative",
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.boxShadow = "0 8px 24px rgba(0,0,0,0.1)";
+                      e.currentTarget.style.transform = "translateY(-2px)";
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.boxShadow = "0 2px 8px rgba(0,0,0,0.05)";
+                      e.currentTarget.style.transform = "translateY(0)";
+                    }}
+                  >
+                    {/* Top accent band */}
+                    <div style={{ height: "4px", background: STRUCTURE_GRADIENT[r.structure_type] ?? STRUCTURE_GRADIENT.other }} />
+
+                    {/* Card body */}
+                    <div style={{ padding: "16px" }}>
+                      {/* Top row: pills + deactivate */}
+                      <div style={{ display: "flex", alignItems: "center", gap: "8px", justifyContent: "space-between" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
+                          <span
+                            className="text-[10px] font-semibold px-2.5 py-1 rounded-full uppercase tracking-wide"
+                            style={{ background: pill.bg, color: pill.color }}
+                          >
+                            {structureTypeLabels[r.structure_type] ?? r.structure_type}
+                          </span>
+                          <span
+                            className="text-[10px] font-semibold px-2.5 py-1 rounded-full uppercase tracking-wide"
+                            style={{ background: "#F1F5F9", color: "#546E7A" }}
+                          >
+                            {soilTypeLabels[r.soil_type] ?? r.soil_type}
+                          </span>
+                        </div>
                         <button
                           onClick={() => deactivate(r.id)}
-                          className="px-3 py-1 rounded-lg text-xs font-semibold transition-all"
-                          style={{ border: "1px solid #FFCDD2", color: "#C62828", background: "transparent" }}
-                          onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = "#FFEBEE"; }}
-                          onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = "transparent"; }}
+                          style={{
+                            background: "none", border: "none", cursor: "pointer", padding: "2px 6px",
+                            fontSize: "11px", fontWeight: 500,
+                            color: deactivateHover === r.id ? "#C62828" : "#94A3B8",
+                            display: "flex", alignItems: "center", gap: "4px",
+                            transition: "color 150ms", flexShrink: 0,
+                          }}
+                          onMouseEnter={() => setDeactivateHover(r.id)}
+                          onMouseLeave={() => setDeactivateHover(null)}
+                          title="Deactivate this rate"
                         >
-                          Deactivate
+                          <X style={{ width: "12px", height: "12px" }} /> Deactivate
                         </button>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+                      </div>
+
+                      {/* Rates 2×2 grid */}
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px", marginTop: "12px" }}>
+                        {[
+                          { label: "Per Bore",          value: r.rate_per_bore },
+                          { label: "Per Metre (Soil)",  value: r.rate_per_metre_soil },
+                          { label: "Per Metre (Rock)",  value: r.rate_per_metre_rock },
+                          { label: "Reporting",         value: r.rate_reporting },
+                        ].map((cell) => (
+                          <div key={cell.label} style={{ background: "#F8FAFC", borderRadius: "8px", padding: "10px 12px" }}>
+                            <div
+                              className="text-[10px] uppercase tracking-wide"
+                              style={{ color: "#546E7A" }}
+                            >
+                              {cell.label}
+                            </div>
+                            <div
+                              className="text-base font-bold font-mono mt-0.5"
+                              style={{ color: "#0A1929" }}
+                            >
+                              {inr(cell.value)}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* Optional: min charge / travel */}
+                      {(r.minimum_charge != null || r.rate_travel_per_km != null) && (
+                        <div style={{ display: "flex", gap: "8px", marginTop: "8px" }}>
+                          {r.rate_travel_per_km != null && (
+                            <div style={{ background: "#F8FAFC", borderRadius: "8px", padding: "8px 12px", flex: 1 }}>
+                              <div className="text-[10px] uppercase tracking-wide" style={{ color: "#546E7A" }}>Travel/km</div>
+                              <div className="text-sm font-bold font-mono mt-0.5" style={{ color: "#0A1929" }}>{inr(r.rate_travel_per_km)}</div>
+                            </div>
+                          )}
+                          {r.minimum_charge != null && (
+                            <div style={{ background: "#F8FAFC", borderRadius: "8px", padding: "8px 12px", flex: 1 }}>
+                              <div className="text-[10px] uppercase tracking-wide" style={{ color: "#546E7A" }}>Min Charge</div>
+                              <div className="text-sm font-bold font-mono mt-0.5" style={{ color: "#0A1929" }}>{inr(r.minimum_charge)}</div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </div>
         ))

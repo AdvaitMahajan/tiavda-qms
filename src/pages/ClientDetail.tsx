@@ -3,18 +3,24 @@ import { useParams, useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import { cn, formatDate } from "@/lib/utils";
+import { cn, formatDate, relativeTime } from "@/lib/utils";
 import {
-  Phone, Mail, MapPin, AlertTriangle, Link as LinkIcon, Copy, Check,
-  RefreshCw, ArrowLeft, Pencil,
+  Phone, Mail, MapPin, AlertTriangle, Link2, Copy, Check,
+  RefreshCw, ArrowLeft, Pencil, Clock, BarChart2,
 } from "lucide-react";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { StatusBadge } from "@/components/ui/StatusBadge";
+
+function avatarGradient(name: string): string {
+  const c = (name?.[0] ?? "?").toUpperCase();
+  if (c >= "A" && c <= "F") return "linear-gradient(135deg,#1565C0,#2979FF)";
+  if (c >= "G" && c <= "L") return "linear-gradient(135deg,#6A1B9A,#AB47BC)";
+  if (c >= "M" && c <= "R") return "linear-gradient(135deg,#00897B,#26A69A)";
+  return "linear-gradient(135deg,#E65100,#FF8F00)";
+}
 
 function validateIndianMobile(phone: string): boolean {
   const cleaned = phone.replace(/[\s-]/g, "");
@@ -37,6 +43,7 @@ export default function ClientDetail() {
   const [saving, setSaving] = useState(false);
   const [copied, setCopied] = useState(false);
   const [generatingLink, setGeneratingLink] = useState(false);
+  const [viewHover, setViewHover] = useState<string | null>(null);
 
   const { data: client, isLoading: clientLoading } = useQuery({
     queryKey: ["client", id],
@@ -136,130 +143,328 @@ export default function ClientDetail() {
     </div>
   );
 
+  // Overview stats
+  const lastActivity = enquiries.length > 0
+    ? relativeTime(enquiries[0].created_at)
+    : relativeTime(client.created_at);
+
+  const mostRecentStatus = enquiries.length > 0 ? enquiries[0].status : null;
+
   return (
-    <div className="space-y-6 min-h-screen" style={{ background: "#F0F4F8" }}>
-      {/* Header */}
+    <div style={{ background: "#F0F4F8", padding: "24px", minHeight: "100vh" }}>
+
+      {/* Hero card — dark gradient */}
       <div
         style={{
-          background: "#FFFFFF",
-          borderRadius: "16px",
-          padding: "24px",
-          border: "1px solid #E0E7EF",
-          boxShadow: "0 2px 8px rgba(0,0,0,0.06)",
+          background: "linear-gradient(135deg, #0A1929 0%, #1565C0 100%)",
+          borderRadius: "20px", padding: "32px", marginBottom: "20px",
+          color: "white", boxShadow: "0 8px 32px rgba(10,25,41,0.25)",
+          position: "relative", overflow: "hidden",
         }}
       >
-        <div className="flex items-start justify-between">
-          <div>
-            <div className="flex items-center gap-2 mb-1">
-              <button
-                onClick={() => navigate("/clients")}
-                className="flex items-center gap-1 text-sm transition-colors"
-                style={{ color: "#546E7A" }}
-                onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.color = "#0A1929"; }}
-                onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.color = "#546E7A"; }}
-              >
-                <ArrowLeft className="h-4 w-4" /> Clients
-              </button>
-            </div>
-            <h1 className="font-bold text-2xl" style={{ fontFamily: "Sora, sans-serif", color: "#0A1929" }}>{client.name}</h1>
-            {client.company && <p className="text-sm italic mt-0.5" style={{ color: "#546E7A" }}>{client.company}</p>}
-            <div className="mt-3 flex flex-wrap items-center gap-4 text-sm">
-              <a href={`tel:${client.phone}`} className="flex items-center gap-1.5 hover:underline" style={{ color: "#1565C0" }}><Phone className="h-4 w-4" />{client.phone}</a>
-              {client.email && <a href={`mailto:${client.email}`} className="flex items-center gap-1.5 hover:underline" style={{ color: "#1565C0" }}><Mail className="h-4 w-4" />{client.email}</a>}
-              <span className="flex items-center gap-1.5" style={{ color: "#546E7A" }}><MapPin className="h-4 w-4" />{client.city}{client.state ? `, ${client.state}` : ""}</span>
-            </div>
+        {/* Decorative circle */}
+        <div style={{
+          position: "absolute", width: "200px", height: "200px", borderRadius: "50%",
+          background: "rgba(255,255,255,0.04)", top: "-60px", right: "-60px", pointerEvents: "none",
+        }} />
+
+        {/* Breadcrumb */}
+        <button
+          onClick={() => navigate("/clients")}
+          style={{
+            display: "flex", alignItems: "center", gap: "6px",
+            color: "rgba(255,255,255,0.6)", fontSize: "13px", background: "none",
+            border: "none", cursor: "pointer", padding: 0, transition: "color 150ms",
+          }}
+          onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.color = "white"; }}
+          onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.color = "rgba(255,255,255,0.6)"; }}
+        >
+          <ArrowLeft className="w-4 h-4" /> Clients
+        </button>
+
+        {/* Edit button */}
+        <button
+          onClick={() => setEditOpen(true)}
+          style={{
+            position: "absolute", top: "24px", right: "24px",
+            background: "rgba(255,255,255,0.12)", color: "white",
+            border: "1px solid rgba(255,255,255,0.2)",
+            borderRadius: "10px", padding: "7px 16px",
+            fontSize: "13px", fontWeight: 500,
+            backdropFilter: "blur(10px)", cursor: "pointer",
+            display: "flex", alignItems: "center", gap: "6px",
+          }}
+          onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = "rgba(255,255,255,0.2)"; }}
+          onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = "rgba(255,255,255,0.12)"; }}
+        >
+          <Pencil className="w-3.5 h-3.5" /> Edit
+        </button>
+
+        {/* Avatar + name */}
+        <div style={{ display: "flex", alignItems: "center", gap: "16px", marginTop: "16px" }}>
+          <div style={{
+            width: "56px", height: "56px", borderRadius: "50%",
+            background: avatarGradient(client.name),
+            display: "flex", alignItems: "center", justifyContent: "center",
+            fontFamily: "Sora, sans-serif", fontWeight: 700, fontSize: "22px", color: "white",
+            flexShrink: 0, border: "3px solid rgba(255,255,255,0.2)",
+          }}>
+            {client.name[0]?.toUpperCase() ?? "?"}
           </div>
-          <button
-            onClick={() => setEditOpen(true)}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium transition-all"
-            style={{ border: "1.5px solid #E0E7EF", color: "#546E7A", background: "#FAFBFC" }}
-            onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = "#F0F4F8"; }}
-            onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = "#FAFBFC"; }}
+          <div>
+            <div style={{ fontFamily: "Sora, sans-serif", fontWeight: 700, fontSize: "26px", color: "white" }}>
+              {client.name}
+            </div>
+            {client.company && (
+              <div style={{ color: "rgba(255,255,255,0.6)", fontSize: "13px", marginTop: "2px" }}>{client.company}</div>
+            )}
+          </div>
+        </div>
+
+        {/* Contact row */}
+        <div style={{ display: "flex", flexWrap: "wrap", gap: "24px", marginTop: "16px" }}>
+          <a
+            href={`tel:${client.phone}`}
+            style={{ display: "flex", alignItems: "center", gap: "8px", color: "rgba(255,255,255,0.85)", fontSize: "13px", textDecoration: "none" }}
           >
-            <Pencil className="h-3.5 w-3.5" /> Edit
-          </button>
+            <Phone style={{ width: "16px", height: "16px", color: "rgba(255,255,255,0.5)" }} />
+            {client.phone}
+          </a>
+          {client.email && (
+            <a
+              href={`mailto:${client.email}`}
+              style={{ display: "flex", alignItems: "center", gap: "8px", color: "rgba(255,255,255,0.85)", fontSize: "13px", textDecoration: "none" }}
+            >
+              <Mail style={{ width: "16px", height: "16px", color: "rgba(255,255,255,0.5)" }} />
+              {client.email}
+            </a>
+          )}
+          <div style={{ display: "flex", alignItems: "center", gap: "8px", color: "rgba(255,255,255,0.85)", fontSize: "13px" }}>
+            <MapPin style={{ width: "16px", height: "16px", color: "rgba(255,255,255,0.5)" }} />
+            {client.city}{client.state ? `, ${client.state}` : ""}
+          </div>
         </div>
       </div>
 
+      {/* Alert banners */}
       {client.email_bounced && (
-        <div className="flex items-center gap-3 rounded-lg border border-amber/30 bg-amber/5 px-4 py-3 text-sm text-amber">
-          <AlertTriangle className="h-5 w-5 shrink-0" /> Email address has bounced — please update the email.
+        <div style={{ display: "flex", alignItems: "center", gap: "12px", borderRadius: "10px", border: "1px solid #FFCC80", background: "#FFF8E1", padding: "12px 16px", marginBottom: "16px", fontSize: "13px", color: "#E65100" }}>
+          <AlertTriangle className="h-4 w-4 shrink-0" /> Email address has bounced — please update the email.
         </div>
       )}
       {client.whatsapp_invalid && (
-        <div className="flex items-center gap-3 rounded-lg border border-amber/30 bg-amber/5 px-4 py-3 text-sm text-amber">
-          <AlertTriangle className="h-5 w-5 shrink-0" /> WhatsApp number is invalid — please update.
+        <div style={{ display: "flex", alignItems: "center", gap: "12px", borderRadius: "10px", border: "1px solid #FFCC80", background: "#FFF8E1", padding: "12px 16px", marginBottom: "16px", fontSize: "13px", color: "#E65100" }}>
+          <AlertTriangle className="h-4 w-4 shrink-0" /> WhatsApp number is invalid — please update.
         </div>
       )}
 
-      {/* Intake Link */}
-      <div style={{ background: "#FFFFFF", borderRadius: "16px", padding: "24px", border: "1px solid #E0E7EF", boxShadow: "0 2px 8px rgba(0,0,0,0.06)" }}>
-        <h2 className="mb-4 flex items-center gap-2 font-semibold text-lg" style={{ fontFamily: "Sora, sans-serif", color: "#0A1929" }}><LinkIcon className="h-5 w-5" /> Intake Form Link</h2>
-        {intakeLink ? (
-          <div className="space-y-3">
-            <div className="flex items-center gap-2 rounded-lg bg-surface px-3 py-2">
-              <code className="flex-1 truncate text-sm font-mono">{intakeLink}</code>
-              <Button variant="ghost" size="sm" onClick={copyLink}>
-                {copied ? <><Check className="mr-1 h-4 w-4 text-green" /> Copied!</> : <><Copy className="mr-1 h-4 w-4" /> Copy</>}
-              </Button>
+      {/* Two-column grid */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "20px", marginBottom: "20px" }}>
+
+        {/* Left: Intake Form Link */}
+        <div style={{
+          background: "white", borderRadius: "16px", padding: "24px",
+          border: "1px solid #E0E7EF", boxShadow: "0 2px 8px rgba(0,0,0,0.06)",
+        }}>
+          {/* Title row */}
+          <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "4px" }}>
+            <div style={{
+              width: "32px", height: "32px", borderRadius: "50%", background: "#EBF2FF",
+              display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
+            }}>
+              <Link2 style={{ width: "15px", height: "15px", color: "#1565C0" }} />
             </div>
-            <p className="text-xs text-muted-foreground">Expires: {formatDate(activeToken!.expires_at)}</p>
-            <div className="flex gap-2 flex-wrap">
-              <Button variant="outline" size="sm" onClick={generateToken} disabled={generatingLink}>
-                <RefreshCw className={cn("mr-1.5 h-3.5 w-3.5", generatingLink && "animate-spin")} /> Regenerate
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => navigate(`/intake?t=${activeToken!.token}`)}
-                style={{ borderColor: "#2E7FC1", color: "#2E7FC1" }}
+            <span style={{ fontWeight: 600, fontSize: "15px", color: "#0A1929", fontFamily: "Sora, sans-serif" }}>Intake Form Link</span>
+          </div>
+
+          {intakeLink ? (
+            <div>
+              {/* Link display */}
+              <div style={{
+                background: "#F8FAFC", border: "1px solid #E0E7EF", borderRadius: "10px",
+                padding: "10px 14px", fontFamily: "JetBrains Mono, monospace",
+                fontSize: "11px", color: "#546E7A", wordBreak: "break-all", marginTop: "12px",
+              }}>
+                {intakeLink}
+              </div>
+              {/* Expiry */}
+              <div style={{ display: "flex", alignItems: "center", gap: "4px", fontSize: "11px", color: "#546E7A", marginTop: "8px" }}>
+                <Clock style={{ width: "12px", height: "12px" }} />
+                Expires {formatDate(activeToken!.expires_at)}
+              </div>
+              {/* Buttons */}
+              <div style={{ display: "flex", gap: "8px", marginTop: "12px", flexWrap: "wrap" }}>
+                <button
+                  onClick={copyLink}
+                  style={{ background: "#F0F4F8", color: "#0A1929", border: "1px solid #E0E7EF", borderRadius: "8px", padding: "8px 12px", fontSize: "12px", fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", gap: "5px" }}
+                  onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = "#E3EAF2"; }}
+                  onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = "#F0F4F8"; }}
+                >
+                  {copied ? <><Check className="w-3.5 h-3.5" /> Copied!</> : <><Copy className="w-3.5 h-3.5" /> Copy</>}
+                </button>
+                <button
+                  onClick={generateToken}
+                  disabled={generatingLink}
+                  style={{ background: "#F0F4F8", color: "#0A1929", border: "1px solid #E0E7EF", borderRadius: "8px", padding: "8px 12px", fontSize: "12px", fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", gap: "5px" }}
+                  onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = "#E3EAF2"; }}
+                  onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = "#F0F4F8"; }}
+                >
+                  <RefreshCw className={cn("w-3.5 h-3.5", generatingLink && "animate-spin")} /> Regenerate
+                </button>
+                <button
+                  onClick={() => navigate(`/intake?t=${activeToken!.token}`)}
+                  style={{ background: "linear-gradient(135deg,#1565C0,#2979FF)", color: "white", border: "none", borderRadius: "8px", padding: "8px 12px", fontSize: "12px", fontWeight: 600, cursor: "pointer", boxShadow: "0 4px 12px rgba(21,101,192,0.25)" }}
+                >
+                  Fill on Behalf
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div style={{ marginTop: "12px" }}>
+              <p style={{ fontSize: "13px", color: "#546E7A", marginBottom: "12px" }}>No active link. Generate one to share with the client.</p>
+              <button
+                onClick={generateToken}
+                disabled={generatingLink}
+                style={{ background: "linear-gradient(135deg,#1565C0,#2979FF)", color: "white", border: "none", borderRadius: "8px", padding: "9px 16px", fontSize: "13px", fontWeight: 600, cursor: "pointer", boxShadow: "0 4px 12px rgba(21,101,192,0.25)", display: "flex", alignItems: "center", gap: "6px" }}
               >
-                Fill Form on Behalf of Client
-              </Button>
+                {generatingLink ? <><RefreshCw className="w-3.5 h-3.5 animate-spin" /> Generating…</> : "Generate Intake Link"}
+              </button>
             </div>
+          )}
+        </div>
+
+        {/* Right: Client Overview */}
+        <div style={{
+          background: "white", borderRadius: "16px", padding: "24px",
+          border: "1px solid #E0E7EF", boxShadow: "0 2px 8px rgba(0,0,0,0.06)",
+        }}>
+          {/* Title row */}
+          <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "16px" }}>
+            <div style={{
+              width: "32px", height: "32px", borderRadius: "50%", background: "#EBF2FF",
+              display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
+            }}>
+              <BarChart2 style={{ width: "15px", height: "15px", color: "#1565C0" }} />
+            </div>
+            <span style={{ fontWeight: 600, fontSize: "15px", color: "#0A1929", fontFamily: "Sora, sans-serif" }}>Client Overview</span>
           </div>
-        ) : (
-          <div>
-            <p className="mb-3 text-sm text-muted-foreground">No active link. Generate one to share with the client.</p>
-            <Button onClick={generateToken} disabled={generatingLink} className="bg-navy text-white hover:bg-navy/90">
-              {generatingLink ? "Generating…" : "Generate Intake Link"}
-            </Button>
+
+          {/* Stat rows */}
+          {[
+            { label: "Total Enquiries", value: String(enquiries.length) },
+            { label: "Last Activity", value: lastActivity },
+            { label: "Quote Value", value: "—" },
+          ].map((row, idx) => (
+            <div
+              key={row.label}
+              style={{
+                display: "flex", justifyContent: "space-between", alignItems: "center",
+                padding: "10px 0",
+                borderBottom: idx < 2 ? "1px solid #F0F4F8" : "none",
+              }}
+            >
+              <span style={{ fontSize: "13px", color: "#546E7A" }}>{row.label}</span>
+              <span style={{ fontSize: "13px", fontWeight: 600, color: "#0A1929" }}>{row.value}</span>
+            </div>
+          ))}
+          {/* Status row */}
+          <div style={{
+            display: "flex", justifyContent: "space-between", alignItems: "center",
+            padding: "10px 0",
+          }}>
+            <span style={{ fontSize: "13px", color: "#546E7A" }}>Latest Status</span>
+            {mostRecentStatus ? (
+              <StatusBadge status={mostRecentStatus} />
+            ) : (
+              <span style={{ fontSize: "13px", fontWeight: 600, color: "#0A1929" }}>—</span>
+            )}
           </div>
-        )}
+        </div>
       </div>
 
-      {/* Enquiry History */}
-      <div style={{ background: "#FFFFFF", borderRadius: "16px", padding: "24px", border: "1px solid #E0E7EF", boxShadow: "0 2px 8px rgba(0,0,0,0.06)", overflow: "hidden" }}>
-        <h2 className="mb-4 font-semibold text-lg" style={{ fontFamily: "Sora, sans-serif", color: "#0A1929" }}>Enquiry History</h2>
+      {/* Enquiry History — full width */}
+      <div style={{
+        background: "white", borderRadius: "16px", padding: "24px",
+        border: "1px solid #E0E7EF", boxShadow: "0 2px 8px rgba(0,0,0,0.06)", overflow: "hidden",
+      }}>
+        {/* Header */}
+        <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "16px" }}>
+          <h2 style={{ fontFamily: "Sora, sans-serif", fontWeight: 600, fontSize: "15px", color: "#0A1929", margin: 0 }}>
+            Enquiry History
+          </h2>
+          <span style={{
+            background: "#EBF2FF", color: "#1565C0", border: "1px solid #BFDBFE",
+            borderRadius: "20px", padding: "2px 10px", fontSize: "11px", fontWeight: 700,
+          }}>
+            {enquiries.length}
+          </span>
+        </div>
+
         {enquiries.length === 0 ? (
-          <p className="py-8 text-center text-sm text-muted-foreground">No enquiries yet for this client.</p>
+          <p style={{ textAlign: "center", padding: "32px 0", fontSize: "13px", color: "#94A3B8" }}>
+            No enquiries yet for this client.
+          </p>
         ) : (
-          <div className="overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Ref #</TableHead><TableHead>Date</TableHead><TableHead>Status</TableHead>
-                  <TableHead>Bores</TableHead><TableHead>City</TableHead><TableHead className="text-right">Action</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {enquiries.map((e) => (
-                  <TableRow key={e.id}>
-                    <TableCell className="font-mono text-sm">{e.ref_number}</TableCell>
-                    <TableCell className="text-sm">{formatDate(e.enquiry_date)}</TableCell>
-                    <TableCell>
-                      <StatusBadge status={e.status} />
-                    </TableCell>
-                    <TableCell>{e.num_bores}</TableCell>
-                    <TableCell>{e.site_city}</TableCell>
-                    <TableCell className="text-right">
-                      <Button variant="ghost" size="sm" onClick={() => navigate(`/enquiries/${e.id}`)}>View</Button>
-                    </TableCell>
-                  </TableRow>
+          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+            <thead>
+              <tr style={{ background: "#F8FAFC", borderBottom: "2px solid #E0E7EF" }}>
+                {["Ref #", "Date", "Status", "Bores", "City", "Action"].map((h) => (
+                  <th
+                    key={h}
+                    className="text-left"
+                    style={{
+                      fontSize: "10px", fontWeight: 600, textTransform: "uppercase",
+                      letterSpacing: "0.1em", padding: "12px 16px", color: "#546E7A",
+                    }}
+                  >
+                    {h}
+                  </th>
                 ))}
-              </TableBody>
-            </Table>
-          </div>
+              </tr>
+            </thead>
+            <tbody>
+              {enquiries.map((enq) => (
+                <tr
+                  key={enq.id}
+                  style={{ borderBottom: "1px solid #F0F4F8", cursor: "pointer", transition: "background 100ms" }}
+                  onClick={() => navigate(`/enquiries/${enq.id}`)}
+                  onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = "#F8FAFC"; }}
+                  onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = "transparent"; }}
+                >
+                  <td style={{ padding: "12px 16px", fontFamily: "JetBrains Mono, monospace", fontSize: "13px", color: "#0A1929", fontWeight: 600 }}>
+                    {enq.ref_number}
+                  </td>
+                  <td style={{ padding: "12px 16px", fontSize: "13px", color: "#546E7A" }}>
+                    {formatDate(enq.enquiry_date)}
+                  </td>
+                  <td style={{ padding: "12px 16px" }}>
+                    <StatusBadge status={enq.status} />
+                  </td>
+                  <td style={{ padding: "12px 16px", fontSize: "13px", color: "#546E7A" }}>
+                    {enq.num_bores}
+                  </td>
+                  <td style={{ padding: "12px 16px", fontSize: "13px", color: "#546E7A" }}>
+                    {enq.site_city}
+                  </td>
+                  <td style={{ padding: "12px 16px" }}>
+                    <button
+                      style={{
+                        background: viewHover === enq.id ? "#E3EAF2" : "#F0F4F8",
+                        color: "#0A1929", border: "1px solid #E0E7EF",
+                        borderRadius: "8px", padding: "5px 14px", fontSize: "12px", fontWeight: 600,
+                        cursor: "pointer", transition: "all 150ms",
+                      }}
+                      onMouseEnter={() => setViewHover(enq.id)}
+                      onMouseLeave={() => setViewHover(null)}
+                      onClick={(e) => { e.stopPropagation(); navigate(`/enquiries/${enq.id}`); }}
+                    >
+                      View
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         )}
       </div>
 

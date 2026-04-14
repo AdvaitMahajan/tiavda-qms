@@ -10,6 +10,7 @@ import { PaymentsTab } from "@/components/enquiry/PaymentsTab";
 import { CommunicationTab } from "@/components/enquiry/CommunicationTab";
 import { JobCompletionTab } from "@/components/enquiry/JobCompletionTab";
 import { MobilisationSection } from "@/components/enquiry/MobilisationSection";
+import { FollowUpsTab } from "@/components/enquiry/FollowUpsTab";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -320,6 +321,7 @@ export default function EnquiryDetail() {
       <Tabs defaultValue="quotations">
         <TabsList className="flex-wrap">
           <TabsTrigger value="quotations">Quotations</TabsTrigger>
+          <TabsTrigger value="follow-ups">Follow-ups</TabsTrigger>
           <TabsTrigger value="details">Details</TabsTrigger>
           <TabsTrigger value="payments">Payments</TabsTrigger>
           <TabsTrigger value="communications">Communications</TabsTrigger>
@@ -346,6 +348,10 @@ export default function EnquiryDetail() {
               ))}
             </div>
           )}
+        </TabsContent>
+
+        <TabsContent value="follow-ups" className="pt-4">
+          <FollowUpsTab enquiryId={enquiry.id} />
         </TabsContent>
 
         <TabsContent value="details" className="pt-4">

@@ -12,7 +12,7 @@ import type { Tables } from "@/integrations/supabase/types";
 
 type Mobilisation = Tables<"mobilisation">;
 
-export function MobilisationSection({ enquiryId }: { enquiryId: string }) {
+export function MobilisationSection({ enquiryId, enquiry }: { enquiryId: string; enquiry?: { id: string; ref_number: string; site_city: string; client_id: string } | null }) {
   const [mob, setMob] = useState<Mobilisation | null>(null);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
@@ -34,6 +34,20 @@ export function MobilisationSection({ enquiryId }: { enquiryId: string }) {
 
   useEffect(() => { fetchMob(); }, [fetchMob]);
 
+  // Realtime subscription for drive folder status updates
+  useEffect(() => {
+    if (!enquiryId) return;
+    const channel = supabase
+      .channel("mobilisation-" + enquiryId)
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "mobilisation", filter: `enquiry_id=eq.${enquiryId}` },
+        (payload) => { setMob(payload.new as Mobilisation); }
+      )
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [enquiryId]);
+
   const handleSave = async () => {
     if (!mobDate) { toast.error("Mobilisation date is required"); return; }
     setSaving(true);
@@ -52,6 +66,21 @@ export function MobilisationSection({ enquiryId }: { enquiryId: string }) {
     setShowForm(false);
     setSaving(false);
     fetchMob();
+
+    // Fire-and-forget: create Google Drive folder
+    if (enquiry) {
+      // Fetch client name for folder naming
+      supabase.from("clients").select("name").eq("id", enquiry.client_id).single().then(({ data: clientData }) => {
+        supabase.functions.invoke("create-drive-folder", {
+          body: {
+            enquiry_id: enquiry.id,
+            ref_number: enquiry.ref_number,
+            client_name: clientData?.name ?? "Client",
+            city: enquiry.site_city,
+          },
+        }).catch((err: any) => console.error("Drive folder creation failed:", err));
+      });
+    }
   };
 
   if (loading) return <div className="h-16 bg-muted/30 animate-pulse rounded-lg" />;

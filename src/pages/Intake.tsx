@@ -243,6 +243,15 @@ export default function Intake() {
 
       setRefNumber(result.ref_number);
       if (result.enquiry_id) setSubmittedEnquiryId(result.enquiry_id);
+
+      // Fire-and-forget: notify admin of new intake
+      supabase.rpc("notify_admin_intake", {
+        p_enquiry_id: result.enquiry_id ?? "",
+        p_ref_number: result.ref_number,
+        p_client_name: "Client",
+        p_city: form.site_city,
+      } as any).catch((err: any) => console.warn("Admin notification failed:", err));
+
       setSubmitted(true);
     } catch (err: any) {
       toast.error(err.message || "Submission failed. Please try again.");

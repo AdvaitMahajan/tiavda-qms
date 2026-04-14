@@ -15,6 +15,8 @@ import { StatusBadge } from "@/components/ui/StatusBadge";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
 import { Loader2, ChevronDown, ChevronUp, Download, Send, AlertTriangle, ArrowLeft, CheckCircle2, MapPin } from "lucide-react";
 import type { Tables } from "@/integrations/supabase/types";
 
@@ -25,8 +27,8 @@ type Quotation = Tables<"quotations">;
 type LineItem = { description: string; unit: string; qty: number; rate: number; amount: number };
 
 function VariantCard({
-  q, isBest, onApprove, pdfLoading,
-}: { q: Quotation; isBest: boolean; onApprove: (q: Quotation) => void; pdfLoading: string | null }) {
+  q, isBest, onApprove, pdfLoading, onSend,
+}: { q: Quotation; isBest: boolean; onApprove: (q: Quotation) => void; pdfLoading: string | null; onSend?: () => void }) {
   const [expanded, setExpanded] = useState(false);
   const items: LineItem[] = typeof q.line_items === "string" ? JSON.parse(q.line_items) : (q.line_items as any);
   const isApproved = q.status === "approved" || q.status === "sent" || q.status === "accepted";
@@ -93,7 +95,13 @@ function VariantCard({
           <a href={q.pdf_url} target="_blank" rel="noreferrer">
             <Button variant="outline" size="sm"><Download className="mr-1 h-3 w-3" />Download PDF</Button>
           </a>
-          <Button variant="outline" size="sm" disabled><Send className="mr-1 h-3 w-3" />Send to Client</Button>
+          {isApproved && onSend ? (
+            <Button variant="outline" size="sm" onClick={onSend} className="text-blue border-blue hover:bg-blue/5">
+              <Send className="mr-1 h-3 w-3" />Send to Client
+            </Button>
+          ) : (
+            <Button variant="outline" size="sm" disabled><Send className="mr-1 h-3 w-3" />Send to Client</Button>
+          )}
         </div>
       )}
 
@@ -123,6 +131,10 @@ export default function EnquiryDetail() {
   const [approving, setApproving] = useState(false);
   const [pdfLoading, setPdfLoading] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState("quotations");
+  const [sendModalOpen, setSendModalOpen] = useState(false);
+  const [sendChannelEmail, setSendChannelEmail] = useState(true);
+  const [sendChannelWhatsapp, setSendChannelWhatsapp] = useState(true);
+  const [sending, setSending] = useState(false);
 
   const fetchAll = useCallback(async () => {
     if (!id) return;
@@ -147,7 +159,7 @@ export default function EnquiryDetail() {
 
     const { data: rate, error: rateErr } = await supabase
       .from("rate_matrix").select("*")
-      .eq("city", enquiry.site_city).eq("structure_type", enquiry.structure_type)
+      .ilike("city", enquiry.site_city).eq("structure_type", enquiry.structure_type)
       .eq("is_active", true).is("effective_to", null).limit(1).maybeSingle();
 
     if (rateErr || !rate) {
@@ -244,7 +256,10 @@ export default function EnquiryDetail() {
         }
         throw approveErr;
       }
-      await supabase.from("quotations").update({ status: "superseded" as any }).eq("enquiry_id", enquiry.id).neq("id", approveTarget.id).eq("status", "draft" as any);
+      // Supersede previously-approved quotation and all remaining drafts
+      await supabase.from("quotations").update({ status: "superseded" as any })
+        .eq("enquiry_id", enquiry.id).neq("id", approveTarget.id)
+        .in("status", ["draft", "approved", "sent"] as any);
       const prevStatus = enquiry.status;
       await supabase.from("enquiries").update({ status: "pending" as any }).eq("id", enquiry.id);
       await supabase.from("enquiry_events").insert({
@@ -260,6 +275,154 @@ export default function EnquiryDetail() {
       toast.error(err.message || "Approval failed");
     } finally {
       setApproving(false);
+    }
+  };
+
+  const handleSendToClient = async () => {
+    if (!enquiry || !client) return;
+    setSending(true);
+    try {
+      const approvedQuotation = quotations.find(
+        (q) => q.status === "approved" || q.status === "sent"
+      );
+      if (!approvedQuotation) {
+        toast.error("No approved quotation found. Please approve a variant first.");
+        setSending(false);
+        return;
+      }
+
+      const subject = `Quotation from Tiavda Enterprises — ${enquiry.ref_number}`;
+      const validityDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" });
+      const htmlBody = `<!DOCTYPE html>
+<html>
+<body style="font-family: Arial, sans-serif; color: #1a1a1a; max-width: 600px; margin: 0 auto; padding: 20px;">
+  <div style="background: #0F2A47; padding: 24px; border-radius: 8px 8px 0 0;">
+    <h1 style="color: white; margin: 0; font-size: 20px;">Tiavda Enterprises</h1>
+    <p style="color: rgba(255,255,255,0.7); margin: 4px 0 0; font-size: 14px;">Geotechnical Consultants</p>
+  </div>
+  <div style="background: #ffffff; border: 1px solid #e2e8f0; border-top: none; padding: 32px; border-radius: 0 0 8px 8px;">
+    <p style="font-size: 16px;">Dear ${client.name},</p>
+    <p>Thank you for your enquiry. Please find below the quotation details for your project.</p>
+    <div style="background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 20px; margin: 24px 0;">
+      <p style="margin: 0 0 8px;"><strong>Reference Number:</strong> <span style="font-family: monospace;">${enquiry.ref_number}</span></p>
+      <p style="margin: 0 0 8px;"><strong>Total Amount:</strong> ${formatCurrency(approvedQuotation.total_amount)}</p>
+      <p style="margin: 0;"><strong>Valid Until:</strong> ${validityDate}</p>
+    </div>
+    <p>Please find the detailed quotation attached as a PDF. If you have any questions or would like to proceed, please contact us.</p>
+    <p style="margin-top: 32px;">Best regards,<br/><strong>Tiavda Enterprises</strong><br/>+91 8605811117</p>
+  </div>
+</body>
+</html>`;
+
+      let emailSent = false;
+      let whatsappSent = false;
+
+      if (sendChannelEmail && client.email && !client.email_bounced) {
+        const { error: emailErr } = await supabase.functions.invoke("send-email", {
+          body: {
+            to: client.email,
+            subject,
+            html_body: htmlBody,
+            attachment_url: approvedQuotation.pdf_url ?? undefined,
+          },
+        });
+        if (emailErr) {
+          console.error("Email send error:", emailErr);
+          toast.error("Email delivery failed — continuing.");
+        } else {
+          emailSent = true;
+          await supabase.from("communication_log").insert({
+            enquiry_id: enquiry.id,
+            client_id: client.id,
+            channel: "email" as any,
+            direction: "outbound" as any,
+            subject,
+            body: "Quotation email sent",
+            status: "sent",
+            sent_by: user?.id ?? null,
+          });
+        }
+      }
+
+      if (sendChannelWhatsapp && client.whatsapp_number && !client.whatsapp_invalid) {
+        const formattedAmount = new Intl.NumberFormat("en-IN", {
+          style: "currency", currency: "INR", maximumFractionDigits: 0,
+        }).format(Number(approvedQuotation.total_amount));
+        const { data: waData, error: waErr } = await supabase.functions.invoke("send-whatsapp", {
+          body: {
+            phone_number: client.whatsapp_number,
+            template_name: "qms_quotation_sent",
+            parameters: [
+              { name: "client_name", value: client.name },
+              { name: "ref_number", value: enquiry.ref_number },
+              { name: "amount", value: formattedAmount },
+              { name: "validity_days", value: "30" },
+            ],
+          },
+        });
+        if (waErr || waData?.error) {
+          const errMsg = waData?.error || waErr?.message || "Unknown error";
+          console.error("WhatsApp send error:", errMsg);
+          if (waData?.whatsapp_invalid) {
+            await supabase.from("clients").update({ whatsapp_invalid: true }).eq("id", client.id);
+          }
+          toast.error("WhatsApp delivery failed — continuing.");
+        } else {
+          whatsappSent = true;
+          await supabase.from("communication_log").insert({
+            enquiry_id: enquiry.id,
+            client_id: client.id,
+            channel: "whatsapp" as any,
+            direction: "outbound" as any,
+            subject: `WhatsApp: Quotation ${enquiry.ref_number}`,
+            body: "Quotation WhatsApp sent",
+            status: "sent",
+            sent_by: user?.id ?? null,
+          });
+        }
+      }
+
+      // Update quotation status to sent
+      await supabase.from("quotations").update({
+        status: "sent" as any,
+        sent_at: new Date().toISOString(),
+      }).eq("id", approvedQuotation.id);
+
+      // Update enquiry status to sent
+      const prevStatus = enquiry.status;
+      await supabase.from("enquiries").update({ status: "sent" as any }).eq("id", enquiry.id);
+
+      // Auto-schedule follow-up in 3 days
+      const followUpDate = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+      await supabase.from("follow_ups").insert({
+        enquiry_id: enquiry.id,
+        scheduled_date: followUpDate,
+        auto_scheduled: true,
+        notes: "Auto: post-quote follow-up",
+        outcome: "pending" as any,
+      });
+
+      // Log event
+      await supabase.from("enquiry_events").insert({
+        enquiry_id: enquiry.id,
+        event_type: "quotation_sent",
+        from_status: prevStatus as any,
+        to_status: "sent" as any,
+        triggered_by: user?.id ?? null,
+      });
+
+      if (emailSent || whatsappSent) {
+        toast.success("Quotation sent to client successfully!");
+      } else {
+        toast.error("No channels were successfully delivered — check client contact details.");
+      }
+
+      setSendModalOpen(false);
+      fetchAll();
+    } catch (err: any) {
+      toast.error(err.message || "Failed to send quotation");
+    } finally {
+      setSending(false);
     }
   };
 
@@ -321,7 +484,12 @@ export default function EnquiryDetail() {
       </div>
 
       {/* Mobilisation Section */}
-      {showJobTabs && <MobilisationSection enquiryId={enquiry.id} />}
+      {showJobTabs && (
+        <MobilisationSection
+          enquiryId={enquiry.id}
+          enquiry={{ id: enquiry.id, ref_number: enquiry.ref_number, site_city: enquiry.site_city, client_id: enquiry.client_id }}
+        />
+      )}
 
       {/* Custom Tab Bar (Task 4) */}
       <div className="flex border-b-2 border-gray-200 bg-white overflow-x-auto">
@@ -359,7 +527,14 @@ export default function EnquiryDetail() {
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {quotations.map((q) => (
-                  <VariantCard key={q.id} q={q} isBest={q.id === bestId} onApprove={setApproveTarget} pdfLoading={pdfLoading} />
+                  <VariantCard
+                    key={q.id}
+                    q={q}
+                    isBest={q.id === bestId}
+                    onApprove={setApproveTarget}
+                    pdfLoading={pdfLoading}
+                    onSend={() => setSendModalOpen(true)}
+                  />
                 ))}
               </div>
             )}
@@ -374,6 +549,54 @@ export default function EnquiryDetail() {
 
         {activeTab === "job" && showJobTabs && <JobCompletionTab enquiryId={enquiry.id} />}
       </div>
+
+      {/* Send to Client modal */}
+      <Dialog open={sendModalOpen} onOpenChange={(o) => !o && setSendModalOpen(false)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Send Quotation to Client</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <p className="text-sm text-muted-foreground">Choose delivery channel(s) for <span className="font-mono font-semibold text-foreground">{enquiry?.ref_number}</span>:</p>
+            <div className="space-y-3">
+              <div className="flex items-center gap-3">
+                <Checkbox
+                  id="ch-email"
+                  checked={sendChannelEmail}
+                  onCheckedChange={(v) => setSendChannelEmail(!!v)}
+                  disabled={!client?.email || !!client?.email_bounced}
+                />
+                <Label htmlFor="ch-email" className="text-sm">
+                  Email{client?.email ? ` — ${client.email}` : " (no email on file)"}
+                  {client?.email_bounced && <span className="ml-2 text-destructive text-xs">(bounced)</span>}
+                </Label>
+              </div>
+              <div className="flex items-center gap-3">
+                <Checkbox
+                  id="ch-wa"
+                  checked={sendChannelWhatsapp}
+                  onCheckedChange={(v) => setSendChannelWhatsapp(!!v)}
+                  disabled={!client?.whatsapp_number || !!client?.whatsapp_invalid}
+                />
+                <Label htmlFor="ch-wa" className="text-sm">
+                  WhatsApp{client?.whatsapp_number ? ` — ${client.whatsapp_number}` : " (no WhatsApp on file)"}
+                  {client?.whatsapp_invalid && <span className="ml-2 text-destructive text-xs">(invalid)</span>}
+                </Label>
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setSendModalOpen(false)}>Cancel</Button>
+            <Button
+              onClick={handleSendToClient}
+              disabled={sending || (!sendChannelEmail && !sendChannelWhatsapp)}
+              className="bg-blue text-white hover:bg-blue/90"
+            >
+              {sending ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Sending…</> : <><Send className="mr-2 h-4 w-4" />Send</>}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Approve modal */}
       <Dialog open={!!approveTarget} onOpenChange={(o) => !o && setApproveTarget(null)}>

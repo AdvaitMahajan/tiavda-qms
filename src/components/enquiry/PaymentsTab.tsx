@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { formatCurrency, formatDate } from "@/lib/utils";
+import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -27,6 +28,7 @@ const PAY_STATUS_COLORS: Record<string, string> = {
 
 export function PaymentsTab({ enquiryId }: { enquiryId: string }) {
   const queryClient = useQueryClient();
+  const { user } = useAuth();
   const [showRequest, setShowRequest] = useState(false);
   const [showReceive, setShowReceive] = useState<Payment | null>(null);
 
@@ -46,6 +48,32 @@ export function PaymentsTab({ enquiryId }: { enquiryId: string }) {
     },
   });
 
+  const { data: enquiry } = useQuery({
+    queryKey: ["enquiry-for-payments", enquiryId],
+    queryFn: async () => {
+      const { data } = await supabase.from("enquiries").select("ref_number, client_id, status").eq("id", enquiryId).single();
+      return data;
+    },
+  });
+
+  const { data: client } = useQuery({
+    queryKey: ["client-for-payments", enquiry?.client_id],
+    queryFn: async () => {
+      if (!enquiry?.client_id) return null;
+      const { data } = await supabase.from("clients").select("*").eq("id", enquiry.client_id).single();
+      return data;
+    },
+    enabled: !!enquiry?.client_id,
+  });
+
+  const { data: appSettings } = useQuery({
+    queryKey: ["app-settings-bank"],
+    queryFn: async () => {
+      const { data } = await supabase.from("app_settings").select("value").eq("key", "company_bank_details").maybeSingle();
+      return data?.value ?? null;
+    },
+  });
+
   // Request advance form state
   const [reqAmount, setReqAmount] = useState("");
   const [reqDueDate, setReqDueDate] = useState("");
@@ -53,16 +81,114 @@ export function PaymentsTab({ enquiryId }: { enquiryId: string }) {
 
   const requestMutation = useMutation({
     mutationFn: async () => {
-      const { error } = await supabase.from("payments").insert({
+      const amount = parseFloat(reqAmount);
+      const bankDetails = appSettings ?? "Contact Tiavda Enterprises for bank details";
+      const formattedAmount = new Intl.NumberFormat("en-IN", {
+        style: "currency", currency: "INR", maximumFractionDigits: 0,
+      }).format(amount);
+      const dueDate = reqDueDate
+        ? new Date(reqDueDate).toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" })
+        : new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" });
+      const dueDateIso = reqDueDate || new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+
+      // Insert payment record
+      const { data: payment, error: insertErr } = await supabase.from("payments").insert({
         enquiry_id: enquiryId,
         payment_type: "advance",
-        amount_requested: parseFloat(reqAmount),
-        status: "pending_request",
+        amount_requested: amount,
+        status: "pending_request" as any,
+      }).select().single();
+      if (insertErr) throw insertErr;
+
+      const refNumber = enquiry?.ref_number ?? enquiryId;
+      const clientName = client?.name ?? "Client";
+      const subject = `Advance Payment Request — ${refNumber}`;
+      const htmlBody = `<!DOCTYPE html>
+<html>
+<body style="font-family: Arial, sans-serif; color: #1a1a1a; max-width: 600px; margin: 0 auto; padding: 20px;">
+  <div style="background: #0F2A47; padding: 24px; border-radius: 8px 8px 0 0;">
+    <h1 style="color: white; margin: 0; font-size: 20px;">Tiavda Enterprises</h1>
+    <p style="color: rgba(255,255,255,0.7); margin: 4px 0 0; font-size: 14px;">Payment Request</p>
+  </div>
+  <div style="background: #ffffff; border: 1px solid #e2e8f0; border-top: none; padding: 32px; border-radius: 0 0 8px 8px;">
+    <p style="font-size: 16px;">Dear ${clientName},</p>
+    <p>We request an advance payment for your project <span style="font-family: monospace; font-weight: bold;">${refNumber}</span>.</p>
+    <div style="background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 20px; margin: 24px 0;">
+      <p style="margin: 0 0 8px;"><strong>Amount Due:</strong> ${formattedAmount}</p>
+      <p style="margin: 0 0 16px;"><strong>Due Date:</strong> ${dueDate}</p>
+      <p style="margin: 0 0 4px; font-weight: bold;">Bank Details:</p>
+      <p style="margin: 0; white-space: pre-line; font-size: 14px;">${bankDetails}</p>
+    </div>
+    ${reqInstructions ? `<p style="font-size: 14px; color: #64748b;">${reqInstructions}</p>` : ""}
+    <p style="margin-top: 32px;">Best regards,<br/><strong>Tiavda Enterprises</strong><br/>+91 8605811117</p>
+  </div>
+</body>
+</html>`;
+
+      // Send email
+      if (client?.email && !client?.email_bounced) {
+        const { error: emailErr } = await supabase.functions.invoke("send-email", {
+          body: { to: client.email, subject, html_body: htmlBody },
+        });
+        if (!emailErr) {
+          await supabase.from("communication_log").insert({
+            enquiry_id: enquiryId,
+            client_id: client.id,
+            channel: "email" as any,
+            direction: "outbound" as any,
+            subject,
+            body: "Payment request email sent",
+            status: "sent",
+            sent_by: user?.id ?? null,
+          });
+        }
+      }
+
+      // Send WhatsApp
+      if (client?.whatsapp_number && !client?.whatsapp_invalid) {
+        const { data: waData } = await supabase.functions.invoke("send-whatsapp", {
+          body: {
+            phone_number: client.whatsapp_number,
+            template_name: "qms_payment_request",
+            parameters: [
+              { name: "client_name", value: clientName },
+              { name: "amount", value: formattedAmount },
+              { name: "bank_details", value: bankDetails.slice(0, 100) },
+              { name: "due_date", value: dueDate },
+            ],
+          },
+        });
+        if (waData?.whatsapp_invalid) {
+          await supabase.from("clients").update({ whatsapp_invalid: true }).eq("id", client.id);
+        } else {
+          await supabase.from("communication_log").insert({
+            enquiry_id: enquiryId,
+            client_id: client.id,
+            channel: "whatsapp" as any,
+            direction: "outbound" as any,
+            subject: `WhatsApp: Payment request ${refNumber}`,
+            body: "Payment request WhatsApp sent",
+            status: "sent",
+            sent_by: user?.id ?? null,
+          });
+        }
+      }
+
+      // Update payment status to request_sent
+      await supabase.from("payments").update({
+        status: "request_sent" as any,
+        request_sent_at: new Date().toISOString(),
+      }).eq("id", payment.id);
+
+      // Log event
+      await supabase.from("enquiry_events").insert({
+        enquiry_id: enquiryId,
+        event_type: "payment_requested",
+        triggered_by: user?.id ?? null,
       });
-      if (error) throw error;
     },
     onSuccess: () => {
-      toast.success("Payment request saved. Send via email/WhatsApp from Communications tab.");
+      toast.success("Payment request sent to client!");
       queryClient.invalidateQueries({ queryKey: ["payments", enquiryId] });
       setShowRequest(false);
       setReqAmount(""); setReqDueDate(""); setReqInstructions("");

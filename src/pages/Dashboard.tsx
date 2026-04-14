@@ -1,3 +1,642 @@
+import { useEffect, useMemo } from "react";
+import { useNavigate } from "react-router-dom";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { supabase } from "@/integrations/supabase/client";
+import { formatCurrency, relativeTime } from "@/lib/utils";
+import { Card, CardContent } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
+import {
+  FileText, Send, CalendarClock, CreditCard, Briefcase,
+  CheckCircle, Bell, Activity, Hammer, Receipt,
+} from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
+import {
+  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell,
+} from "recharts";
+
+// ─── Animated counter ───
+
+function AnimatedNumber({ value }: { value: number }) {
+  return (
+    <motion.span
+      key={value}
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      className="font-heading text-5xl font-bold"
+      style={{ color: "hsl(var(--navy))" }}
+    >
+      <Counter target={value} />
+    </motion.span>
+  );
+}
+
+function Counter({ target }: { target: number }) {
+  const ref = (el: HTMLSpanElement | null) => {
+    if (!el) return;
+    let start = 0;
+    const duration = 1500;
+    const startTime = performance.now();
+    const step = (now: number) => {
+      const progress = Math.min((now - startTime) / duration, 1);
+      const eased = 1 - Math.pow(1 - progress, 3);
+      start = Math.round(eased * target);
+      el.textContent = start.toLocaleString("en-IN");
+      if (progress < 1) requestAnimationFrame(step);
+    };
+    requestAnimationFrame(step);
+  };
+  return <span ref={ref}>0</span>;
+}
+
+// ─── Stat cards query ───
+
+function useStatCards() {
+  return useQuery({
+    queryKey: ["dashboard-stats"],
+    queryFn: async () => {
+      const today = new Date().toISOString().slice(0, 10);
+      const [r1, r2, r3, r4, r5] = await Promise.all([
+        supabase.from("enquiries").select("id", { count: "exact", head: true }).eq("status", "new").is("deleted_at", null),
+        supabase.from("enquiries").select("id", { count: "exact", head: true }).eq("status", "sent").is("deleted_at", null),
+        supabase.from("follow_ups").select("id", { count: "exact", head: true }).eq("scheduled_date", today).eq("outcome", "pending"),
+        supabase.from("payments").select("id", { count: "exact", head: true }).eq("status", "request_sent"),
+        supabase.from("enquiries").select("id", { count: "exact", head: true }).eq("status", "confirmed").is("deleted_at", null),
+      ]);
+      return [
+        { label: "New Enquiries", value: r1.count ?? 0, icon: FileText, color: "text-blue-600" },
+        { label: "Quotes Sent", value: r2.count ?? 0, icon: Send, color: "text-indigo-600" },
+        { label: "Follow-ups Today", value: r3.count ?? 0, icon: CalendarClock, color: "text-amber-600" },
+        { label: "Payments Pending", value: r4.count ?? 0, icon: CreditCard, color: "hsl(var(--gold))" },
+        { label: "Active Jobs", value: r5.count ?? 0, icon: Briefcase, color: "text-green-700" },
+      ];
+    },
+  });
+}
+
+// ─── Pipeline strip query ───
+
+type LeadStatus = "new" | "pending" | "sent" | "follow_up" | "approved" | "confirmed" | "lost" | "completed";
+
+const STATUS_COLORS: Record<LeadStatus, string> = {
+  new: "bg-slate-500", pending: "bg-blue-600", sent: "bg-indigo-600", follow_up: "bg-amber-600",
+  approved: "bg-purple-600", confirmed: "bg-green-700", lost: "bg-red-600", completed: "bg-teal-600",
+};
+const STATUS_LABELS: Record<LeadStatus, string> = {
+  new: "New", pending: "Pending", sent: "Sent", follow_up: "Follow Up",
+  approved: "Approved", confirmed: "Confirmed", lost: "Lost", completed: "Completed",
+};
+const ALL_STATUSES: LeadStatus[] = ["new", "pending", "sent", "follow_up", "approved", "confirmed", "lost", "completed"];
+
+function usePipelineCounts() {
+  return useQuery({
+    queryKey: ["dashboard-pipeline"],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("enquiries")
+        .select("status")
+        .is("deleted_at", null);
+      const counts: Record<string, number> = {};
+      data?.forEach((r) => { counts[r.status] = (counts[r.status] ?? 0) + 1; });
+      return ALL_STATUSES.map((s) => ({ status: s, count: counts[s] ?? 0 }));
+    },
+  });
+}
+
+// ─── Today's actions ───
+
+interface ActionItem {
+  id: string;
+  enquiry_id: string;
+  ref_number: string;
+  client_name: string;
+  site_city: string;
+  scheduled_date: string;
+  notes: string | null;
+}
+
+function useTodaysActions() {
+  return useQuery({
+    queryKey: ["dashboard-actions"],
+    queryFn: async () => {
+      const today = new Date().toISOString().slice(0, 10);
+      const { data: followUps } = await supabase
+        .from("follow_ups")
+        .select("id, scheduled_date, notes, enquiry_id")
+        .lte("scheduled_date", today)
+        .eq("outcome", "pending")
+        .order("scheduled_date", { ascending: true })
+        .limit(10);
+
+      if (!followUps?.length) return [];
+
+      const enquiryIds = [...new Set(followUps.map((f) => f.enquiry_id))];
+      const { data: enquiries } = await supabase
+        .from("enquiries")
+        .select("id, ref_number, site_city, client_id")
+        .in("id", enquiryIds);
+
+      const clientIds = [...new Set(enquiries?.map((e) => e.client_id) ?? [])];
+      const { data: clients } = await supabase
+        .from("clients")
+        .select("id, name")
+        .in("id", clientIds);
+
+      const enqMap = new Map(enquiries?.map((e) => [e.id, e]) ?? []);
+      const cliMap = new Map(clients?.map((c) => [c.id, c]) ?? []);
+
+      return followUps.map((f): ActionItem => {
+        const enq = enqMap.get(f.enquiry_id);
+        const cli = enq ? cliMap.get(enq.client_id) : null;
+        return {
+          id: f.id,
+          enquiry_id: f.enquiry_id,
+          ref_number: enq?.ref_number ?? "",
+          client_name: cli?.name ?? "Unknown",
+          site_city: enq?.site_city ?? "",
+          scheduled_date: f.scheduled_date,
+          notes: f.notes,
+        };
+      });
+    },
+  });
+}
+
+// ─── Job reminders ───
+
+interface ReminderItem {
+  id: string;
+  enquiry_id: string;
+  ref_number: string;
+  client_name: string;
+  reminder_type: string;
+  days_before: number;
+  scheduled_for: string;
+}
+
+function useJobReminders() {
+  return useQuery({
+    queryKey: ["dashboard-reminders"],
+    queryFn: async () => {
+      const today = new Date().toISOString().slice(0, 10);
+      const futureDate = new Date();
+      futureDate.setDate(futureDate.getDate() + 3);
+      const future = futureDate.toISOString().slice(0, 10);
+
+      const { data: reminders } = await supabase
+        .from("job_reminders")
+        .select("id, reminder_type, days_before, scheduled_for, target_date, enquiry_id, job_id")
+        .gte("scheduled_for", today)
+        .lte("scheduled_for", future)
+        .eq("sent", false)
+        .order("scheduled_for", { ascending: true })
+        .limit(8);
+
+      if (!reminders?.length) return [];
+
+      const enquiryIds = [...new Set(reminders.map((r) => r.enquiry_id))];
+      const { data: enquiries } = await supabase
+        .from("enquiries")
+        .select("id, ref_number, client_id")
+        .in("id", enquiryIds);
+
+      const clientIds = [...new Set(enquiries?.map((e) => e.client_id) ?? [])];
+      const { data: clients } = await supabase
+        .from("clients")
+        .select("id, name")
+        .in("id", clientIds);
+
+      const enqMap = new Map(enquiries?.map((e) => [e.id, e]) ?? []);
+      const cliMap = new Map(clients?.map((c) => [c.id, c]) ?? []);
+
+      return reminders.map((r): ReminderItem => {
+        const enq = enqMap.get(r.enquiry_id);
+        const cli = enq ? cliMap.get(enq.client_id) : null;
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const schedDate = new Date(r.scheduled_for);
+        const diffDays = Math.max(0, Math.round((schedDate.getTime() - today.getTime()) / 86400000));
+        return {
+          id: r.id,
+          enquiry_id: r.enquiry_id,
+          ref_number: enq?.ref_number ?? "",
+          client_name: cli?.name ?? "Unknown",
+          reminder_type: r.reminder_type,
+          days_before: diffDays,
+          scheduled_for: r.scheduled_for,
+        };
+      });
+    },
+  });
+}
+
+// ─── Revenue chart ───
+
+interface RevenueMonth {
+  month: string;
+  label: string;
+  count: number;
+  revenue: number;
+}
+
+function useRevenueChart() {
+  return useQuery({
+    queryKey: ["dashboard-revenue"],
+    queryFn: async () => {
+      const sixMonthsAgo = new Date();
+      sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
+      const since = sixMonthsAgo.toISOString().slice(0, 10);
+
+      const { data: enquiries } = await supabase
+        .from("enquiries")
+        .select("id, confirmed_date")
+        .gte("confirmed_date", since)
+        .in("status", ["confirmed", "completed"]);
+
+      if (!enquiries?.length) return [];
+
+      const enqIds = enquiries.map((e) => e.id);
+      const { data: quotes } = await supabase
+        .from("quotations")
+        .select("enquiry_id, total_amount")
+        .eq("status", "approved")
+        .in("enquiry_id", enqIds);
+
+      const quoteMap = new Map(quotes?.map((q) => [q.enquiry_id, Number(q.total_amount)]) ?? []);
+
+      // Group by month
+      const monthMap = new Map<string, { count: number; revenue: number }>();
+      for (const e of enquiries) {
+        if (!e.confirmed_date) continue;
+        const d = new Date(e.confirmed_date);
+        const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+        const existing = monthMap.get(key) ?? { count: 0, revenue: 0 };
+        existing.count++;
+        existing.revenue += quoteMap.get(e.id) ?? 0;
+        monthMap.set(key, existing);
+      }
+
+      // Build last 6 months array
+      const months: RevenueMonth[] = [];
+      const now = new Date();
+      for (let i = 5; i >= 0; i--) {
+        const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+        const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+        const label = d.toLocaleDateString("en-US", { month: "short" });
+        const data = monthMap.get(key) ?? { count: 0, revenue: 0 };
+        months.push({ month: key, label, ...data });
+      }
+      return months;
+    },
+  });
+}
+
+// ─── Activity feed ───
+
+interface ActivityItem {
+  id: string;
+  event_type: string;
+  from_status: string | null;
+  to_status: string | null;
+  created_at: string;
+  ref_number: string;
+  enquiry_id: string;
+  client_name: string;
+}
+
+function useActivityFeed() {
+  return useQuery({
+    queryKey: ["dashboard-activity"],
+    queryFn: async () => {
+      const { data: events } = await supabase
+        .from("enquiry_events")
+        .select("id, event_type, from_status, to_status, created_at, enquiry_id")
+        .order("created_at", { ascending: false })
+        .limit(15);
+
+      if (!events?.length) return [];
+
+      const enquiryIds = [...new Set(events.map((e) => e.enquiry_id))];
+      const { data: enquiries } = await supabase
+        .from("enquiries")
+        .select("id, ref_number, client_id")
+        .in("id", enquiryIds);
+
+      const clientIds = [...new Set(enquiries?.map((e) => e.client_id) ?? [])];
+      const { data: clients } = await supabase
+        .from("clients")
+        .select("id, name")
+        .in("id", clientIds);
+
+      const enqMap = new Map(enquiries?.map((e) => [e.id, e]) ?? []);
+      const cliMap = new Map(clients?.map((c) => [c.id, c]) ?? []);
+
+      return events.map((ev): ActivityItem => {
+        const enq = enqMap.get(ev.enquiry_id);
+        const cli = enq ? cliMap.get(enq.client_id) : null;
+        return {
+          id: ev.id,
+          event_type: ev.event_type,
+          from_status: ev.from_status,
+          to_status: ev.to_status,
+          created_at: ev.created_at,
+          ref_number: enq?.ref_number ?? "",
+          enquiry_id: ev.enquiry_id,
+          client_name: cli?.name ?? "Unknown",
+        };
+      });
+    },
+  });
+}
+
+function getEventDescription(ev: ActivityItem): string {
+  switch (ev.event_type) {
+    case "status_change": return `${ev.from_status ?? "—"} → ${ev.to_status ?? "—"}`;
+    case "quotation_approved": return "Quotation approved";
+    case "quotation_sent": return "Quotation sent to client";
+    case "payment_requested": return "Payment request sent";
+    case "payment_received": return "Payment received";
+    case "mobilisation_scheduled": return "Mobilisation scheduled";
+    case "job_completed": return "Job completed 🎉";
+    default: return ev.event_type.replace(/_/g, " ");
+  }
+}
+
+function getEventColor(ev: ActivityItem): string {
+  switch (ev.event_type) {
+    case "status_change": return "bg-blue-500";
+    case "quotation_approved": return "bg-purple-500";
+    case "payment_received": return "bg-green-500";
+    case "job_completed": return "bg-teal-500";
+    default: return "bg-slate-400";
+  }
+}
+
+// ─── Custom tooltip for chart ───
+
+function RevenueTooltip({ active, payload, label }: any) {
+  if (!active || !payload?.length) return null;
+  const d = payload[0].payload as RevenueMonth;
+  return (
+    <div className="bg-card border rounded-lg shadow-lg p-3 text-sm">
+      <p className="font-semibold">{d.label}</p>
+      <p className="text-muted-foreground">{d.count} enquiries</p>
+      <p className="font-medium" style={{ color: "hsl(var(--navy))" }}>{formatCurrency(d.revenue)}</p>
+    </div>
+  );
+}
+
+// ─── Main Dashboard ───
+
 export default function Dashboard() {
-  return <h1 className="font-heading text-2xl font-bold text-foreground">Dashboard</h1>;
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const stats = useStatCards();
+  const pipeline = usePipelineCounts();
+  const actions = useTodaysActions();
+  const reminders = useJobReminders();
+  const revenue = useRevenueChart();
+  const activity = useActivityFeed();
+
+  // Realtime activity feed
+  useEffect(() => {
+    const channel = supabase
+      .channel("dashboard-events")
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "enquiry_events" }, () => {
+        queryClient.invalidateQueries({ queryKey: ["dashboard-activity"] });
+        queryClient.invalidateQueries({ queryKey: ["dashboard-stats"] });
+        queryClient.invalidateQueries({ queryKey: ["dashboard-pipeline"] });
+      })
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [queryClient]);
+
+  const thisMonthRevenue = useMemo(() => {
+    if (!revenue.data?.length) return 0;
+    return revenue.data[revenue.data.length - 1].revenue;
+  }, [revenue.data]);
+
+  return (
+    <div className="space-y-6">
+      <h1 className="font-heading text-2xl font-bold text-foreground">Dashboard</h1>
+
+      {/* ── Section 1: Stat Cards ── */}
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+        {stats.isLoading
+          ? Array.from({ length: 5 }).map((_, i) => (
+              <Skeleton key={i} className="h-32 rounded-xl" />
+            ))
+          : stats.data?.map((card) => {
+              const Icon = card.icon;
+              const isGold = card.color.startsWith("hsl");
+              return (
+                <Card key={card.label} className="rounded-xl shadow-sm">
+                  <CardContent className="p-6 relative">
+                    <Icon
+                      className={`absolute top-4 right-4 h-6 w-6 ${isGold ? "" : card.color}`}
+                      style={isGold ? { color: card.color } : undefined}
+                    />
+                    <AnimatedNumber value={card.value} />
+                    <p className="mt-1 text-sm text-muted-foreground">{card.label}</p>
+                  </CardContent>
+                </Card>
+              );
+            })}
+      </div>
+
+      {/* ── Section 2: Pipeline Strip ── */}
+      <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1">
+        {pipeline.isLoading
+          ? Array.from({ length: 8 }).map((_, i) => <Skeleton key={i} className="h-8 w-28 rounded-full flex-shrink-0" />)
+          : pipeline.data?.map(({ status, count }) => (
+              <button
+                key={status}
+                onClick={() => navigate("/enquiries")}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-white text-xs font-medium flex-shrink-0 hover:opacity-90 transition-opacity ${STATUS_COLORS[status]}`}
+              >
+                {STATUS_LABELS[status]}
+                <span className="bg-white/25 rounded-full px-1.5 text-[10px] font-bold">{count}</span>
+              </button>
+            ))}
+      </div>
+
+      {/* ── Section 3: Two column row ── */}
+      <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
+        {/* Today's Actions — 60% */}
+        <Card className="lg:col-span-3 rounded-xl shadow-sm">
+          <CardContent className="p-6">
+            <div className="flex items-center gap-2 mb-4">
+              <CalendarClock className="h-5 w-5 text-amber-600" />
+              <h2 className="font-heading text-lg font-semibold text-foreground">Today's Actions</h2>
+            </div>
+
+            {actions.isLoading ? (
+              <div className="space-y-3">
+                {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-12 w-full" />)}
+              </div>
+            ) : !actions.data?.length ? (
+              <div className="flex flex-col items-center py-8 text-center">
+                <CheckCircle className="h-10 w-10 text-green-500 mb-2" />
+                <p className="text-sm text-muted-foreground">All caught up! No follow-ups due today.</p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {actions.data.map((item) => {
+                  const today = new Date();
+                  today.setHours(0, 0, 0, 0);
+                  const isOverdue = new Date(item.scheduled_date) < today;
+                  return (
+                    <div
+                      key={item.id}
+                      className="flex items-center gap-3 p-2.5 rounded-lg hover:bg-muted/20 cursor-pointer transition-colors"
+                      onClick={() => navigate(`/enquiries/${item.enquiry_id}`)}
+                    >
+                      <span className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${isOverdue ? "bg-red-500 animate-pulse" : "bg-amber-500"}`} />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono text-xs text-muted-foreground">{item.ref_number}</span>
+                          <span className="font-semibold text-sm truncate">{item.client_name}</span>
+                        </div>
+                        <p className="text-xs text-muted-foreground">{item.site_city}</p>
+                      </div>
+                      <span className={`text-xs flex-shrink-0 ${isOverdue ? "text-red-600 font-medium" : "text-muted-foreground"}`}>
+                        {new Date(item.scheduled_date).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Job Reminders — 40% */}
+        <Card className="lg:col-span-2 rounded-xl shadow-sm">
+          <CardContent className="p-6">
+            <div className="flex items-center gap-2 mb-4">
+              <Bell className="h-5 w-5 text-red-500" />
+              <h2 className="font-heading text-lg font-semibold text-foreground">Upcoming Reminders</h2>
+            </div>
+
+            {reminders.isLoading ? (
+              <div className="space-y-3">
+                {Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-12 w-full" />)}
+              </div>
+            ) : !reminders.data?.length ? (
+              <p className="text-sm text-muted-foreground text-center py-8">No upcoming reminders.</p>
+            ) : (
+              <div className="space-y-2">
+                {reminders.data.map((item) => {
+                  const RIcon = item.reminder_type === "site" ? Hammer
+                    : item.reminder_type === "report" ? FileText : Receipt;
+                  const dotColor = item.days_before <= 1 ? "bg-red-500"
+                    : item.days_before === 2 ? "bg-amber-500" : "bg-yellow-500";
+                  return (
+                    <div
+                      key={item.id}
+                      className="flex items-center gap-3 p-2.5 rounded-lg hover:bg-muted/20 cursor-pointer transition-colors"
+                      onClick={() => navigate(`/enquiries/${item.enquiry_id}`)}
+                    >
+                      <span className={`w-2 h-2 rounded-full flex-shrink-0 ${dotColor}`} />
+                      <RIcon className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                      <div className="min-w-0 flex-1">
+                        <span className="font-mono text-xs text-muted-foreground">{item.ref_number}</span>
+                        <p className="text-sm truncate">{item.client_name}</p>
+                      </div>
+                      <span className="text-xs text-muted-foreground flex-shrink-0">
+                        {item.days_before === 0 ? "Today" : `in ${item.days_before}d`}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* ── Section 4: Revenue Chart ── */}
+      <Card className="rounded-xl shadow-sm">
+        <CardContent className="p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="font-heading text-lg font-semibold text-foreground">
+              Confirmed Revenue — Last 6 Months
+            </h2>
+            {thisMonthRevenue > 0 && (
+              <span className="font-heading font-bold text-lg" style={{ color: "hsl(var(--navy))" }}>
+                {formatCurrency(thisMonthRevenue)}
+              </span>
+            )}
+          </div>
+
+          {revenue.isLoading ? (
+            <Skeleton className="h-[280px] w-full" />
+          ) : !revenue.data?.some((m) => m.revenue > 0) ? (
+            <div className="flex flex-col items-center justify-center h-[280px] text-center">
+              <BarChart width={80} height={60}>
+                <Bar dataKey="v" data={[{ v: 30 }, { v: 60 }, { v: 40 }, { v: 80 }]} fill="hsl(var(--border))" radius={[2, 2, 0, 0]} />
+              </BarChart>
+              <p className="text-sm text-muted-foreground mt-2">No confirmed revenue yet.</p>
+            </div>
+          ) : (
+            <ResponsiveContainer width="100%" height={280}>
+              <BarChart data={revenue.data} barSize={40}>
+                <XAxis dataKey="label" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: "hsl(var(--muted))" }} />
+                <YAxis hide />
+                <Tooltip content={<RevenueTooltip />} cursor={{ fill: "hsl(var(--accent))" }} />
+                <Bar dataKey="revenue" radius={[4, 4, 0, 0]}>
+                  {revenue.data?.map((_, i) => (
+                    <Cell key={i} fill="hsl(var(--navy))" />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* ── Section 5: Activity Feed ── */}
+      <Card className="rounded-xl shadow-sm">
+        <CardContent className="p-6">
+          <div className="flex items-center gap-2 mb-4">
+            <Activity className="h-5 w-5 text-muted-foreground" />
+            <h2 className="font-heading text-lg font-semibold text-foreground">Recent Activity</h2>
+          </div>
+
+          {activity.isLoading ? (
+            <div className="space-y-3">
+              {Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-10 w-full" />)}
+            </div>
+          ) : !activity.data?.length ? (
+            <p className="text-sm text-muted-foreground text-center py-8">
+              No activity yet. Actions will appear here as you use the system.
+            </p>
+          ) : (
+            <div className="space-y-1">
+              <AnimatePresence initial={false}>
+                {activity.data.map((ev) => (
+                  <motion.div
+                    key={ev.id}
+                    initial={{ y: -20, opacity: 0 }}
+                    animate={{ y: 0, opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    className="flex items-center gap-3 p-2.5 rounded-lg hover:bg-muted/20 cursor-pointer transition-colors"
+                    onClick={() => navigate(`/enquiries/${ev.enquiry_id}`)}
+                  >
+                    <span className={`w-2 h-2 rounded-full flex-shrink-0 ${getEventColor(ev)}`} />
+                    <div className="min-w-0 flex-1">
+                      <span className="text-sm">{getEventDescription(ev)}</span>
+                      <span className="text-xs text-muted-foreground ml-2">{ev.client_name}</span>
+                    </div>
+                    <span className="font-mono text-[11px] text-muted-foreground flex-shrink-0">{ev.ref_number}</span>
+                    <span className="text-xs text-muted-foreground flex-shrink-0">{relativeTime(ev.created_at)}</span>
+                  </motion.div>
+                ))}
+              </AnimatePresence>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
 }

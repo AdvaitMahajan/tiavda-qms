@@ -4,6 +4,7 @@
 
 @layer base {
   :root {
+    /* shadcn/ui system tokens (HSL — do not remove) */
     --background: 210 40% 98%;
     --foreground: 210 29% 17%;
 
@@ -34,28 +35,6 @@
 
     --radius: 0.5rem;
 
-    /* Brand tokens (HSL for Tailwind) */
-    --navy: 211 65% 17%;
-    --blue: 210 70% 37%;
-    --steel: 204 63% 47%;
-    --gold: 39 90% 43%;
-    --green: 150 65% 25%;
-    --red: 0 72% 42%;
-    --amber: 28 80% 31%;
-    --surface: 210 40% 98%;
-
-    /* Brand hex tokens (Task 2) — used via inline styles and var() */
-    --navy-hex: #0F2A47;
-    --blue-hex: #1B5EA0;
-    --steel-hex: #2E7FC1;
-    --gold-hex: #D4930A;
-    --green-hex: #15673A;
-    --red-hex: #B91C1C;
-    --amber-hex: #92400E;
-    --surface-hex: #F8FAFC;
-    --muted-hex: #64748B;
-    --border-hex: #CBD5E1;
-
     --sidebar-background: 211 65% 17%;
     --sidebar-foreground: 0 0% 100%;
     --sidebar-primary: 39 90% 43%;
@@ -64,6 +43,26 @@
     --sidebar-accent-foreground: 0 0% 100%;
     --sidebar-border: 0 0% 100% / 0.1;
     --sidebar-ring: 39 90% 43%;
+
+    /* === Premium design tokens (hex) === */
+    --navy: #0A1929;
+    --navy-mid: #0F2A47;
+    --navy-light: #1A3A5C;
+    --blue: #1565C0;
+    --blue-light: #1E88E5;
+    --steel: #2979FF;
+    --gold: #FF8F00;
+    --gold-light: #FFB300;
+    --green: #00897B;
+    --green-light: #26A69A;
+    --red: #C62828;
+    --amber: #E65100;
+    --surface: #F0F4F8;
+    --card-bg: #FFFFFF;
+    --muted-text: #546E7A;
+    --border-color: #E0E7EF;
+    --text-primary: #0A1929;
+    --text-secondary: #546E7A;
   }
 }
 
@@ -73,10 +72,40 @@
   }
 
   body {
-    @apply bg-surface text-foreground font-sans;
+    @apply bg-background text-foreground font-sans;
   }
 
   h1, h2, h3, h4 {
     font-family: 'Sora', sans-serif;
   }
+}
+
+/* === Task 7 — Global premium styles === */
+button { transition: all 0.15s ease; }
+button:active { transform: scale(0.97); }
+
+.card-hover { transition: box-shadow 0.2s ease, transform 0.2s ease; }
+.card-hover:hover { box-shadow: 0 8px 24px rgba(0,0,0,0.1); transform: translateY(-2px); }
+
+.gradient-text {
+  background: linear-gradient(135deg, #1565C0, #FF8F00);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.main-content { background: #F0F4F8; min-height: 100vh; }
+
+input:focus, textarea:focus, select:focus {
+  outline: none;
+  border-color: #1565C0;
+  box-shadow: 0 0 0 3px rgba(21,101,192,0.1);
+}
+
+.status-badge {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  padding: 3px 10px;
+  border-radius: 20px;
 }

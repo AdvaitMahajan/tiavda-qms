@@ -1,20 +1,14 @@
-import { useState, useMemo, useCallback, useEffect } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { useAuth } from "@/hooks/useAuth";
 import { formatCurrency, relativeTime } from "@/lib/utils";
-import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Textarea } from "@/components/ui/textarea";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
-import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
-} from "@/components/ui/dialog";
 import {
   Popover, PopoverContent, PopoverTrigger,
 } from "@/components/ui/popover";
@@ -116,7 +110,7 @@ function useEnquiries() {
 }
 
 function FollowUpCell({ date }: { date: string | null }) {
-  if (!date) return <span className="text-muted-foreground">—</span>;
+  if (!date) return <span style={{ color: "#546E7A" }}>—</span>;
   const d = new Date(date);
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -124,7 +118,7 @@ function FollowUpCell({ date }: { date: string | null }) {
   const isToday = d.toDateString() === today.toDateString();
 
   return (
-    <span className={isOverdue ? "text-red-600 font-medium" : isToday ? "text-amber-600 font-medium" : "text-muted-foreground"}>
+    <span style={{ color: isOverdue ? "#C62828" : isToday ? "#E65100" : "#546E7A", fontWeight: isOverdue || isToday ? 500 : 400 }}>
       {isOverdue && <span className="inline-block w-2 h-2 rounded-full bg-red-500 animate-pulse mr-1.5 align-middle" />}
       {d.toLocaleDateString("en-GB", { day: "numeric", month: "short" })}
     </span>
@@ -182,7 +176,6 @@ export default function Enquiries() {
     return result;
   }, [rows, search, statusFilter]);
 
-  // Realtime subscription
   const queryClient = useQueryClient();
   useEffect(() => {
     const channel = supabase
@@ -194,47 +187,83 @@ export default function Enquiries() {
     return () => { supabase.removeChannel(channel); };
   }, [queryClient]);
 
+  const totalCount = rows?.length ?? 0;
+
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <h1 className="font-sora text-2xl font-bold text-foreground">Enquiries</h1>
-        <div className="flex items-center gap-2">
+    <div className="min-h-screen" style={{ background: "#F0F4F8" }}>
+      {/* Header card */}
+      <div
+        style={{
+          background: "#FFFFFF",
+          borderRadius: "16px",
+          padding: "20px 24px",
+          border: "1px solid #E0E7EF",
+          boxShadow: "0 2px 8px rgba(0,0,0,0.06)",
+          marginBottom: "24px",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          flexWrap: "wrap",
+          gap: "16px",
+        }}
+      >
+        <div>
+          <h1 className="font-bold" style={{ fontFamily: "Sora, sans-serif", fontSize: "24px", color: "#0A1929" }}>
+            Enquiries
+          </h1>
+          <p className="text-sm mt-0.5" style={{ color: "#546E7A" }}>
+            {isLoading ? "Loading…" : `${totalCount} total enquiries`}
+          </p>
+        </div>
+        <div className="flex items-center gap-2 flex-wrap">
           <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Search
+              className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4"
+              style={{ color: "#546E7A" }}
+            />
             <Input
               placeholder="Search ref, client, city…"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="pl-9 w-56"
+              style={{ borderColor: "#E0E7EF", fontSize: "13px" }}
             />
           </div>
 
           <StatusFilterPopover selected={statusFilter} onChange={setStatusFilter} />
 
           {view === "list" && (
-            <Button variant="outline" size="sm" onClick={() => exportCSV(filtered)}>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => exportCSV(filtered)}
+              style={{ borderColor: "#E0E7EF", color: "#546E7A", fontSize: "13px" }}
+            >
               <Download className="h-4 w-4 mr-1" /> CSV
             </Button>
           )}
 
-          <div className="flex border rounded-md overflow-hidden">
-            <Button
-              variant={view === "list" ? "default" : "ghost"}
-              size="icon"
-              className="rounded-none h-9 w-9"
+          <div className="flex rounded-xl overflow-hidden" style={{ border: "1px solid #E0E7EF" }}>
+            <button
+              className="flex items-center justify-center h-9 w-9 transition-all"
+              style={{
+                background: view === "list" ? "linear-gradient(135deg,#1565C0,#2979FF)" : "transparent",
+                color: view === "list" ? "white" : "#546E7A",
+              }}
               onClick={() => setView("list")}
             >
               <List className="h-4 w-4" />
-            </Button>
-            <Button
-              variant={view === "board" ? "default" : "ghost"}
-              size="icon"
-              className="rounded-none h-9 w-9"
+            </button>
+            <button
+              className="flex items-center justify-center h-9 w-9 transition-all"
+              style={{
+                background: view === "board" ? "linear-gradient(135deg,#1565C0,#2979FF)" : "transparent",
+                color: view === "board" ? "white" : "#546E7A",
+              }}
               onClick={() => setView("board")}
             >
               <LayoutGrid className="h-4 w-4" />
-            </Button>
+            </button>
           </div>
         </div>
       </div>
@@ -256,10 +285,18 @@ function StatusFilterPopover({ selected, onChange }: { selected: LeadStatus[]; o
   return (
     <Popover>
       <PopoverTrigger asChild>
-        <Button variant="outline" size="sm" className="relative">
+        <Button
+          variant="outline"
+          size="sm"
+          className="relative"
+          style={{ borderColor: "#E0E7EF", color: "#546E7A", fontSize: "13px" }}
+        >
           <Filter className="h-4 w-4 mr-1" /> Status
           {selected.length > 0 && (
-            <span className="absolute -top-1.5 -right-1.5 bg-primary text-primary-foreground text-[10px] rounded-full w-4 h-4 flex items-center justify-center">
+            <span
+              className="absolute -top-1.5 -right-1.5 text-white text-[10px] rounded-full w-4 h-4 flex items-center justify-center"
+              style={{ background: "linear-gradient(135deg,#1565C0,#2979FF)" }}
+            >
               {selected.length}
             </span>
           )}
@@ -286,7 +323,15 @@ function StatusFilterPopover({ selected, onChange }: { selected: LeadStatus[]; o
 function EnquiryListView({ rows, isLoading, onRowClick }: { rows: EnquiryRow[]; isLoading: boolean; onRowClick: (id: string) => void }) {
   if (isLoading) {
     return (
-      <div className="border rounded-lg overflow-hidden">
+      <div
+        style={{
+          background: "#FFFFFF",
+          borderRadius: "16px",
+          boxShadow: "0 2px 8px rgba(0,0,0,0.06)",
+          border: "1px solid #E0E7EF",
+          overflow: "hidden",
+        }}
+      >
         {Array.from({ length: 8 }).map((_, i) => <SkeletonRow key={i} />)}
       </div>
     );
@@ -303,39 +348,54 @@ function EnquiryListView({ rows, isLoading, onRowClick }: { rows: EnquiryRow[]; 
   }
 
   return (
-    <div className="border rounded-lg overflow-hidden">
+    <div
+      style={{
+        background: "#FFFFFF",
+        borderRadius: "16px",
+        boxShadow: "0 2px 8px rgba(0,0,0,0.06)",
+        border: "1px solid #E0E7EF",
+        overflow: "hidden",
+      }}
+    >
       <Table>
         <TableHeader>
-          <TableRow>
-            <TableHead>Ref#</TableHead>
-            <TableHead>Client</TableHead>
-            <TableHead>City</TableHead>
-            <TableHead>Status</TableHead>
-            <TableHead className="text-right">Quote</TableHead>
-            <TableHead>Follow-up</TableHead>
-            <TableHead>Created</TableHead>
+          <TableRow style={{ background: "#F8FAFC" }}>
+            <TableHead style={{ fontSize: "10px", color: "#546E7A", textTransform: "uppercase", letterSpacing: "0.08em", fontWeight: 600 }}>Ref#</TableHead>
+            <TableHead style={{ fontSize: "10px", color: "#546E7A", textTransform: "uppercase", letterSpacing: "0.08em", fontWeight: 600 }}>Client</TableHead>
+            <TableHead style={{ fontSize: "10px", color: "#546E7A", textTransform: "uppercase", letterSpacing: "0.08em", fontWeight: 600 }}>City</TableHead>
+            <TableHead style={{ fontSize: "10px", color: "#546E7A", textTransform: "uppercase", letterSpacing: "0.08em", fontWeight: 600 }}>Status</TableHead>
+            <TableHead className="text-right" style={{ fontSize: "10px", color: "#546E7A", textTransform: "uppercase", letterSpacing: "0.08em", fontWeight: 600 }}>Quote</TableHead>
+            <TableHead style={{ fontSize: "10px", color: "#546E7A", textTransform: "uppercase", letterSpacing: "0.08em", fontWeight: 600 }}>Follow-up</TableHead>
+            <TableHead style={{ fontSize: "10px", color: "#546E7A", textTransform: "uppercase", letterSpacing: "0.08em", fontWeight: 600 }}>Created</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
           {rows.map((r) => (
-            <TableRow key={r.id} className="cursor-pointer hover:bg-[#F8FAFC] transition-colors duration-100" onClick={() => onRowClick(r.id)}>
-              <TableCell className="font-mono text-[#0F2A47] font-medium">{r.ref_number}</TableCell>
-              <TableCell className="font-semibold">{r.client_name}</TableCell>
-              <TableCell>{r.site_city}</TableCell>
+            <TableRow
+              key={r.id}
+              className="cursor-pointer transition-colors duration-100"
+              style={{ borderBottom: "1px solid #F0F4F8" }}
+              onClick={() => onRowClick(r.id)}
+              onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = "#F8FAFC"; }}
+              onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = "transparent"; }}
+            >
+              <TableCell className="font-mono font-medium" style={{ color: "#0A1929" }}>{r.ref_number}</TableCell>
+              <TableCell className="font-semibold" style={{ color: "#0A1929" }}>{r.client_name}</TableCell>
+              <TableCell style={{ color: "#546E7A" }}>{r.site_city}</TableCell>
               <TableCell>
                 <StatusBadge status={r.status} />
               </TableCell>
               <TableCell className="text-right">
                 {r.quote_amount ? (
-                  <span className="font-medium">{formatCurrency(Number(r.quote_amount))}</span>
+                  <span className="font-medium" style={{ color: "#0A1929" }}>{formatCurrency(Number(r.quote_amount))}</span>
                 ) : (
-                  <span className="text-muted-foreground">—</span>
+                  <span style={{ color: "#546E7A" }}>—</span>
                 )}
               </TableCell>
               <TableCell>
                 <FollowUpCell date={r.next_follow_up} />
               </TableCell>
-              <TableCell className="text-muted-foreground text-sm">{relativeTime(r.created_at)}</TableCell>
+              <TableCell className="text-sm" style={{ color: "#546E7A" }}>{relativeTime(r.created_at)}</TableCell>
             </TableRow>
           ))}
         </TableBody>

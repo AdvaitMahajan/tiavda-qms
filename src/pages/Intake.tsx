@@ -3,13 +3,11 @@ import { useSearchParams, useNavigate } from "react-router-dom";
 import { PUBLIC_SUPABASE_CLIENT_NAME, supabasePublic } from "@/integrations/supabase/publicClient";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import { cn } from "@/lib/utils";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Home, Building2, Factory, Landmark, CheckCircle, AlertTriangle,
-  Minus, Plus, Loader2, ArrowLeft
+  Minus, Plus, Loader2, ArrowLeft,
 } from "lucide-react";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 
@@ -55,14 +53,12 @@ const initialForm: FormData = {
 
 async function getPublicClientDebugContext() {
   const { data, error } = await supabasePublic.auth.getSession();
-
   if (error) {
     console.warn("[Intake] Unable to inspect public client session state", {
       client: PUBLIC_SUPABASE_CLIENT_NAME,
       error: error.message,
     });
   }
-
   return {
     client: PUBLIC_SUPABASE_CLIENT_NAME,
     hasSession: Boolean(data.session),
@@ -73,13 +69,29 @@ async function getPublicClientDebugContext() {
 function Stepper({ value, onChange, min, max }: { value: number; onChange: (v: number) => void; min: number; max: number }) {
   return (
     <div className="flex items-center gap-3">
-      <button type="button" onClick={() => onChange(Math.max(min, value - 1))}
-        className="flex h-9 w-9 items-center justify-center rounded-lg border border-border bg-card text-foreground hover:bg-muted/20 disabled:opacity-40"
-        disabled={value <= min}><Minus className="h-4 w-4" /></button>
-      <span className="w-10 text-center font-mono text-lg font-semibold">{value}</span>
-      <button type="button" onClick={() => onChange(Math.min(max, value + 1))}
-        className="flex h-9 w-9 items-center justify-center rounded-lg border border-border bg-card text-foreground hover:bg-muted/20 disabled:opacity-40"
-        disabled={value >= max}><Plus className="h-4 w-4" /></button>
+      <button
+        type="button"
+        onClick={() => onChange(Math.max(min, value - 1))}
+        disabled={value <= min}
+        className="flex h-9 w-9 items-center justify-center rounded-xl transition-all disabled:opacity-40"
+        style={{ border: "1.5px solid #E0E7EF", background: "#FAFBFC" }}
+        onMouseEnter={(e) => { if (value > min) (e.currentTarget as HTMLElement).style.background = "#F0F4F8"; }}
+        onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = "#FAFBFC"; }}
+      >
+        <Minus className="h-4 w-4" style={{ color: "#546E7A" }} />
+      </button>
+      <span className="w-10 text-center font-mono text-lg font-semibold" style={{ color: "#0A1929" }}>{value}</span>
+      <button
+        type="button"
+        onClick={() => onChange(Math.min(max, value + 1))}
+        disabled={value >= max}
+        className="flex h-9 w-9 items-center justify-center rounded-xl transition-all disabled:opacity-40"
+        style={{ border: "1.5px solid #E0E7EF", background: "#FAFBFC" }}
+        onMouseEnter={(e) => { if (value < max) (e.currentTarget as HTMLElement).style.background = "#F0F4F8"; }}
+        onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = "#FAFBFC"; }}
+      >
+        <Plus className="h-4 w-4" style={{ color: "#546E7A" }} />
+      </button>
     </div>
   );
 }
@@ -87,17 +99,35 @@ function Stepper({ value, onChange, min, max }: { value: number; onChange: (v: n
 function ProgressIndicator({ current, completed }: { current: number; completed: number[] }) {
   return (
     <div className="flex items-center justify-center gap-0 mb-8">
-      {[1, 2, 3].map((s, i) => (
-        <div key={s} className="flex items-center">
-          <div className={cn(
-            "flex h-9 w-9 items-center justify-center rounded-full text-sm font-semibold transition-colors",
-            s === current && "bg-navy text-white",
-            completed.includes(s) && s !== current && "bg-green text-white",
-            !completed.includes(s) && s !== current && "border-2 border-border text-muted-foreground bg-card"
-          )}>{completed.includes(s) && s !== current ? "✓" : s}</div>
-          {i < 2 && <div className={cn("h-0.5 w-12 sm:w-20", completed.includes(s) ? "bg-green" : "bg-border")} />}
-        </div>
-      ))}
+      {[1, 2, 3].map((s, i) => {
+        const isActive = s === current;
+        const isComplete = completed.includes(s) && s !== current;
+        return (
+          <div key={s} className="flex items-center">
+            <div
+              className="flex h-10 w-10 items-center justify-center rounded-full text-sm font-semibold transition-all"
+              style={{
+                background: isActive
+                  ? "linear-gradient(135deg,#1565C0,#2979FF)"
+                  : isComplete
+                  ? "linear-gradient(135deg,#00897B,#26A69A)"
+                  : "#FFFFFF",
+                color: isActive || isComplete ? "white" : "#546E7A",
+                border: isActive || isComplete ? "none" : "2px solid #E0E7EF",
+                boxShadow: isActive ? "0 4px 16px rgba(21,101,192,0.35)" : isComplete ? "0 4px 12px rgba(0,137,123,0.25)" : "none",
+              }}
+            >
+              {isComplete ? <CheckCircle style={{ width: "16px", height: "16px" }} /> : s}
+            </div>
+            {i < 2 && (
+              <div
+                className="h-0.5 w-14 sm:w-20 transition-all"
+                style={{ background: completed.includes(s) ? "#00897B" : "#E0E7EF" }}
+              />
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -105,14 +135,22 @@ function ProgressIndicator({ current, completed }: { current: number; completed:
 function ErrorCard({ title, message }: { title: string; message: string }) {
   return (
     <div className="flex min-h-screen flex-col">
-      <div className="bg-navy px-6 py-6">
-        <h1 className="font-sora text-xl font-bold text-white">Tiavda Enterprises</h1>
+      <div
+        style={{ background: "linear-gradient(135deg,#0A1929,#1565C0)", padding: "20px 24px" }}
+      >
+        <h1 className="font-bold text-xl text-white" style={{ fontFamily: "Sora, sans-serif" }}>
+          Tiavda Enterprises
+        </h1>
+        <p className="text-sm" style={{ color: "rgba(255,255,255,0.6)" }}>Project Information Form</p>
       </div>
-      <div className="flex flex-1 items-center justify-center bg-surface p-6">
-        <div className="w-full max-w-md rounded-xl border border-border bg-card p-8 text-center shadow-lg">
-          <AlertTriangle className="mx-auto mb-4 h-12 w-12 text-amber" />
-          <h2 className="mb-2 font-sora text-xl font-bold text-navy">{title}</h2>
-          <p className="text-sm text-muted-foreground">{message}</p>
+      <div className="flex flex-1 items-center justify-center p-6" style={{ background: "#F0F4F8" }}>
+        <div
+          className="w-full max-w-md text-center"
+          style={{ background: "#FFFFFF", borderRadius: "20px", padding: "40px", boxShadow: "0 8px 32px rgba(0,0,0,0.1)", border: "1px solid #E0E7EF" }}
+        >
+          <AlertTriangle className="mx-auto mb-4 h-12 w-12" style={{ color: "#E65100" }} />
+          <h2 className="mb-2 font-bold text-xl" style={{ fontFamily: "Sora, sans-serif", color: "#0A1929" }}>{title}</h2>
+          <p className="text-sm" style={{ color: "#546E7A" }}>{message}</p>
         </div>
       </div>
     </div>
@@ -137,7 +175,6 @@ export default function Intake() {
   const [submittedEnquiryId, setSubmittedEnquiryId] = useState<string | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
 
-  // Check if the current browser session is an authenticated admin (Task 9)
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
       setIsAdmin(!!data.session);
@@ -229,22 +266,13 @@ export default function Intake() {
 
       const result = Array.isArray(data) ? data[0] : data;
 
-      if (!result) {
-        throw new Error("Submission failed. Please try again.");
-      }
-
-      if (result.error) {
-        throw new Error(result.error);
-      }
-
-      if (!result.ref_number) {
-        throw new Error("Submission succeeded but no reference number was returned.");
-      }
+      if (!result) throw new Error("Submission failed. Please try again.");
+      if (result.error) throw new Error(result.error);
+      if (!result.ref_number) throw new Error("Submission succeeded but no reference number was returned.");
 
       setRefNumber(result.ref_number);
       if (result.enquiry_id) setSubmittedEnquiryId(result.enquiry_id);
 
-      // Fire-and-forget: notify admin of new intake
       supabase.rpc("notify_admin_intake", {
         p_enquiry_id: result.enquiry_id ?? "",
         p_ref_number: result.ref_number,
@@ -260,36 +288,75 @@ export default function Intake() {
     }
   };
 
-  if (loading) return <div className="flex min-h-screen items-center justify-center bg-surface"><Loader2 className="h-8 w-8 animate-spin text-navy" /></div>;
+  if (loading) return (
+    <div className="flex min-h-screen items-center justify-center" style={{ background: "#F0F4F8" }}>
+      <Loader2 className="h-8 w-8 animate-spin" style={{ color: "#1565C0" }} />
+    </div>
+  );
   if (tokenError === "invalid") return <ErrorCard title="Invalid Link" message="This link is invalid. Please contact Tiavda Enterprises at +91 8605811117." />;
   if (tokenError === "used") return <ErrorCard title="Already Submitted" message="This form has already been submitted. Thank you!" />;
   if (tokenError === "expired") return <ErrorCard title="Link Expired" message="This link has expired. Please contact Tiavda Enterprises at +91 8605811117." />;
 
+  // ── Success screen ──
   if (submitted) {
     return (
       <div className="flex min-h-screen flex-col">
-        <div className="bg-navy px-6 py-6">
-          <h1 className="font-sora text-xl font-bold text-white">Tiavda Enterprises</h1>
+        {/* Header band */}
+        <div style={{ background: "linear-gradient(135deg,#0A1929,#1565C0)", padding: "20px 24px" }}>
+          <h1 className="font-bold text-xl text-white" style={{ fontFamily: "Sora, sans-serif" }}>Tiavda Enterprises</h1>
+          <p className="text-sm" style={{ color: "rgba(255,255,255,0.6)" }}>Project Information Form</p>
         </div>
-        <div className="flex flex-1 items-center justify-center bg-surface p-6">
-          <div className="w-full max-w-md rounded-xl border border-border bg-card p-8 text-center shadow-lg">
-            <CheckCircle className="mx-auto mb-4 h-16 w-16 text-green-600" />
-            <h2 className="mb-2 font-sora text-2xl font-bold text-[#0F2A47]">Submitted Successfully!</h2>
-            <p className="mb-1 text-sm text-[#64748B]">Your Reference Number:</p>
-            <p className="font-mono text-2xl font-bold text-[#0F2A47]">{refNumber}</p>
-            <p className="mt-4 text-sm text-[#64748B]">Our team will contact you shortly.</p>
+        <div
+          className="flex flex-1 items-center justify-center p-6"
+          style={{ background: "linear-gradient(135deg,#F0F4F8 0%,#E8EEF5 100%)" }}
+        >
+          <div
+            className="w-full max-w-md text-center"
+            style={{ background: "#FFFFFF", borderRadius: "20px", padding: "48px", boxShadow: "0 8px 40px rgba(0,0,0,0.1)", border: "1px solid #E0E7EF" }}
+          >
+            {/* Success icon */}
+            <div className="flex justify-center mb-6">
+              <div
+                className="flex items-center justify-center rounded-full"
+                style={{
+                  width: "72px",
+                  height: "72px",
+                  background: "linear-gradient(135deg,#00897B,#26A69A)",
+                  boxShadow: "0 8px 24px rgba(0,137,123,0.35)",
+                }}
+              >
+                <CheckCircle style={{ width: "36px", height: "36px", color: "white" }} />
+              </div>
+            </div>
+            <h2 className="mb-2 font-bold text-2xl" style={{ fontFamily: "Sora, sans-serif", color: "#0A1929" }}>
+              Submitted Successfully!
+            </h2>
+            <p className="mb-1 text-sm" style={{ color: "#546E7A" }}>Your Reference Number:</p>
+            <p
+              className="text-3xl font-bold gradient-text"
+              style={{ fontFamily: "JetBrains Mono, monospace" }}
+            >
+              {refNumber}
+            </p>
+            <p className="mt-4 text-sm" style={{ color: "#546E7A" }}>Our team will contact you shortly.</p>
             {isAdmin && (
-              <div className="mt-6 flex gap-3 justify-center">
+              <div className="mt-6 flex gap-3 justify-center flex-wrap">
                 <button
                   onClick={() => navigate("/dashboard")}
-                  className="px-4 py-2 bg-[#0F2A47] text-white text-sm font-medium rounded-lg hover:opacity-90 transition-opacity active:scale-95"
+                  className="px-4 py-2.5 rounded-xl text-sm font-semibold transition-all"
+                  style={{ background: "linear-gradient(135deg,#0A1929,#1565C0)", color: "white", boxShadow: "0 4px 12px rgba(10,25,41,0.3)" }}
+                  onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.transform = "translateY(-1px)"; }}
+                  onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.transform = "translateY(0)"; }}
                 >
                   Go to Dashboard
                 </button>
                 {submittedEnquiryId && (
                   <button
                     onClick={() => navigate("/enquiries/" + submittedEnquiryId)}
-                    className="px-4 py-2 border border-[#1B5EA0] text-[#1B5EA0] text-sm font-medium rounded-lg hover:bg-blue-50 transition-colors active:scale-95"
+                    className="px-4 py-2.5 rounded-xl text-sm font-semibold transition-all"
+                    style={{ border: "1.5px solid #1565C0", color: "#1565C0", background: "transparent" }}
+                    onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = "#EBF2FF"; }}
+                    onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = "transparent"; }}
                   >
                     View Enquiry
                   </button>
@@ -311,111 +378,314 @@ export default function Intake() {
 
   return (
     <div className="flex min-h-screen flex-col">
-      {/* Admin mode banner (Task 9) */}
+      {/* Admin mode banner */}
       {isAdmin && (
-        <div className="bg-white border-b border-[#CBD5E1] px-6 py-3 flex items-center gap-3">
+        <div className="bg-white border-b px-6 py-3 flex items-center gap-3" style={{ borderBottomColor: "#E0E7EF" }}>
           <button
             onClick={() => navigate(-1)}
-            className="flex items-center gap-2 text-sm text-[#64748B] hover:text-[#0F2A47] transition-colors"
+            className="flex items-center gap-2 text-sm transition-colors"
+            style={{ color: "#546E7A" }}
+            onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.color = "#0A1929"; }}
+            onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.color = "#546E7A"; }}
           >
             <ArrowLeft className="w-4 h-4" /> Back
           </button>
-          <span className="text-sm text-[#64748B]">Filling form on behalf of client</span>
-          <span className="ml-auto text-xs bg-amber-100 text-amber-700 px-2 py-1 rounded-full">Admin Mode</span>
+          <span className="text-sm" style={{ color: "#546E7A" }}>Filling form on behalf of client</span>
+          <span
+            className="ml-auto text-xs px-2 py-1 rounded-full"
+            style={{ background: "#FFF3E0", color: "#E65100" }}
+          >
+            Admin Mode
+          </span>
         </div>
       )}
-      <div className="bg-navy px-6 py-6">
-        <h1 className="font-sora text-xl font-bold text-white">Tiavda Enterprises</h1>
-        <p className="text-sm text-white/60">Project Information Form</p>
+
+      {/* Header band */}
+      <div style={{ background: "linear-gradient(135deg,#0A1929,#1565C0)", padding: "20px 24px" }}>
+        <h1 className="font-bold text-xl text-white" style={{ fontFamily: "Sora, sans-serif" }}>
+          Tiavda Enterprises
+        </h1>
+        <p className="text-sm" style={{ color: "rgba(255,255,255,0.6)" }}>Project Information Form</p>
       </div>
-      <div className="flex flex-1 justify-center bg-surface p-4 sm:p-8">
-        <div className="w-full max-w-2xl">
+
+      {/* Main content */}
+      <div
+        className="flex flex-1 justify-center p-4 sm:p-8"
+        style={{ background: "linear-gradient(135deg,#F0F4F8 0%,#E8EEF5 100%)" }}
+      >
+        <div className="w-full" style={{ maxWidth: "680px" }}>
           <ProgressIndicator current={step} completed={completedSteps} />
-          <div className="overflow-hidden rounded-xl border border-border bg-card p-6 shadow-sm">
+
+          {/* Form card */}
+          <div
+            style={{
+              background: "#FFFFFF",
+              borderRadius: "20px",
+              padding: "32px",
+              boxShadow: "0 4px 24px rgba(0,0,0,0.08)",
+              border: "1px solid #E0E7EF",
+            }}
+          >
             <AnimatePresence mode="wait" custom={direction}>
-              <motion.div key={step} custom={direction} variants={slideVariants} initial="enter" animate="center" exit="exit" transition={{ duration: 0.25 }}>
+              <motion.div
+                key={step}
+                custom={direction}
+                variants={slideVariants}
+                initial="enter"
+                animate="center"
+                exit="exit"
+                transition={{ duration: 0.25 }}
+              >
                 {step === 1 && (
                   <div className="space-y-5">
-                    <h2 className="font-sora text-lg font-semibold text-navy">Site Details</h2>
+                    <h2 className="font-bold text-xl" style={{ fontFamily: "Sora, sans-serif", color: "#0A1929" }}>
+                      Site Details
+                    </h2>
                     <div>
-                      <label className="mb-1.5 block text-sm font-medium">Site Address <span className="text-destructive">*</span></label>
-                      <Textarea placeholder="Full site address including landmark" value={form.site_address} onChange={(e) => updateForm({ site_address: e.target.value })} rows={3} />
-                      {errors.site_address && <p className="mt-1 text-xs text-destructive">{errors.site_address}</p>}
+                      <label className="mb-1.5 block" style={{ fontSize: "11px", fontWeight: 600, color: "#546E7A", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                        Site Address <span style={{ color: "#C62828" }}>*</span>
+                      </label>
+                      <Textarea
+                        placeholder="Full site address including landmark"
+                        value={form.site_address}
+                        onChange={(e) => updateForm({ site_address: e.target.value })}
+                        rows={3}
+                        style={{ borderColor: "#E0E7EF", borderRadius: "10px" }}
+                      />
+                      {errors.site_address && <p className="mt-1 text-xs" style={{ color: "#C62828" }}>{errors.site_address}</p>}
                     </div>
                     <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
                       <div>
-                        <label className="mb-1.5 block text-sm font-medium">City <span className="text-destructive">*</span></label>
-                        <Input value={form.site_city} onChange={(e) => updateForm({ site_city: e.target.value })} />
-                        {errors.site_city && <p className="mt-1 text-xs text-destructive">{errors.site_city}</p>}
+                        <label className="mb-1.5 block" style={{ fontSize: "11px", fontWeight: 600, color: "#546E7A", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                          City <span style={{ color: "#C62828" }}>*</span>
+                        </label>
+                        <Input value={form.site_city} onChange={(e) => updateForm({ site_city: e.target.value })} style={{ borderColor: "#E0E7EF", borderRadius: "10px" }} />
+                        {errors.site_city && <p className="mt-1 text-xs" style={{ color: "#C62828" }}>{errors.site_city}</p>}
                       </div>
                       <div>
-                        <label className="mb-1.5 block text-sm font-medium">State</label>
-                        <Input value={form.site_state} onChange={(e) => updateForm({ site_state: e.target.value })} />
+                        <label className="mb-1.5 block" style={{ fontSize: "11px", fontWeight: 600, color: "#546E7A", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                          State
+                        </label>
+                        <Input value={form.site_state} onChange={(e) => updateForm({ site_state: e.target.value })} style={{ borderColor: "#E0E7EF", borderRadius: "10px" }} />
                       </div>
                       <div>
-                        <label className="mb-1.5 block text-sm font-medium">Pincode</label>
-                        <Input value={form.site_pincode} onChange={(e) => updateForm({ site_pincode: e.target.value.replace(/\D/g, "").slice(0, 6) })} inputMode="numeric" />
-                        {errors.site_pincode && <p className="mt-1 text-xs text-destructive">{errors.site_pincode}</p>}
+                        <label className="mb-1.5 block" style={{ fontSize: "11px", fontWeight: 600, color: "#546E7A", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                          Pincode
+                        </label>
+                        <Input
+                          value={form.site_pincode}
+                          onChange={(e) => updateForm({ site_pincode: e.target.value.replace(/\D/g, "").slice(0, 6) })}
+                          inputMode="numeric"
+                          style={{ borderColor: "#E0E7EF", borderRadius: "10px" }}
+                        />
+                        {errors.site_pincode && <p className="mt-1 text-xs" style={{ color: "#C62828" }}>{errors.site_pincode}</p>}
                       </div>
                     </div>
                   </div>
                 )}
+
                 {step === 2 && (
                   <div className="space-y-5">
-                    <h2 className="font-sora text-lg font-semibold text-navy">Project Details</h2>
+                    <h2 className="font-bold text-xl" style={{ fontFamily: "Sora, sans-serif", color: "#0A1929" }}>
+                      Project Details
+                    </h2>
                     <div>
-                      <label className="mb-2 block text-sm font-medium">Structure Type <span className="text-destructive">*</span></label>
+                      <label className="mb-2 block" style={{ fontSize: "11px", fontWeight: 600, color: "#546E7A", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                        Structure Type <span style={{ color: "#C62828" }}>*</span>
+                      </label>
                       <div className="grid grid-cols-2 gap-3">
-                        {STRUCTURE_TYPES.map(({ value, label, icon: Icon }) => (
-                          <button key={value} type="button" onClick={() => updateForm({ structure_type: value })}
-                            className={cn("flex flex-col items-center gap-2 rounded-xl border-2 p-4 transition-all",
-                              form.structure_type === value ? "border-navy bg-navy/5" : "border-border bg-card hover:border-navy/40")}>
-                            <Icon className={cn("h-7 w-7", form.structure_type === value ? "text-navy" : "text-muted-foreground")} />
-                            <span className={cn("text-sm font-medium", form.structure_type === value ? "text-navy" : "text-foreground")}>{label}</span>
-                          </button>
-                        ))}
+                        {STRUCTURE_TYPES.map(({ value, label, icon: Icon }) => {
+                          const isSelected = form.structure_type === value;
+                          return (
+                            <button
+                              key={value}
+                              type="button"
+                              onClick={() => updateForm({ structure_type: value })}
+                              className="flex flex-col items-center gap-2 rounded-2xl p-4 transition-all relative"
+                              style={{
+                                border: isSelected ? "2px solid #1565C0" : "2px solid #E0E7EF",
+                                background: isSelected ? "#EBF2FF" : "#FFFFFF",
+                              }}
+                              onMouseEnter={(e) => {
+                                if (!isSelected) {
+                                  (e.currentTarget as HTMLElement).style.borderColor = "#1565C0";
+                                  (e.currentTarget as HTMLElement).style.background = "#F0F6FF";
+                                }
+                              }}
+                              onMouseLeave={(e) => {
+                                if (!isSelected) {
+                                  (e.currentTarget as HTMLElement).style.borderColor = "#E0E7EF";
+                                  (e.currentTarget as HTMLElement).style.background = "#FFFFFF";
+                                }
+                              }}
+                            >
+                              {isSelected && (
+                                <span
+                                  className="absolute top-2 right-2 flex items-center justify-center rounded-full w-5 h-5"
+                                  style={{ background: "#1565C0" }}
+                                >
+                                  <CheckCircle style={{ width: "12px", height: "12px", color: "white" }} />
+                                </span>
+                              )}
+                              <Icon
+                                className="h-7 w-7"
+                                style={{ color: isSelected ? "#1565C0" : "#546E7A" }}
+                              />
+                              <span
+                                className="text-sm font-medium"
+                                style={{ color: isSelected ? "#1565C0" : "#0A1929" }}
+                              >
+                                {label}
+                              </span>
+                            </button>
+                          );
+                        })}
                       </div>
-                      {errors.structure_type && <p className="mt-1 text-xs text-destructive">{errors.structure_type}</p>}
+                      {errors.structure_type && <p className="mt-1 text-xs" style={{ color: "#C62828" }}>{errors.structure_type}</p>}
                     </div>
                     <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
-                      <div><label className="mb-2 block text-sm font-medium">Number of Bores <span className="text-destructive">*</span></label>
-                        <Stepper value={form.num_bores} onChange={(v) => updateForm({ num_bores: v })} min={1} max={100} /></div>
-                      <div><label className="mb-1.5 block text-sm font-medium">Expected Depth (metres)</label>
-                        <Input type="number" min={1} max={500} placeholder="e.g. 15" value={form.expected_depth_m} onChange={(e) => updateForm({ expected_depth_m: e.target.value })} /></div>
-                      <div><label className="mb-2 block text-sm font-medium">Floors above ground</label>
-                        <Stepper value={form.num_floors} onChange={(v) => updateForm({ num_floors: v })} min={0} max={50} /></div>
-                      <div><label className="mb-2 block text-sm font-medium">Basement floors</label>
-                        <Stepper value={form.basement_floors} onChange={(v) => updateForm({ basement_floors: v })} min={0} max={10} /></div>
+                      <div>
+                        <label className="mb-2 block" style={{ fontSize: "11px", fontWeight: 600, color: "#546E7A", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                          Number of Bores <span style={{ color: "#C62828" }}>*</span>
+                        </label>
+                        <Stepper value={form.num_bores} onChange={(v) => updateForm({ num_bores: v })} min={1} max={100} />
+                      </div>
+                      <div>
+                        <label className="mb-1.5 block" style={{ fontSize: "11px", fontWeight: 600, color: "#546E7A", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                          Expected Depth (metres)
+                        </label>
+                        <Input
+                          type="number"
+                          min={1}
+                          max={500}
+                          placeholder="e.g. 15"
+                          value={form.expected_depth_m}
+                          onChange={(e) => updateForm({ expected_depth_m: e.target.value })}
+                          style={{ borderColor: "#E0E7EF", borderRadius: "10px" }}
+                        />
+                      </div>
+                      <div>
+                        <label className="mb-2 block" style={{ fontSize: "11px", fontWeight: 600, color: "#546E7A", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                          Floors above ground
+                        </label>
+                        <Stepper value={form.num_floors} onChange={(v) => updateForm({ num_floors: v })} min={0} max={50} />
+                      </div>
+                      <div>
+                        <label className="mb-2 block" style={{ fontSize: "11px", fontWeight: 600, color: "#546E7A", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                          Basement floors
+                        </label>
+                        <Stepper value={form.basement_floors} onChange={(v) => updateForm({ basement_floors: v })} min={0} max={10} />
+                      </div>
                     </div>
                   </div>
                 )}
+
                 {step === 3 && (
                   <div className="space-y-5">
-                    <h2 className="font-sora text-lg font-semibold text-navy">Additional Information</h2>
+                    <h2 className="font-bold text-xl" style={{ fontFamily: "Sora, sans-serif", color: "#0A1929" }}>
+                      Additional Information
+                    </h2>
                     <div>
-                      <label className="mb-2 block text-sm font-medium">Soil Type (optional)</label>
+                      <label className="mb-2 block" style={{ fontSize: "11px", fontWeight: 600, color: "#546E7A", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                        Soil Type (optional)
+                      </label>
                       <div className="flex gap-2">
-                        {(["soil", "rock", "mixed"] as const).map((t) => (
-                          <button key={t} type="button" onClick={() => updateForm({ soil_type_hint: form.soil_type_hint === t ? "" : t })}
-                            className={cn("rounded-lg border px-5 py-2 text-sm font-medium capitalize transition-colors",
-                              form.soil_type_hint === t ? "border-navy bg-navy text-white" : "border-border bg-card text-foreground hover:border-navy/40")}>{t}</button>
-                        ))}
+                        {(["soil", "rock", "mixed"] as const).map((t) => {
+                          const isSelected = form.soil_type_hint === t;
+                          return (
+                            <button
+                              key={t}
+                              type="button"
+                              onClick={() => updateForm({ soil_type_hint: form.soil_type_hint === t ? "" : t })}
+                              className="rounded-xl px-5 py-2 text-sm font-medium capitalize transition-all"
+                              style={{
+                                border: isSelected ? "none" : "1.5px solid #E0E7EF",
+                                background: isSelected ? "linear-gradient(135deg,#0A1929,#1565C0)" : "#FFFFFF",
+                                color: isSelected ? "white" : "#0A1929",
+                              }}
+                              onMouseEnter={(e) => {
+                                if (!isSelected) {
+                                  (e.currentTarget as HTMLElement).style.borderColor = "#1565C0";
+                                  (e.currentTarget as HTMLElement).style.background = "#EBF2FF";
+                                }
+                              }}
+                              onMouseLeave={(e) => {
+                                if (!isSelected) {
+                                  (e.currentTarget as HTMLElement).style.borderColor = "#E0E7EF";
+                                  (e.currentTarget as HTMLElement).style.background = "#FFFFFF";
+                                }
+                              }}
+                            >
+                              {t}
+                            </button>
+                          );
+                        })}
                       </div>
                     </div>
                     <div>
-                      <label className="mb-1.5 block text-sm font-medium">Remarks</label>
-                      <Textarea placeholder="Any additional notes about the site or project" value={form.remarks} onChange={(e) => updateForm({ remarks: e.target.value })} rows={4} />
+                      <label className="mb-1.5 block" style={{ fontSize: "11px", fontWeight: 600, color: "#546E7A", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                        Remarks
+                      </label>
+                      <Textarea
+                        placeholder="Any additional notes about the site or project"
+                        value={form.remarks}
+                        onChange={(e) => updateForm({ remarks: e.target.value })}
+                        rows={4}
+                        style={{ borderColor: "#E0E7EF", borderRadius: "10px" }}
+                      />
                     </div>
-                    <Button onClick={handleSubmit} disabled={submitting} className="w-full bg-gold text-white font-medium hover:bg-gold/90">
-                      {submitting ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Submitting…</> : "Submit Project Information"}
-                    </Button>
+                    <button
+                      onClick={handleSubmit}
+                      disabled={submitting}
+                      className="w-full py-3 rounded-xl text-sm font-semibold transition-all disabled:opacity-60 flex items-center justify-center gap-2"
+                      style={{
+                        background: "linear-gradient(135deg,#FF8F00,#FFB300)",
+                        color: "white",
+                        boxShadow: "0 4px 16px rgba(255,143,0,0.35)",
+                      }}
+                      onMouseEnter={(e) => { if (!submitting) (e.currentTarget as HTMLElement).style.transform = "translateY(-1px)"; }}
+                      onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.transform = "translateY(0)"; }}
+                    >
+                      {submitting
+                        ? <><Loader2 className="h-4 w-4 animate-spin" />Submitting…</>
+                        : "Submit Project Information"
+                      }
+                    </button>
                   </div>
                 )}
               </motion.div>
             </AnimatePresence>
+
+            {/* Navigation buttons */}
             <div className="mt-6 flex justify-between">
-              {step > 1 ? <Button variant="outline" onClick={goBack}>Back</Button> : <div />}
-              {step < 3 && <Button onClick={goNext} className="bg-navy text-white hover:bg-navy/90 ml-auto">Next</Button>}
+              {step > 1 ? (
+                <button
+                  onClick={goBack}
+                  className="px-4 py-2 rounded-xl text-sm font-medium transition-all"
+                  style={{ border: "1.5px solid #E0E7EF", color: "#546E7A", background: "transparent" }}
+                  onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = "#F0F4F8"; }}
+                  onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = "transparent"; }}
+                >
+                  Back
+                </button>
+              ) : (
+                <div />
+              )}
+              {step < 3 && (
+                <button
+                  onClick={goNext}
+                  className="ml-auto px-6 py-2.5 rounded-xl text-sm font-semibold transition-all"
+                  style={{
+                    background: "linear-gradient(135deg,#1565C0,#2979FF)",
+                    color: "white",
+                    boxShadow: "0 4px 12px rgba(21,101,192,0.3)",
+                  }}
+                  onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.transform = "translateY(-1px)"; }}
+                  onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.transform = "translateY(0)"; }}
+                >
+                  Next
+                </button>
+              )}
             </div>
           </div>
         </div>

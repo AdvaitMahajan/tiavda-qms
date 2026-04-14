@@ -1,11 +1,10 @@
 import { useState, useEffect } from "react";
-import { useNavigate, useLocation } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { InputOTP, InputOTPGroup, InputOTPSlot } from "@/components/ui/input-otp";
+import { Loader2 } from "lucide-react";
 
 export default function Login() {
   const navigate = useNavigate();
@@ -14,8 +13,8 @@ export default function Login() {
   const [otp, setOtp] = useState("");
   const [step, setStep] = useState<"email" | "otp">("email");
   const [loading, setLoading] = useState(false);
+  const [emailFocused, setEmailFocused] = useState(false);
 
-  // Redirect to dashboard if already signed in (handles magic link redirects)
   useEffect(() => {
     if (!authLoading && user) {
       navigate("/dashboard", { replace: true });
@@ -55,43 +54,124 @@ export default function Login() {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-surface">
-      <div className="w-full max-w-md rounded-xl bg-card p-8 shadow-lg border border-border">
-        <h1 className="mb-1 text-center font-sora text-2xl font-bold text-[#0F2A47]">
-          Tiavda Enterprises
+    <div
+      className="flex min-h-screen items-center justify-center relative overflow-hidden"
+      style={{ background: "linear-gradient(135deg, #0A1929 0%, #0F2A47 50%, #1A3A5C 100%)" }}
+    >
+      {/* Decorative circles */}
+      <div
+        style={{
+          position: "absolute",
+          top: "-120px",
+          right: "-120px",
+          width: "400px",
+          height: "400px",
+          borderRadius: "50%",
+          background: "rgba(21,101,192,0.15)",
+          pointerEvents: "none",
+        }}
+      />
+      <div
+        style={{
+          position: "absolute",
+          bottom: "-80px",
+          left: "-80px",
+          width: "300px",
+          height: "300px",
+          borderRadius: "50%",
+          background: "rgba(255,143,0,0.08)",
+          pointerEvents: "none",
+        }}
+      />
+
+      {/* Card */}
+      <div
+        className="relative z-10 w-full"
+        style={{
+          maxWidth: "400px",
+          background: "#FFFFFF",
+          borderRadius: "24px",
+          padding: "48px",
+          boxShadow: "0 32px 80px rgba(0,0,0,0.35)",
+          margin: "24px",
+        }}
+      >
+        {/* Logo tile */}
+        <div className="flex justify-center mb-6">
+          <div
+            className="flex items-center justify-center rounded-2xl font-bold text-white text-xl"
+            style={{
+              width: "64px",
+              height: "64px",
+              background: "linear-gradient(135deg, #0A1929 0%, #1565C0 100%)",
+              boxShadow: "0 8px 24px rgba(21,101,192,0.4)",
+              fontFamily: "Sora, sans-serif",
+            }}
+          >
+            TQ
+          </div>
+        </div>
+
+        <h1
+          className="text-center font-bold text-2xl mb-1"
+          style={{ fontFamily: "Sora, sans-serif", color: "#0A1929" }}
+        >
+          Welcome back
         </h1>
-        <p className="mb-8 text-center text-sm text-muted">
-          Quotation Management System
+        <p className="text-center text-sm mb-8" style={{ color: "#546E7A" }}>
+          Sign in to Tiavda QMS
         </p>
 
         {step === "email" ? (
           <form onSubmit={handleSendOtp} className="space-y-4">
             <div>
-              <label className="mb-1.5 block text-sm font-medium text-foreground">
+              <label
+                className="mb-1.5 block"
+                style={{ fontSize: "11px", fontWeight: 600, color: "#546E7A", textTransform: "uppercase", letterSpacing: "0.05em" }}
+              >
                 Email address
               </label>
-              <Input
+              <input
                 type="email"
                 placeholder="you@company.com"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
+                onFocus={() => setEmailFocused(true)}
+                onBlur={() => setEmailFocused(false)}
                 required
+                className="w-full px-3.5 py-2.5 text-sm rounded-xl transition-all"
+                style={{
+                  border: emailFocused ? "1.5px solid #1565C0" : "1.5px solid #E0E7EF",
+                  background: emailFocused ? "#FAFBFF" : "#FAFBFC",
+                  color: "#0A1929",
+                  outline: "none",
+                  boxShadow: emailFocused ? "0 0 0 3px rgba(21,101,192,0.1)" : "none",
+                }}
               />
             </div>
-            <Button
+            <button
               type="submit"
               disabled={loading}
-              className="w-full rounded-lg bg-gold text-card font-medium hover:bg-gold/90"
+              className="w-full py-3 rounded-xl text-sm font-semibold transition-all disabled:opacity-60 flex items-center justify-center gap-2"
+              style={{
+                background: "linear-gradient(135deg,#1565C0,#2979FF)",
+                color: "white",
+                boxShadow: "0 4px 16px rgba(21,101,192,0.35)",
+                marginTop: "8px",
+              }}
+              onMouseEnter={(e) => { if (!loading) (e.currentTarget as HTMLElement).style.transform = "translateY(-1px)"; }}
+              onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.transform = "translateY(0)"; }}
             >
-              {loading ? "Sending…" : "Send OTP"}
-            </Button>
+              {loading ? <><Loader2 className="h-4 w-4 animate-spin" />Sending…</> : "Send OTP"}
+            </button>
           </form>
         ) : (
           <form onSubmit={handleVerify} className="space-y-4">
-            <p className="text-sm text-muted">
-              Enter the 6-digit code sent to <strong>{email}</strong>
+            <p className="text-sm text-center" style={{ color: "#546E7A" }}>
+              Enter the 8-digit code sent to{" "}
+              <strong style={{ color: "#0A1929" }}>{email}</strong>
             </p>
-            <div className="flex justify-center">
+            <div className="flex justify-center py-2">
               <InputOTP maxLength={8} value={otp} onChange={setOtp}>
                 <InputOTPGroup>
                   <InputOTPSlot index={0} />
@@ -105,17 +185,27 @@ export default function Login() {
                 </InputOTPGroup>
               </InputOTP>
             </div>
-            <Button
+            <button
               type="submit"
               disabled={loading || otp.length !== 8}
-              className="w-full rounded-lg bg-gold text-card font-medium hover:bg-gold/90"
+              className="w-full py-3 rounded-xl text-sm font-semibold transition-all disabled:opacity-60 flex items-center justify-center gap-2"
+              style={{
+                background: "linear-gradient(135deg,#00897B,#26A69A)",
+                color: "white",
+                boxShadow: "0 4px 16px rgba(0,137,123,0.35)",
+              }}
+              onMouseEnter={(e) => { if (!loading && otp.length === 8) (e.currentTarget as HTMLElement).style.transform = "translateY(-1px)"; }}
+              onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.transform = "translateY(0)"; }}
             >
-              {loading ? "Verifying…" : "Verify & Enter"}
-            </Button>
+              {loading ? <><Loader2 className="h-4 w-4 animate-spin" />Verifying…</> : "Verify & Enter"}
+            </button>
             <button
               type="button"
               onClick={() => { setStep("email"); setOtp(""); }}
-              className="w-full text-center text-sm text-muted hover:text-foreground"
+              className="w-full text-center text-sm transition-colors"
+              style={{ color: "#546E7A" }}
+              onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.color = "#0A1929"; }}
+              onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.color = "#546E7A"; }}
             >
               ← Change email
             </button>

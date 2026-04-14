@@ -137,20 +137,47 @@ export default function ClientDetail() {
   );
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 min-h-screen" style={{ background: "#F0F4F8" }}>
       {/* Header */}
-      <div className="rounded-xl border border-border bg-card p-6 shadow-sm">
+      <div
+        style={{
+          background: "#FFFFFF",
+          borderRadius: "16px",
+          padding: "24px",
+          border: "1px solid #E0E7EF",
+          boxShadow: "0 2px 8px rgba(0,0,0,0.06)",
+        }}
+      >
         <div className="flex items-start justify-between">
           <div>
-            <h1 className="font-sora text-2xl font-bold text-navy">{client.name}</h1>
-            {client.company && <p className="text-sm italic text-muted-foreground">{client.company}</p>}
+            <div className="flex items-center gap-2 mb-1">
+              <button
+                onClick={() => navigate("/clients")}
+                className="flex items-center gap-1 text-sm transition-colors"
+                style={{ color: "#546E7A" }}
+                onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.color = "#0A1929"; }}
+                onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.color = "#546E7A"; }}
+              >
+                <ArrowLeft className="h-4 w-4" /> Clients
+              </button>
+            </div>
+            <h1 className="font-bold text-2xl" style={{ fontFamily: "Sora, sans-serif", color: "#0A1929" }}>{client.name}</h1>
+            {client.company && <p className="text-sm italic mt-0.5" style={{ color: "#546E7A" }}>{client.company}</p>}
             <div className="mt-3 flex flex-wrap items-center gap-4 text-sm">
-              <a href={`tel:${client.phone}`} className="flex items-center gap-1.5 text-blue hover:underline"><Phone className="h-4 w-4" />{client.phone}</a>
-              {client.email && <a href={`mailto:${client.email}`} className="flex items-center gap-1.5 text-blue hover:underline"><Mail className="h-4 w-4" />{client.email}</a>}
-              <span className="flex items-center gap-1.5 text-muted-foreground"><MapPin className="h-4 w-4" />{client.city}{client.state ? `, ${client.state}` : ""}</span>
+              <a href={`tel:${client.phone}`} className="flex items-center gap-1.5 hover:underline" style={{ color: "#1565C0" }}><Phone className="h-4 w-4" />{client.phone}</a>
+              {client.email && <a href={`mailto:${client.email}`} className="flex items-center gap-1.5 hover:underline" style={{ color: "#1565C0" }}><Mail className="h-4 w-4" />{client.email}</a>}
+              <span className="flex items-center gap-1.5" style={{ color: "#546E7A" }}><MapPin className="h-4 w-4" />{client.city}{client.state ? `, ${client.state}` : ""}</span>
             </div>
           </div>
-          <Button variant="outline" size="sm" onClick={() => setEditOpen(true)}><Pencil className="mr-1.5 h-3.5 w-3.5" /> Edit</Button>
+          <button
+            onClick={() => setEditOpen(true)}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium transition-all"
+            style={{ border: "1.5px solid #E0E7EF", color: "#546E7A", background: "#FAFBFC" }}
+            onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = "#F0F4F8"; }}
+            onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = "#FAFBFC"; }}
+          >
+            <Pencil className="h-3.5 w-3.5" /> Edit
+          </button>
         </div>
       </div>
 
@@ -166,8 +193,8 @@ export default function ClientDetail() {
       )}
 
       {/* Intake Link */}
-      <div className="rounded-xl border border-border bg-card p-6 shadow-sm">
-        <h2 className="mb-4 flex items-center gap-2 font-sora text-lg font-semibold text-navy"><LinkIcon className="h-5 w-5" /> Intake Form Link</h2>
+      <div style={{ background: "#FFFFFF", borderRadius: "16px", padding: "24px", border: "1px solid #E0E7EF", boxShadow: "0 2px 8px rgba(0,0,0,0.06)" }}>
+        <h2 className="mb-4 flex items-center gap-2 font-semibold text-lg" style={{ fontFamily: "Sora, sans-serif", color: "#0A1929" }}><LinkIcon className="h-5 w-5" /> Intake Form Link</h2>
         {intakeLink ? (
           <div className="space-y-3">
             <div className="flex items-center gap-2 rounded-lg bg-surface px-3 py-2">
@@ -202,8 +229,8 @@ export default function ClientDetail() {
       </div>
 
       {/* Enquiry History */}
-      <div className="rounded-xl border border-border bg-card p-6 shadow-sm">
-        <h2 className="mb-4 font-sora text-lg font-semibold text-navy">Enquiry History</h2>
+      <div style={{ background: "#FFFFFF", borderRadius: "16px", padding: "24px", border: "1px solid #E0E7EF", boxShadow: "0 2px 8px rgba(0,0,0,0.06)", overflow: "hidden" }}>
+        <h2 className="mb-4 font-semibold text-lg" style={{ fontFamily: "Sora, sans-serif", color: "#0A1929" }}>Enquiry History</h2>
         {enquiries.length === 0 ? (
           <p className="py-8 text-center text-sm text-muted-foreground">No enquiries yet for this client.</p>
         ) : (
@@ -238,9 +265,21 @@ export default function ClientDetail() {
 
       {/* Edit Panel */}
       <Sheet open={editOpen} onOpenChange={setEditOpen}>
-        <SheetContent className="overflow-y-auto sm:max-w-md">
-          <SheetHeader><SheetTitle className="font-sora text-navy">Edit Client</SheetTitle></SheetHeader>
-          <div className="mt-6 space-y-4">
+        <SheetContent
+          className="overflow-y-auto sm:max-w-md"
+          style={{ boxShadow: "-8px 0 40px rgba(0,0,0,0.15)" }}
+        >
+          <SheetHeader
+            style={{
+              background: "linear-gradient(135deg,#F8FAFC,#F0F4F8)",
+              margin: "-24px -24px 0",
+              padding: "24px",
+              borderBottom: "1px solid #E0E7EF",
+            }}
+          >
+            <SheetTitle style={{ fontFamily: "Sora, sans-serif", color: "#0A1929" }}>Edit Client</SheetTitle>
+          </SheetHeader>
+          <div className="mt-6 space-y-4 px-1 pb-6">
             <EditField label="Full Name" required value={editForm.name} onChange={(v) => setEditForm((p) => ({ ...p, name: v }))} error={editErrors.name} />
             <EditField label="Phone Number" required value={editForm.phone} onChange={(v) => setEditForm((p) => ({ ...p, phone: v }))} error={editErrors.phone}
               onBlur={() => { if (editForm.phone) setEditForm((p) => ({ ...p, phone: normalizePhone(editForm.phone) })); }} />
@@ -250,9 +289,26 @@ export default function ClientDetail() {
             <EditField label="State" value={editForm.state} onChange={(v) => setEditForm((p) => ({ ...p, state: v }))} />
             <EditField label="WhatsApp Number (if different from phone)" value={editForm.whatsapp_number} onChange={(v) => setEditForm((p) => ({ ...p, whatsapp_number: v }))} error={editErrors.whatsapp_number}
               onBlur={() => { if (editForm.whatsapp_number) setEditForm((p) => ({ ...p, whatsapp_number: normalizePhone(editForm.whatsapp_number) })); }} />
-            <div><label className="mb-1.5 block text-sm font-medium">Notes</label>
-              <Textarea value={editForm.notes} onChange={(e) => setEditForm((p) => ({ ...p, notes: e.target.value }))} rows={3} /></div>
-            <Button onClick={handleEditSave} disabled={saving} className="w-full bg-navy text-white hover:bg-navy/90">{saving ? "Saving…" : "Save Changes"}</Button>
+            <div>
+              <label className="mb-1.5 block" style={{ fontSize: "11px", fontWeight: 600, color: "#546E7A", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                Notes
+              </label>
+              <Textarea value={editForm.notes} onChange={(e) => setEditForm((p) => ({ ...p, notes: e.target.value }))} rows={3} style={{ borderColor: "#E0E7EF", borderRadius: "10px" }} />
+            </div>
+          </div>
+          <div style={{ background: "#F8FAFC", borderTop: "1px solid #E0E7EF", margin: "0 -24px -24px", padding: "16px 24px" }}>
+            <button
+              onClick={handleEditSave}
+              disabled={saving}
+              className="w-full py-2.5 rounded-xl text-sm font-semibold transition-all disabled:opacity-50"
+              style={{
+                background: "linear-gradient(135deg,#1565C0,#2979FF)",
+                color: "white",
+                boxShadow: "0 4px 12px rgba(21,101,192,0.3)",
+              }}
+            >
+              {saving ? "Saving…" : "Save Changes"}
+            </button>
           </div>
         </SheetContent>
       </Sheet>
@@ -265,9 +321,11 @@ function EditField({ label, required, value, onChange, error, type = "text", onB
 }) {
   return (
     <div>
-      <label className="mb-1.5 block text-sm font-medium">{label} {required && <span className="text-destructive">*</span>}</label>
-      <Input type={type} value={value || ""} onChange={(e) => onChange(e.target.value)} onBlur={onBlur} />
-      {error && <p className="mt-1 text-xs text-destructive">{error}</p>}
+      <label className="mb-1.5 block" style={{ fontSize: "11px", fontWeight: 600, color: "#546E7A", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+        {label} {required && <span style={{ color: "#C62828" }}>*</span>}
+      </label>
+      <Input type={type} value={value || ""} onChange={(e) => onChange(e.target.value)} onBlur={onBlur} style={{ borderColor: "#E0E7EF", borderRadius: "10px", fontSize: "14px" }} />
+      {error && <p className="mt-1 text-xs" style={{ color: "#C62828" }}>{error}</p>}
     </div>
   );
 }

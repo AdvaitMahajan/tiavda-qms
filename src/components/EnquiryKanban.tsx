@@ -5,7 +5,6 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { formatCurrency } from "@/lib/utils";
 import { toast } from "sonner";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -22,17 +21,6 @@ import { useDroppable } from "@dnd-kit/core";
 import { motion, AnimatePresence } from "framer-motion";
 import type { EnquiryRow, LeadStatus } from "@/pages/Enquiries";
 import { STATUS_LABELS, ALL_STATUSES } from "@/pages/Enquiries";
-
-const COUNT_BADGE_CLASSES: Record<LeadStatus, string> = {
-  new: "bg-slate-100 text-slate-700 border border-slate-200",
-  pending: "bg-blue-100 text-blue-700 border border-blue-200",
-  sent: "bg-indigo-100 text-indigo-700 border border-indigo-200",
-  follow_up: "bg-amber-100 text-amber-700 border border-amber-200",
-  approved: "bg-purple-100 text-purple-700 border border-purple-200",
-  confirmed: "bg-green-100 text-green-700 border border-green-200",
-  lost: "bg-red-100 text-red-700 border border-red-200",
-  completed: "bg-teal-100 text-teal-700 border border-teal-200",
-};
 
 const VALID_TRANSITIONS: Record<LeadStatus, LeadStatus[]> = {
   new: ["pending", "lost"],
@@ -95,7 +83,6 @@ export function EnquiryKanban({ rows, isLoading }: Props) {
       });
 
       if (toStatus === "confirmed") {
-        // Create payment record
         const { data: approvedQ } = await supabase
           .from("quotations")
           .select("total_amount, id")
@@ -114,7 +101,6 @@ export function EnquiryKanban({ rows, isLoading }: Props) {
           });
         }
 
-        // Create job completion record
         const { data: existing } = await supabase
           .from("job_completion")
           .select("id")
@@ -161,7 +147,6 @@ export function EnquiryKanban({ rows, isLoading }: Props) {
       const toStatus = droppedOn as LeadStatus;
       if (toStatus === card.status) return;
 
-      // Validate transition
       if (!VALID_TRANSITIONS[card.status].includes(toStatus)) {
         toast.error(`Cannot move from ${STATUS_LABELS[card.status]} to ${STATUS_LABELS[toStatus]}`);
         return;
@@ -263,44 +248,69 @@ export function EnquiryKanban({ rows, isLoading }: Props) {
 
       {/* Lost Reason Modal */}
       <Dialog open={!!lostModal} onOpenChange={(open) => { if (!open) { setLostModal(null); setLostReason(""); } }}>
-        <DialogContent>
+        <DialogContent style={{ borderRadius: "20px", padding: "32px", boxShadow: "0 24px 64px rgba(0,0,0,0.2)" }}>
           <DialogHeader>
-            <DialogTitle>Reason for Loss</DialogTitle>
-            <DialogDescription>Please provide a reason for marking this enquiry as lost.</DialogDescription>
+            <DialogTitle style={{ fontFamily: "Sora, sans-serif", color: "#0A1929", fontSize: "18px", fontWeight: 700 }}>
+              Reason for Loss
+            </DialogTitle>
+            <DialogDescription style={{ color: "#546E7A", fontSize: "14px" }}>
+              Please provide a reason for marking this enquiry as lost.
+            </DialogDescription>
           </DialogHeader>
           <Textarea
             placeholder="Why was this enquiry lost?"
             value={lostReason}
             onChange={(e) => setLostReason(e.target.value)}
             rows={3}
+            style={{ borderColor: "#E0E7EF", borderRadius: "10px" }}
           />
           <DialogFooter>
-            <Button variant="outline" onClick={() => { setLostModal(null); setLostReason(""); }}>Cancel</Button>
-            <Button
-              variant="destructive"
+            <button
+              onClick={() => { setLostModal(null); setLostReason(""); }}
+              className="px-4 py-2 rounded-lg text-sm font-medium transition-all"
+              style={{ background: "#F0F4F8", color: "#546E7A", border: "1px solid #E0E7EF" }}
+            >
+              Cancel
+            </button>
+            <button
               disabled={!lostReason.trim() || statusMutation.isPending}
               onClick={handleLostConfirm}
+              className="px-4 py-2 rounded-lg text-sm font-semibold transition-all disabled:opacity-50"
+              style={{ background: "#C62828", color: "white" }}
             >
               Mark as Lost
-            </Button>
+            </button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
       {/* Confirmed Modal */}
       <Dialog open={!!confirmModal} onOpenChange={(open) => { if (!open) setConfirmModal(null); }}>
-        <DialogContent>
+        <DialogContent style={{ borderRadius: "20px", padding: "32px", boxShadow: "0 24px 64px rgba(0,0,0,0.2)" }}>
           <DialogHeader>
-            <DialogTitle>Mark as Confirmed?</DialogTitle>
-            <DialogDescription>
+            <DialogTitle style={{ fontFamily: "Sora, sans-serif", color: "#0A1929", fontSize: "18px", fontWeight: 700 }}>
+              Mark as Confirmed?
+            </DialogTitle>
+            <DialogDescription style={{ color: "#546E7A", fontSize: "14px" }}>
               This will automatically create a payment record and job completion tracker.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setConfirmModal(null)}>Cancel</Button>
-            <Button disabled={statusMutation.isPending} onClick={handleConfirmConfirm}>
+            <button
+              onClick={() => setConfirmModal(null)}
+              className="px-4 py-2 rounded-lg text-sm font-medium transition-all"
+              style={{ background: "#F0F4F8", color: "#546E7A", border: "1px solid #E0E7EF" }}
+            >
+              Cancel
+            </button>
+            <button
+              disabled={statusMutation.isPending}
+              onClick={handleConfirmConfirm}
+              className="px-4 py-2 rounded-lg text-sm font-semibold transition-all disabled:opacity-50"
+              style={{ background: "linear-gradient(135deg,#00897B,#26A69A)", color: "white" }}
+            >
               Confirm
-            </Button>
+            </button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -316,11 +326,21 @@ function KanbanColumn({ status, cards, isOver, onCardClick }: {
   return (
     <div className="flex flex-col w-[200px] flex-shrink-0">
       {/* Column header */}
-      <div className="flex items-center justify-between px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-t-xl border-b-0">
-        <span className="text-xs font-semibold text-slate-600 uppercase tracking-wide">
+      <div
+        className="flex items-center justify-between px-3 py-2.5 rounded-t-2xl"
+        style={{
+          background: "#FFFFFF",
+          border: "1px solid #E0E7EF",
+          borderBottom: "none",
+        }}
+      >
+        <span className="text-xs font-semibold uppercase tracking-wide" style={{ color: "#546E7A" }}>
           {STATUS_LABELS[status]}
         </span>
-        <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${COUNT_BADGE_CLASSES[status]}`}>
+        <span
+          className="text-xs font-bold px-2 py-0.5 rounded-full"
+          style={{ background: "#F0F4F8", color: "#0A1929" }}
+        >
           {cards.length}
         </span>
       </div>
@@ -328,12 +348,21 @@ function KanbanColumn({ status, cards, isOver, onCardClick }: {
       {/* Column body */}
       <div
         ref={setNodeRef}
-        className={`flex-1 border border-slate-200 rounded-b-xl p-2 min-h-[400px] transition-colors ${
-          isOver ? "bg-blue-50 ring-2 ring-dashed ring-blue-400" : "bg-slate-50"
-        }`}
+        className="flex-1 p-2 min-h-[400px] transition-colors"
+        style={{
+          background: isOver ? "rgba(21,101,192,0.06)" : "rgba(255,255,255,0.6)",
+          backdropFilter: "blur(4px)",
+          border: isOver ? "2px dashed #1565C0" : "1px solid #E0E7EF",
+          borderTop: "none",
+          borderRadius: "0 0 12px 12px",
+          ...(isOver ? { outline: "2px dashed #1565C0", outlineOffset: "-2px" } : {}),
+        }}
       >
         {cards.length === 0 ? (
-          <div className="border-2 border-dashed border-slate-200 rounded-lg p-3 text-center text-xs text-slate-300 min-h-[60px] flex items-center justify-center">
+          <div
+            className="rounded-lg p-3 text-center text-xs min-h-[60px] flex items-center justify-center"
+            style={{ border: "2px dashed #E0E7EF", color: "#546E7A" }}
+          >
             Drop here
           </div>
         ) : (
@@ -362,28 +391,44 @@ function KanbanCard({ row, onClick }: { row: EnquiryRow; onClick: () => void }) 
       {...attributes}
       {...listeners}
       whileDrag={{ scale: 1.02 }}
-      className="bg-white rounded-lg p-3 shadow-sm border border-slate-100 mb-2 cursor-grab hover:shadow-md hover:border-slate-300 transition-all duration-150 active:cursor-grabbing active:scale-95"
+      className="mb-2 cursor-grab active:cursor-grabbing"
       onClick={onClick}
     >
-      <div className="text-[10px] font-mono text-slate-400 mb-1">{row.ref_number}</div>
-      <div className="text-sm font-semibold text-[#0F2A47] leading-snug">{row.client_name}</div>
-      <div className="text-xs text-slate-400 mt-0.5">{row.site_city}</div>
-      {row.quote_amount && (
-        <div className="text-xs font-mono font-semibold text-[#0F2A47] mt-2 pt-2 border-t border-slate-100">
-          {formatCurrency(Number(row.quote_amount))}
-        </div>
-      )}
-      {row.next_follow_up && <FollowUpTag date={row.next_follow_up} />}
+      <div
+        style={{
+          background: "#FFFFFF",
+          border: "1px solid #E0E7EF",
+          borderRadius: "12px",
+          padding: "12px",
+          boxShadow: "0 1px 4px rgba(0,0,0,0.06)",
+        }}
+      >
+        <div className="text-[10px] font-mono mb-1" style={{ color: "#546E7A" }}>{row.ref_number}</div>
+        <div className="text-sm font-semibold leading-snug" style={{ color: "#0A1929" }}>{row.client_name}</div>
+        <div className="text-xs mt-0.5" style={{ color: "#546E7A" }}>{row.site_city}</div>
+        {row.quote_amount && (
+          <div
+            className="text-xs font-mono font-semibold mt-2 pt-2"
+            style={{ color: "#0A1929", borderTop: "1px solid #F0F4F8" }}
+          >
+            {formatCurrency(Number(row.quote_amount))}
+          </div>
+        )}
+        {row.next_follow_up && <FollowUpTag date={row.next_follow_up} />}
+      </div>
     </motion.div>
   );
 }
 
 function KanbanCardOverlay({ row }: { row: EnquiryRow }) {
   return (
-    <div className="bg-card border rounded-lg p-3 shadow-lg w-[240px] rotate-2">
-      <p className="font-mono text-[11px] text-muted-foreground">{row.ref_number}</p>
-      <p className="font-semibold text-sm">{row.client_name}</p>
-      <p className="text-xs text-muted-foreground">{row.site_city}</p>
+    <div
+      className="rounded-xl p-3 shadow-lg w-[240px] rotate-2"
+      style={{ background: "#FFFFFF", border: "1px solid #E0E7EF" }}
+    >
+      <p className="font-mono text-[11px]" style={{ color: "#546E7A" }}>{row.ref_number}</p>
+      <p className="font-semibold text-sm" style={{ color: "#0A1929" }}>{row.client_name}</p>
+      <p className="text-xs" style={{ color: "#546E7A" }}>{row.site_city}</p>
     </div>
   );
 }
@@ -397,7 +442,10 @@ function FollowUpTag({ date }: { date: string }) {
   const label = d.toLocaleDateString("en-GB", { day: "numeric", month: "short" });
 
   return (
-    <div className={`text-[10px] mt-1.5 flex items-center gap-1 ${isOverdue ? "text-red-500" : isToday ? "text-amber-600" : "text-slate-400"}`}>
+    <div
+      className="text-[10px] mt-1.5 flex items-center gap-1"
+      style={{ color: isOverdue ? "#C62828" : isToday ? "#E65100" : "#546E7A" }}
+    >
       {isOverdue && <span className="w-1.5 h-1.5 rounded-full bg-red-400 animate-pulse inline-block" />}
       {label}
     </div>

@@ -3,7 +3,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
-import { formatCurrency, cn } from "@/lib/utils";
+import { formatCurrency } from "@/lib/utils";
 import { pdf } from "@react-pdf/renderer";
 import QuotationPDF from "@/components/QuotationPDF";
 import { PaymentsTab } from "@/components/enquiry/PaymentsTab";
@@ -11,13 +11,14 @@ import { CommunicationTab } from "@/components/enquiry/CommunicationTab";
 import { JobCompletionTab } from "@/components/enquiry/JobCompletionTab";
 import { MobilisationSection } from "@/components/enquiry/MobilisationSection";
 import { FollowUpsTab } from "@/components/enquiry/FollowUpsTab";
-import { StatusBadge } from "@/components/ui/StatusBadge";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
-import { Loader2, ChevronDown, ChevronUp, Download, Send, AlertTriangle, ArrowLeft, CheckCircle2, MapPin } from "lucide-react";
+import {
+  Loader2, ChevronDown, ChevronUp, Download, Send, AlertTriangle,
+  ArrowLeft, CheckCircle2, MapPin, Phone, Mail, MessageCircle,
+} from "lucide-react";
 import type { Tables } from "@/integrations/supabase/types";
 
 type Enquiry = Tables<"enquiries">;
@@ -40,94 +41,188 @@ const structureTypeLabels: Record<string, string> = {
   other: "Other",
 };
 
+// Gradient per variant
+const VARIANT_GRADIENTS: Record<string, string> = {
+  A: "linear-gradient(90deg,#1565C0,#2979FF)",
+  B: "linear-gradient(90deg,#6A1B9A,#AB47BC)",
+  C: "linear-gradient(90deg,#E65100,#FF8F00)",
+  D: "linear-gradient(90deg,#00897B,#26A69A)",
+};
+
 function VariantCard({
   q, isBest, onApprove, pdfLoading, onSend,
 }: { q: Quotation; isBest: boolean; onApprove: (q: Quotation) => void; pdfLoading: string | null; onSend?: () => void }) {
   const [expanded, setExpanded] = useState(false);
   const items: LineItem[] = typeof q.line_items === "string" ? JSON.parse(q.line_items) : (q.line_items as any);
   const isApproved = q.status === "approved" || q.status === "sent" || q.status === "accepted";
+  const gradient = VARIANT_GRADIENTS[q.variant] ?? VARIANT_GRADIENTS.A;
 
   return (
-    <div className={cn(
-      "rounded-xl border bg-card p-5 shadow-sm transition-all",
-      isApproved ? "border-green ring-1 ring-green/20" : "border-border",
-      q.pdf_status === "generating" && "animate-pulse"
-    )}>
-      <div className="flex items-center justify-between mb-3">
-        <div className="flex items-center gap-2">
-          <Badge variant="outline" className="font-mono text-sm">{q.variant}</Badge>
-          <span className="text-sm font-medium text-foreground">{q.variant_label}</span>
-        </div>
-        <div className="flex items-center gap-2">
-          {isBest && q.status === "draft" && <Badge className="bg-green/10 text-green border-green/30 text-xs">Best Value</Badge>}
-          {isApproved && <Badge className="bg-green text-white text-xs"><CheckCircle2 className="mr-1 h-3 w-3" />Approved</Badge>}
-          {q.status === "superseded" && <Badge variant="secondary" className="text-xs">Superseded</Badge>}
-        </div>
-      </div>
+    <div
+      style={{
+        background: "#FFFFFF",
+        borderRadius: "16px",
+        border: isApproved ? "2px solid #1565C0" : "1px solid #E0E7EF",
+        boxShadow: isApproved
+          ? "0 4px 20px rgba(21,101,192,0.15)"
+          : "0 2px 8px rgba(0,0,0,0.06)",
+        overflow: "hidden",
+        position: "relative",
+        transition: "all 0.2s ease",
+      }}
+      className={q.pdf_status === "generating" ? "animate-pulse" : ""}
+    >
+      {/* Top accent bar */}
+      <div style={{ height: "4px", background: gradient, position: "absolute", top: 0, left: 0, right: 0 }} />
 
-      <p className="font-sora text-3xl font-bold text-navy mb-3">{formatCurrency(q.total_amount)}</p>
-
-      <div className="space-y-1 text-sm text-muted-foreground mb-3">
-        <p>Mobilisation: {formatCurrency(q.mobilisation_cost)}</p>
-        <p>Drilling: {formatCurrency(q.drilling_cost)}</p>
-        <p>Reporting: {formatCurrency(q.reporting_cost)}</p>
-      </div>
-      <p className="text-xs text-muted-foreground mb-4">{q.num_bores} bores @ {q.depth_per_bore_m}m depth</p>
-
-      <button onClick={() => setExpanded(!expanded)} className="flex items-center gap-1 text-xs font-medium text-blue hover:underline mb-3">
-        {expanded ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
-        {expanded ? "Hide Breakdown" : "View Breakdown"}
-      </button>
-
-      {expanded && (
-        <div className="mb-4 rounded-lg border border-border overflow-hidden text-xs">
-          <div className="grid grid-cols-5 gap-0 bg-navy text-white font-semibold">
-            <div className="p-2 col-span-2">Description</div>
-            <div className="p-2 text-right">Qty</div>
-            <div className="p-2 text-right">Rate</div>
-            <div className="p-2 text-right">Amount</div>
+      <div className="p-5 pt-6">
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-2">
+            <span
+              className="font-mono text-sm font-bold px-2.5 py-0.5 rounded-lg"
+              style={{ background: "#F0F4F8", color: "#0A1929" }}
+            >
+              {q.variant}
+            </span>
+            <span className="text-sm font-medium" style={{ color: "#0A1929" }}>{q.variant_label}</span>
           </div>
-          {items.map((item, i) => (
-            <div key={i} className={cn("grid grid-cols-5 gap-0", i % 2 === 1 ? "bg-surface" : "bg-card")}>
-              <div className="p-2 col-span-2">{item.description}</div>
-              <div className="p-2 text-right font-mono">{item.qty}</div>
-              <div className="p-2 text-right font-mono">{formatCurrency(item.rate)}</div>
-              <div className="p-2 text-right font-mono">{formatCurrency(item.amount)}</div>
+          <div className="flex items-center gap-2">
+            {isBest && q.status === "draft" && (
+              <span
+                className="text-[11px] font-semibold px-2.5 py-[3px] rounded-full"
+                style={{ background: "linear-gradient(135deg,#FF8F00,#FFB300)", color: "white" }}
+              >
+                Best Value
+              </span>
+            )}
+            {isApproved && (
+              <span
+                className="flex items-center gap-1 text-[11px] font-semibold px-2.5 py-[3px] rounded-full"
+                style={{ background: "linear-gradient(135deg,#00897B,#26A69A)", color: "white" }}
+              >
+                <CheckCircle2 style={{ width: "11px", height: "11px" }} />
+                Approved
+              </span>
+            )}
+            {q.status === "superseded" && (
+              <span
+                className="text-[11px] font-semibold px-2.5 py-[3px] rounded-full"
+                style={{ background: "#F0F4F8", color: "#546E7A" }}
+              >
+                Superseded
+              </span>
+            )}
+          </div>
+        </div>
+
+        <p
+          className="font-bold mb-3"
+          style={{ fontFamily: "Sora, sans-serif", fontSize: "32px", color: "#0A1929", lineHeight: 1.1 }}
+        >
+          {formatCurrency(q.total_amount)}
+        </p>
+
+        <div className="space-y-1 text-sm mb-3" style={{ color: "#546E7A" }}>
+          <p>Mobilisation: {formatCurrency(q.mobilisation_cost)}</p>
+          <p>Drilling: {formatCurrency(q.drilling_cost)}</p>
+          <p>Reporting: {formatCurrency(q.reporting_cost)}</p>
+        </div>
+        <p className="text-xs mb-4" style={{ color: "#546E7A" }}>
+          {q.num_bores} bores @ {q.depth_per_bore_m}m depth
+        </p>
+
+        <button
+          onClick={() => setExpanded(!expanded)}
+          className="flex items-center gap-1 text-xs font-medium mb-3"
+          style={{ color: "#1565C0" }}
+        >
+          {expanded ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+          {expanded ? "Hide Breakdown" : "View Breakdown"}
+        </button>
+
+        {expanded && (
+          <div className="mb-4 rounded-lg overflow-hidden text-xs" style={{ border: "1px solid #E0E7EF" }}>
+            <div className="grid grid-cols-5 gap-0 font-semibold" style={{ background: "#0A1929", color: "white" }}>
+              <div className="p-2 col-span-2">Description</div>
+              <div className="p-2 text-right">Qty</div>
+              <div className="p-2 text-right">Rate</div>
+              <div className="p-2 text-right">Amount</div>
             </div>
-          ))}
-        </div>
-      )}
+            {items.map((item, i) => (
+              <div key={i} className="grid grid-cols-5 gap-0" style={{ background: i % 2 === 1 ? "#F8FAFC" : "#FFFFFF" }}>
+                <div className="p-2 col-span-2">{item.description}</div>
+                <div className="p-2 text-right font-mono">{item.qty}</div>
+                <div className="p-2 text-right font-mono">{formatCurrency(item.rate)}</div>
+                <div className="p-2 text-right font-mono">{formatCurrency(item.amount)}</div>
+              </div>
+            ))}
+          </div>
+        )}
 
-      {q.pdf_status === "generating" && (
-        <div className="flex items-center gap-2 text-sm text-blue mb-3">
-          <Loader2 className="h-4 w-4 animate-spin" /> Generating PDF…
-        </div>
-      )}
+        {q.pdf_status === "generating" && (
+          <div className="flex items-center gap-2 text-sm mb-3" style={{ color: "#1565C0" }}>
+            <Loader2 className="h-4 w-4 animate-spin" /> Generating PDF…
+          </div>
+        )}
 
-      {q.pdf_url && q.pdf_status === "ready" && (
-        <div className="flex gap-2 mb-3">
-          <a href={q.pdf_url} target="_blank" rel="noreferrer">
-            <Button variant="outline" size="sm"><Download className="mr-1 h-3 w-3" />Download PDF</Button>
-          </a>
-          {isApproved && onSend ? (
-            <Button variant="outline" size="sm" onClick={onSend} className="text-blue border-blue hover:bg-blue/5">
-              <Send className="mr-1 h-3 w-3" />Send to Client
-            </Button>
-          ) : (
-            <Button variant="outline" size="sm" disabled><Send className="mr-1 h-3 w-3" />Send to Client</Button>
-          )}
-        </div>
-      )}
+        {q.pdf_url && q.pdf_status === "ready" && (
+          <div className="flex gap-2 mb-3">
+            <a href={q.pdf_url} target="_blank" rel="noreferrer">
+              <button
+                className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold transition-all"
+                style={{
+                  background: "linear-gradient(135deg,#1565C0,#2979FF)",
+                  color: "white",
+                  boxShadow: "0 2px 8px rgba(21,101,192,0.3)",
+                }}
+              >
+                <Download className="h-3 w-3" />Download PDF
+              </button>
+            </a>
+            {isApproved && onSend ? (
+              <button
+                onClick={onSend}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold transition-all"
+                style={{
+                  background: "linear-gradient(135deg,#1565C0,#2979FF)",
+                  color: "white",
+                  boxShadow: "0 2px 8px rgba(21,101,192,0.3)",
+                }}
+              >
+                <Send className="h-3 w-3" />Send to Client
+              </button>
+            ) : (
+              <button
+                disabled
+                className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold opacity-40"
+                style={{ background: "#F0F4F8", color: "#546E7A" }}
+              >
+                <Send className="h-3 w-3" />Send to Client
+              </button>
+            )}
+          </div>
+        )}
 
-      {q.pdf_status === "failed" && (
-        <p className="text-xs text-destructive mb-3">PDF generation failed — use Retry below.</p>
-      )}
+        {q.pdf_status === "failed" && (
+          <p className="text-xs mb-3" style={{ color: "#C62828" }}>PDF generation failed — use Retry below.</p>
+        )}
 
-      {q.status === "draft" && (
-        <Button onClick={() => onApprove(q)} className="w-full bg-gold text-white hover:bg-gold/90">
-          Approve This Variant
-        </Button>
-      )}
+        {q.status === "draft" && (
+          <button
+            onClick={() => onApprove(q)}
+            className="w-full py-2.5 rounded-lg text-sm font-semibold transition-all"
+            style={{
+              background: "linear-gradient(135deg,#FF8F00,#FFB300)",
+              color: "white",
+              boxShadow: "0 4px 12px rgba(255,143,0,0.3)",
+            }}
+            onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.transform = "translateY(-1px)"; }}
+            onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.transform = "translateY(0)"; }}
+          >
+            Approve This Variant
+          </button>
+        )}
+      </div>
     </div>
   );
 }
@@ -270,7 +365,6 @@ export default function EnquiryDetail() {
         }
         throw approveErr;
       }
-      // Supersede previously-approved quotation and all remaining drafts
       await supabase.from("quotations").update({ status: "superseded" as any })
         .eq("enquiry_id", enquiry.id).neq("id", approveTarget.id)
         .in("status", ["draft", "approved", "sent"] as any);
@@ -310,14 +404,14 @@ export default function EnquiryDetail() {
       const htmlBody = `<!DOCTYPE html>
 <html>
 <body style="font-family: Arial, sans-serif; color: #1a1a1a; max-width: 600px; margin: 0 auto; padding: 20px;">
-  <div style="background: #0F2A47; padding: 24px; border-radius: 8px 8px 0 0;">
+  <div style="background: #0A1929; padding: 24px; border-radius: 8px 8px 0 0;">
     <h1 style="color: white; margin: 0; font-size: 20px;">Tiavda Enterprises</h1>
     <p style="color: rgba(255,255,255,0.7); margin: 4px 0 0; font-size: 14px;">Geotechnical Consultants</p>
   </div>
-  <div style="background: #ffffff; border: 1px solid #e2e8f0; border-top: none; padding: 32px; border-radius: 0 0 8px 8px;">
+  <div style="background: #ffffff; border: 1px solid #E0E7EF; border-top: none; padding: 32px; border-radius: 0 0 8px 8px;">
     <p style="font-size: 16px;">Dear ${client.name},</p>
     <p>Thank you for your enquiry. Please find below the quotation details for your project.</p>
-    <div style="background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 20px; margin: 24px 0;">
+    <div style="background: #F0F4F8; border: 1px solid #E0E7EF; border-radius: 8px; padding: 20px; margin: 24px 0;">
       <p style="margin: 0 0 8px;"><strong>Reference Number:</strong> <span style="font-family: monospace;">${enquiry.ref_number}</span></p>
       <p style="margin: 0 0 8px;"><strong>Total Amount:</strong> ${formatCurrency(approvedQuotation.total_amount)}</p>
       <p style="margin: 0;"><strong>Valid Until:</strong> ${validityDate}</p>
@@ -396,17 +490,14 @@ export default function EnquiryDetail() {
         }
       }
 
-      // Update quotation status to sent
       await supabase.from("quotations").update({
         status: "sent" as any,
         sent_at: new Date().toISOString(),
       }).eq("id", approvedQuotation.id);
 
-      // Update enquiry status to sent
       const prevStatus = enquiry.status;
       await supabase.from("enquiries").update({ status: "sent" as any }).eq("id", enquiry.id);
 
-      // Auto-schedule follow-up in 3 days
       const followUpDate = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
       await supabase.from("follow_ups").insert({
         enquiry_id: enquiry.id,
@@ -416,7 +507,6 @@ export default function EnquiryDetail() {
         outcome: "pending" as any,
       });
 
-      // Log event
       await supabase.from("enquiry_events").insert({
         enquiry_id: enquiry.id,
         event_type: "quotation_sent",
@@ -440,10 +530,10 @@ export default function EnquiryDetail() {
     }
   };
 
-  if (loading) return <div className="flex justify-center py-20"><Loader2 className="h-8 w-8 animate-spin text-blue" /></div>;
+  if (loading) return <div className="flex justify-center py-20"><Loader2 className="h-8 w-8 animate-spin" style={{ color: "#1565C0" }} /></div>;
   if (!enquiry) return (
     <div className="text-center py-20">
-      <p className="text-lg text-muted-foreground mb-4">Enquiry not found</p>
+      <p className="text-lg mb-4" style={{ color: "#546E7A" }}>Enquiry not found</p>
       <Button variant="outline" onClick={() => navigate("/enquiries")}><ArrowLeft className="mr-2 h-4 w-4" />Back to Enquiries</Button>
     </div>
   );
@@ -452,7 +542,6 @@ export default function EnquiryDetail() {
   const bestId = drafts.length > 0 ? drafts.reduce((a, b) => a.total_amount < b.total_amount ? a : b).id : null;
   const showJobTabs = enquiry.status === "confirmed" || enquiry.status === "completed";
 
-  // Tab definitions for custom tab bar (Task 4)
   const allTabs = [
     { key: "quotations", label: "Quotations" },
     { key: "follow-ups", label: "Follow-ups" },
@@ -462,116 +551,258 @@ export default function EnquiryDetail() {
   ];
 
   return (
-    <div className="flex h-full overflow-hidden flex-col space-y-0">
-      {/* Header (Task 5) */}
-      <div className="px-1 pb-4 space-y-4">
-        <div className="flex items-start gap-3">
-          <Button variant="ghost" size="sm" onClick={() => navigate("/enquiries")} className="mt-0.5">
-            <ArrowLeft className="h-4 w-4" />
-          </Button>
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-3 flex-wrap">
-              <h1 className="font-mono text-2xl font-bold text-[#0F2A47]">{enquiry.ref_number}</h1>
-              <StatusBadge status={enquiry.status} />
-            </div>
-            <div className="flex items-center gap-1 mt-1">
-              <MapPin className="w-3.5 h-3.5 text-[#64748B]" />
-              <span className="text-sm text-[#64748B]">{enquiry.site_city}</span>
-            </div>
+    <div style={{ display: "flex", minHeight: "calc(100vh - 120px)" }}>
+      {/* ── Left panel (320px) ── */}
+      <div
+        style={{
+          width: "320px",
+          flexShrink: 0,
+          background: "#FFFFFF",
+          borderRight: "1px solid #E0E7EF",
+          display: "flex",
+          flexDirection: "column",
+          overflowY: "auto",
+        }}
+      >
+        {/* Header gradient */}
+        <div
+          style={{
+            background: "linear-gradient(135deg, #0A1929 0%, #1565C0 100%)",
+            padding: "24px",
+            flexShrink: 0,
+          }}
+        >
+          {/* Back arrow */}
+          <button
+            onClick={() => navigate("/enquiries")}
+            className="flex items-center gap-1.5 mb-4 transition-opacity hover:opacity-80"
+            style={{ color: "rgba(255,255,255,0.7)", fontSize: "13px", fontWeight: 500 }}
+          >
+            <ArrowLeft style={{ width: "15px", height: "15px" }} />
+            Back
+          </button>
+          {/* Ref number */}
+          <p
+            className="font-bold mb-2"
+            style={{ fontFamily: "JetBrains Mono, monospace", fontSize: "22px", color: "white", letterSpacing: "0.02em" }}
+          >
+            {enquiry.ref_number}
+          </p>
+          {/* Status badge — glass style */}
+          <div className="flex items-center gap-2 flex-wrap">
+            <span
+              style={{
+                background: "rgba(255,255,255,0.15)",
+                border: "1px solid rgba(255,255,255,0.25)",
+                color: "white",
+                borderRadius: "9999px",
+                padding: "2px 10px",
+                fontSize: "12px",
+                fontWeight: 500,
+              }}
+            >
+              {enquiry.status.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())}
+            </span>
+          </div>
+          {/* City */}
+          <div className="flex items-center gap-1.5 mt-3">
+            <MapPin style={{ width: "13px", height: "13px", color: "rgba(255,255,255,0.65)" }} />
+            <span style={{ color: "rgba(255,255,255,0.8)", fontSize: "13px" }}>{enquiry.site_city}</span>
           </div>
         </div>
 
-        {/* Site info grid (Task 5) */}
-        <div className="grid grid-cols-2 gap-3">
-          {[
-            ["Structure", structureTypeLabels[enquiry.structure_type] || enquiry.structure_type],
-            ["Bores", enquiry.num_bores.toString()],
-            ["Depth", enquiry.expected_depth_m ? `${enquiry.expected_depth_m}m` : "TBD"],
-            ["Soil Hint", enquiry.soil_type_hint ? (soilTypeLabels[enquiry.soil_type_hint] || enquiry.soil_type_hint) : "Not specified"],
-          ].map(([label, val]) => (
-            <div key={label} className="bg-[#F8FAFC] rounded-lg p-3 border border-[#CBD5E1]">
-              <p className="text-xs text-[#64748B] uppercase tracking-wide">{label}</p>
-              <p className="text-sm font-semibold text-[#0F2A47] mt-1">{val}</p>
+        {/* Client section */}
+        <div style={{ padding: "20px", borderBottom: "1px solid #E0E7EF" }}>
+          <p className="text-[10px] font-semibold uppercase tracking-widest mb-3" style={{ color: "#546E7A" }}>
+            Client
+          </p>
+          {client ? (
+            <div className="space-y-2">
+              <p className="text-base font-semibold" style={{ color: "#0A1929" }}>{client.name}</p>
+              {client.phone && (
+                <div className="flex items-center gap-2">
+                  <Phone style={{ width: "13px", height: "13px", color: "#546E7A", flexShrink: 0 }} />
+                  <span className="text-sm font-mono" style={{ color: "#546E7A" }}>{client.phone}</span>
+                </div>
+              )}
+              {client.email && (
+                <div className="flex items-center gap-2">
+                  <Mail style={{ width: "13px", height: "13px", color: "#546E7A", flexShrink: 0 }} />
+                  <span className="text-sm" style={{ color: "#546E7A" }}>{client.email}</span>
+                </div>
+              )}
+              {client.whatsapp_number && (
+                <div className="flex items-center gap-2">
+                  <MessageCircle style={{ width: "13px", height: "13px", color: "#546E7A", flexShrink: 0 }} />
+                  <span className="text-sm font-mono" style={{ color: "#546E7A" }}>{client.whatsapp_number}</span>
+                </div>
+              )}
             </div>
+          ) : (
+            <p className="text-sm" style={{ color: "#546E7A" }}>Loading…</p>
+          )}
+        </div>
+
+        {/* Site info */}
+        <div style={{ padding: "20px", borderBottom: "1px solid #E0E7EF" }}>
+          <p className="text-[10px] font-semibold uppercase tracking-widest mb-3" style={{ color: "#546E7A" }}>
+            Site Details
+          </p>
+          <div className="grid grid-cols-2 gap-2">
+            {[
+              ["Structure", structureTypeLabels[enquiry.structure_type] || enquiry.structure_type],
+              ["Bores", enquiry.num_bores.toString()],
+              ["Depth", enquiry.expected_depth_m ? `${enquiry.expected_depth_m}m` : "TBD"],
+              ["Soil Hint", enquiry.soil_type_hint ? (soilTypeLabels[enquiry.soil_type_hint] || enquiry.soil_type_hint) : "Not specified"],
+            ].map(([label, val]) => (
+              <div key={label} style={{ background: "#F0F4F8", borderRadius: "12px", padding: "12px" }}>
+                <p className="text-[10px] uppercase tracking-wide mb-1" style={{ color: "#546E7A" }}>{label}</p>
+                <p className="text-sm font-semibold" style={{ color: "#0A1929" }}>{val}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Action buttons */}
+        <div style={{ padding: "20px", display: "flex", flexDirection: "column", gap: "8px" }}>
+          <button
+            onClick={generateQuotations}
+            disabled={generating}
+            className="w-full py-2.5 rounded-xl text-sm font-semibold transition-all flex items-center justify-center gap-2"
+            style={{
+              background: "linear-gradient(135deg,#1565C0,#2979FF)",
+              color: "white",
+              boxShadow: "0 4px 12px rgba(21,101,192,0.3)",
+            }}
+            onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.transform = "translateY(-1px)"; }}
+            onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.transform = "translateY(0)"; }}
+          >
+            {generating ? <><Loader2 className="h-4 w-4 animate-spin" />Generating…</> : quotations.length > 0 ? "Re-generate Quotation" : "Generate Quotation"}
+          </button>
+          <button
+            onClick={() => setActiveTab("follow-ups")}
+            className="w-full py-2.5 rounded-xl text-sm font-semibold transition-all"
+            style={{ background: "#F0F4F8", color: "#0A1929" }}
+            onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = "#E8EEF5"; }}
+            onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = "#F0F4F8"; }}
+          >
+            Add Follow-up
+          </button>
+        </div>
+      </div>
+
+      {/* ── Right panel ── */}
+      <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>
+        {/* Tabs bar */}
+        <div
+          style={{
+            display: "flex",
+            borderBottom: "1px solid #E0E7EF",
+            background: "white",
+            padding: "0 24px",
+            gap: "4px",
+            flexShrink: 0,
+            overflowX: "auto",
+          }}
+        >
+          {allTabs.map((tab) => (
+            <button
+              key={tab.key}
+              onClick={() => setActiveTab(tab.key)}
+              style={{
+                padding: "12px 16px",
+                fontSize: "13px",
+                fontWeight: activeTab === tab.key ? 600 : 500,
+                color: activeTab === tab.key ? "#0A1929" : "#546E7A",
+                borderBottom: activeTab === tab.key ? "2px solid #1565C0" : "2px solid transparent",
+                background: "transparent",
+                marginBottom: "-1px",
+                whiteSpace: "nowrap",
+                transition: "all 0.15s ease",
+              }}
+              onMouseEnter={(e) => {
+                if (activeTab !== tab.key) {
+                  (e.currentTarget as HTMLElement).style.background = "#F8FAFC";
+                }
+              }}
+              onMouseLeave={(e) => {
+                (e.currentTarget as HTMLElement).style.background = "transparent";
+              }}
+            >
+              {tab.label}
+            </button>
           ))}
         </div>
-      </div>
 
-      {/* Mobilisation Section */}
-      {showJobTabs && (
-        <MobilisationSection
-          enquiryId={enquiry.id}
-          enquiry={{ id: enquiry.id, ref_number: enquiry.ref_number, site_city: enquiry.site_city, client_id: enquiry.client_id }}
-        />
-      )}
-
-      {/* Custom Tab Bar (Task 4) */}
-      <div className="flex border-b-2 border-gray-200 bg-white overflow-x-auto">
-        {allTabs.map((tab) => (
-          <button
-            key={tab.key}
-            onClick={() => setActiveTab(tab.key)}
-            className={`px-4 py-3 text-sm font-medium whitespace-nowrap border-b-2 -mb-0.5 transition-colors duration-150 ${
-              activeTab === tab.key
-                ? "text-[#0F2A47] border-[#0F2A47] font-semibold bg-white"
-                : "text-gray-500 border-transparent hover:text-gray-700 hover:border-gray-300"
-            }`}
-          >
-            {tab.label}
-          </button>
-        ))}
-      </div>
-
-      {/* Tab Content */}
-      <div className="pt-4 overflow-y-auto flex-1">
-        {activeTab === "quotations" && (
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <h2 className="font-sora text-lg font-semibold text-foreground">Quotation Variants</h2>
-              <Button onClick={generateQuotations} disabled={generating} className="bg-[#1B5EA0] text-white hover:opacity-90 transition-opacity">
-                {generating ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Generating…</> : quotations.length > 0 ? "Re-generate" : "Generate Quotation"}
-              </Button>
+        {/* Tab content */}
+        <div
+          style={{
+            padding: "24px",
+            background: "#F0F4F8",
+            flex: 1,
+            minHeight: "400px",
+          }}
+        >
+          {/* Mobilisation section in job tabs */}
+          {showJobTabs && activeTab === "job" && (
+            <div className="mb-6">
+              <MobilisationSection
+                enquiryId={enquiry.id}
+                enquiry={{ id: enquiry.id, ref_number: enquiry.ref_number, site_city: enquiry.site_city, client_id: enquiry.client_id }}
+              />
             </div>
-            {quotations.length === 0 ? (
-              <div className="rounded-xl border border-border bg-card p-12 text-center">
-                <AlertTriangle className="mx-auto mb-3 h-10 w-10 text-amber" />
-                <p className="text-muted-foreground mb-4">No quotations yet. Click "Generate Quotation" to create 4 variants based on the rate matrix.</p>
-                <Button variant="outline" onClick={() => navigate("/rate-matrix")}>Go to Rate Matrix</Button>
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {quotations.map((q) => (
-                  <VariantCard
-                    key={q.id}
-                    q={q}
-                    isBest={q.id === bestId}
-                    onApprove={setApproveTarget}
-                    pdfLoading={pdfLoading}
-                    onSend={() => setSendModalOpen(true)}
-                  />
-                ))}
-              </div>
-            )}
-          </div>
-        )}
+          )}
 
-        {activeTab === "follow-ups" && <FollowUpsTab enquiryId={enquiry.id} />}
+          {activeTab === "quotations" && (
+            <div className="space-y-4">
+              {quotations.length === 0 ? (
+                <div
+                  className="rounded-xl p-12 text-center"
+                  style={{ background: "#FFFFFF", border: "1px solid #E0E7EF" }}
+                >
+                  <AlertTriangle className="mx-auto mb-3 h-10 w-10" style={{ color: "#E65100" }} />
+                  <p className="mb-4" style={{ color: "#546E7A" }}>
+                    No quotations yet. Click "Generate Quotation" in the left panel to create 4 variants.
+                  </p>
+                  <Button variant="outline" onClick={() => navigate("/rate-matrix")}>Go to Rate Matrix</Button>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {quotations.map((q) => (
+                    <VariantCard
+                      key={q.id}
+                      q={q}
+                      isBest={q.id === bestId}
+                      onApprove={setApproveTarget}
+                      pdfLoading={pdfLoading}
+                      onSend={() => setSendModalOpen(true)}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
 
-        {activeTab === "payments" && <PaymentsTab enquiryId={enquiry.id} />}
-
-        {activeTab === "communications" && <CommunicationTab enquiryId={enquiry.id} />}
-
-        {activeTab === "job" && showJobTabs && <JobCompletionTab enquiryId={enquiry.id} />}
+          {activeTab === "follow-ups" && <FollowUpsTab enquiryId={enquiry.id} />}
+          {activeTab === "payments" && <PaymentsTab enquiryId={enquiry.id} />}
+          {activeTab === "communications" && <CommunicationTab enquiryId={enquiry.id} />}
+          {activeTab === "job" && showJobTabs && <JobCompletionTab enquiryId={enquiry.id} />}
+        </div>
       </div>
 
       {/* Send to Client modal */}
       <Dialog open={sendModalOpen} onOpenChange={(o) => !o && setSendModalOpen(false)}>
-        <DialogContent>
+        <DialogContent style={{ borderRadius: "20px", padding: "32px", boxShadow: "0 24px 64px rgba(0,0,0,0.2)" }}>
           <DialogHeader>
-            <DialogTitle>Send Quotation to Client</DialogTitle>
+            <DialogTitle style={{ fontFamily: "Sora, sans-serif", color: "#0A1929", fontSize: "18px", fontWeight: 700, marginBottom: "8px" }}>
+              Send Quotation to Client
+            </DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-2">
-            <p className="text-sm text-muted-foreground">Choose delivery channel(s) for <span className="font-mono font-semibold text-foreground">{enquiry?.ref_number}</span>:</p>
+            <p className="text-sm" style={{ color: "#546E7A" }}>
+              Choose delivery channel(s) for{" "}
+              <span className="font-mono font-semibold" style={{ color: "#0A1929" }}>{enquiry?.ref_number}</span>:
+            </p>
             <div className="space-y-3">
               <div className="flex items-center gap-3">
                 <Checkbox
@@ -582,7 +813,7 @@ export default function EnquiryDetail() {
                 />
                 <Label htmlFor="ch-email" className="text-sm">
                   Email{client?.email ? ` — ${client.email}` : " (no email on file)"}
-                  {client?.email_bounced && <span className="ml-2 text-destructive text-xs">(bounced)</span>}
+                  {client?.email_bounced && <span className="ml-2 text-xs" style={{ color: "#C62828" }}>(bounced)</span>}
                 </Label>
               </div>
               <div className="flex items-center gap-3">
@@ -594,39 +825,70 @@ export default function EnquiryDetail() {
                 />
                 <Label htmlFor="ch-wa" className="text-sm">
                   WhatsApp{client?.whatsapp_number ? ` — ${client.whatsapp_number}` : " (no WhatsApp on file)"}
-                  {client?.whatsapp_invalid && <span className="ml-2 text-destructive text-xs">(invalid)</span>}
+                  {client?.whatsapp_invalid && <span className="ml-2 text-xs" style={{ color: "#C62828" }}>(invalid)</span>}
                 </Label>
               </div>
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setSendModalOpen(false)}>Cancel</Button>
-            <Button
+            <button
+              onClick={() => setSendModalOpen(false)}
+              className="px-4 py-2 rounded-lg text-sm font-medium transition-all"
+              style={{ background: "#F0F4F8", color: "#546E7A", border: "1px solid #E0E7EF" }}
+            >
+              Cancel
+            </button>
+            <button
               onClick={handleSendToClient}
               disabled={sending || (!sendChannelEmail && !sendChannelWhatsapp)}
-              className="bg-blue text-white hover:bg-blue/90"
+              className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-all disabled:opacity-50"
+              style={{
+                background: "linear-gradient(135deg,#1565C0,#2979FF)",
+                color: "white",
+                boxShadow: "0 4px 12px rgba(21,101,192,0.3)",
+              }}
             >
-              {sending ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Sending…</> : <><Send className="mr-2 h-4 w-4" />Send</>}
-            </Button>
+              {sending ? <><Loader2 className="h-4 w-4 animate-spin" />Sending…</> : <><Send className="h-4 w-4" />Send</>}
+            </button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
       {/* Approve modal */}
       <Dialog open={!!approveTarget} onOpenChange={(o) => !o && setApproveTarget(null)}>
-        <DialogContent>
+        <DialogContent style={{ borderRadius: "20px", padding: "32px", boxShadow: "0 24px 64px rgba(0,0,0,0.2)" }}>
           <DialogHeader>
-            <DialogTitle>Approve Variant {approveTarget?.variant} — {approveTarget?.variant_label}?</DialogTitle>
+            <DialogTitle style={{ fontFamily: "Sora, sans-serif", color: "#0A1929", fontSize: "18px", fontWeight: 700, marginBottom: "8px" }}>
+              Approve Variant {approveTarget?.variant} — {approveTarget?.variant_label}?
+            </DialogTitle>
           </DialogHeader>
-          <p className="text-sm text-muted-foreground">
-            Total Amount: <span className="font-semibold text-foreground">{approveTarget ? formatCurrency(approveTarget.total_amount) : ""}</span>
+          <p className="text-sm mb-1" style={{ color: "#546E7A" }}>
+            Total Amount:{" "}
+            <span className="font-semibold" style={{ color: "#0A1929" }}>
+              {approveTarget ? formatCurrency(approveTarget.total_amount) : ""}
+            </span>
           </p>
-          <p className="text-xs text-muted-foreground">Other draft variants will be superseded.</p>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setApproveTarget(null)}>Cancel</Button>
-            <Button onClick={handleApprove} disabled={approving} className="bg-gold text-white hover:bg-gold/90">
-              {approving ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Approving…</> : "Confirm Approval"}
-            </Button>
+          <p className="text-xs" style={{ color: "#546E7A" }}>Other draft variants will be superseded.</p>
+          <DialogFooter className="mt-6">
+            <button
+              onClick={() => setApproveTarget(null)}
+              className="px-4 py-2 rounded-lg text-sm font-medium transition-all"
+              style={{ background: "#F0F4F8", color: "#546E7A", border: "1px solid #E0E7EF" }}
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleApprove}
+              disabled={approving}
+              className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-all disabled:opacity-50"
+              style={{
+                background: "linear-gradient(135deg,#FF8F00,#FFB300)",
+                color: "white",
+                boxShadow: "0 4px 12px rgba(255,143,0,0.3)",
+              }}
+            >
+              {approving ? <><Loader2 className="h-4 w-4 animate-spin" />Approving…</> : "Confirm Approval"}
+            </button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

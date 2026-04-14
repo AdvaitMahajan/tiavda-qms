@@ -573,10 +573,7 @@ export default function Dashboard() {
             <Skeleton className="h-[280px] w-full" />
           ) : !revenue.data?.some((m) => m.revenue > 0) ? (
             <div className="flex flex-col items-center justify-center h-[280px] text-center">
-              <BarChart width={80} height={60}>
-                <Bar dataKey="v" data={[{ v: 30 }, { v: 60 }, { v: 40 }, { v: 80 }]} fill="hsl(var(--border))" radius={[2, 2, 0, 0]} />
-              </BarChart>
-              <p className="text-sm text-muted-foreground mt-2">No confirmed revenue yet.</p>
+              <p className="text-sm text-muted-foreground">No confirmed revenue yet.</p>
             </div>
           ) : (
             <ResponsiveContainer width="100%" height={280}>

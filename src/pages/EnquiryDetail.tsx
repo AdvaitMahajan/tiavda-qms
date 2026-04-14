@@ -354,6 +354,7 @@ export default function EnquiryDetail() {
           <FollowUpsTab enquiryId={enquiry.id} />
         </TabsContent>
 
+        <TabsContent value="details" className="pt-4">
           <div className="rounded-xl border border-border bg-card p-6 space-y-3">
             <h2 className="font-heading text-lg font-semibold text-foreground">Enquiry Details</h2>
             {[

@@ -26,6 +26,20 @@ type Quotation = Tables<"quotations">;
 
 type LineItem = { description: string; unit: string; qty: number; rate: number; amount: number };
 
+const soilTypeLabels: Record<string, string> = {
+  soil: "Soil",
+  rock: "Rock",
+  mixed: "Mixed",
+};
+
+const structureTypeLabels: Record<string, string> = {
+  residential: "Residential",
+  commercial: "Commercial",
+  industrial: "Industrial",
+  infrastructure: "Infrastructure",
+  other: "Other",
+};
+
 function VariantCard({
   q, isBest, onApprove, pdfLoading, onSend,
 }: { q: Quotation; isBest: boolean; onApprove: (q: Quotation) => void; pdfLoading: string | null; onSend?: () => void }) {
@@ -470,14 +484,14 @@ export default function EnquiryDetail() {
         {/* Site info grid (Task 5) */}
         <div className="grid grid-cols-2 gap-3">
           {[
-            ["Structure", enquiry.structure_type],
+            ["Structure", structureTypeLabels[enquiry.structure_type] || enquiry.structure_type],
             ["Bores", enquiry.num_bores.toString()],
             ["Depth", enquiry.expected_depth_m ? `${enquiry.expected_depth_m}m` : "TBD"],
-            ["Soil Hint", enquiry.soil_type_hint ?? "Unknown"],
+            ["Soil Hint", enquiry.soil_type_hint ? (soilTypeLabels[enquiry.soil_type_hint] || enquiry.soil_type_hint) : "Not specified"],
           ].map(([label, val]) => (
             <div key={label} className="bg-[#F8FAFC] rounded-lg p-3 border border-[#CBD5E1]">
               <p className="text-xs text-[#64748B] uppercase tracking-wide">{label}</p>
-              <p className="text-sm font-semibold text-[#0F2A47] mt-1 capitalize">{val}</p>
+              <p className="text-sm font-semibold text-[#0F2A47] mt-1">{val}</p>
             </div>
           ))}
         </div>

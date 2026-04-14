@@ -10,6 +10,7 @@ import { PaymentsTab } from "@/components/enquiry/PaymentsTab";
 import { CommunicationTab } from "@/components/enquiry/CommunicationTab";
 import { JobCompletionTab } from "@/components/enquiry/JobCompletionTab";
 import { MobilisationSection } from "@/components/enquiry/MobilisationSection";
+import { FollowUpsTab } from "@/components/enquiry/FollowUpsTab";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";

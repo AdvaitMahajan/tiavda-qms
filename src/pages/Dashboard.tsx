@@ -23,8 +23,6 @@ function AnimatedNumber({ value }: { value: number }) {
       key={value}
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
-      className="font-heading text-5xl font-bold"
-      style={{ color: "hsl(var(--navy))" }}
     >
       <Counter target={value} />
     </motion.span>
@@ -51,6 +49,14 @@ function Counter({ target }: { target: number }) {
 
 // ─── Stat cards query ───
 
+const STAT_CARD_DEFS = [
+  { label: "New Enquiries", icon: FileText, bgClass: "bg-blue-50", iconClass: "text-blue-600" },
+  { label: "Quotes Sent", icon: Send, bgClass: "bg-indigo-50", iconClass: "text-indigo-600" },
+  { label: "Follow-ups Today", icon: CalendarClock, bgClass: "bg-amber-50", iconClass: "text-amber-600" },
+  { label: "Payments Pending", icon: CreditCard, bgClass: "bg-yellow-50", iconClass: "text-yellow-700" },
+  { label: "Active Jobs", icon: Briefcase, bgClass: "bg-green-50", iconClass: "text-green-700" },
+];
+
 function useStatCards() {
   return useQuery({
     queryKey: ["dashboard-stats"],
@@ -63,13 +69,7 @@ function useStatCards() {
         supabase.from("payments").select("id", { count: "exact", head: true }).eq("status", "request_sent"),
         supabase.from("enquiries").select("id", { count: "exact", head: true }).eq("status", "confirmed").is("deleted_at", null),
       ]);
-      return [
-        { label: "New Enquiries", value: r1.count ?? 0, icon: FileText, color: "text-blue-600" },
-        { label: "Quotes Sent", value: r2.count ?? 0, icon: Send, color: "text-indigo-600" },
-        { label: "Follow-ups Today", value: r3.count ?? 0, icon: CalendarClock, color: "text-amber-600" },
-        { label: "Payments Pending", value: r4.count ?? 0, icon: CreditCard, color: "hsl(var(--gold))" },
-        { label: "Active Jobs", value: r5.count ?? 0, icon: Briefcase, color: "text-green-700" },
-      ];
+      return [r1.count ?? 0, r2.count ?? 0, r3.count ?? 0, r4.count ?? 0, r5.count ?? 0];
     },
   });
 }
@@ -92,10 +92,7 @@ function usePipelineCounts() {
   return useQuery({
     queryKey: ["dashboard-pipeline"],
     queryFn: async () => {
-      const { data } = await supabase
-        .from("enquiries")
-        .select("status")
-        .is("deleted_at", null);
+      const { data } = await supabase.from("enquiries").select("status").is("deleted_at", null);
       const counts: Record<string, number> = {};
       data?.forEach((r) => { counts[r.status] = (counts[r.status] ?? 0) + 1; });
       return ALL_STATUSES.map((s) => ({ status: s, count: counts[s] ?? 0 }));
@@ -106,13 +103,8 @@ function usePipelineCounts() {
 // ─── Today's actions ───
 
 interface ActionItem {
-  id: string;
-  enquiry_id: string;
-  ref_number: string;
-  client_name: string;
-  site_city: string;
-  scheduled_date: string;
-  notes: string | null;
+  id: string; enquiry_id: string; ref_number: string; client_name: string;
+  site_city: string; scheduled_date: string; notes: string | null;
 }
 
 function useTodaysActions() {
@@ -121,42 +113,20 @@ function useTodaysActions() {
     queryFn: async () => {
       const today = new Date().toISOString().slice(0, 10);
       const { data: followUps } = await supabase
-        .from("follow_ups")
-        .select("id, scheduled_date, notes, enquiry_id")
-        .lte("scheduled_date", today)
-        .eq("outcome", "pending")
-        .order("scheduled_date", { ascending: true })
-        .limit(10);
-
+        .from("follow_ups").select("id, scheduled_date, notes, enquiry_id")
+        .lte("scheduled_date", today).eq("outcome", "pending")
+        .order("scheduled_date", { ascending: true }).limit(10);
       if (!followUps?.length) return [];
-
       const enquiryIds = [...new Set(followUps.map((f) => f.enquiry_id))];
-      const { data: enquiries } = await supabase
-        .from("enquiries")
-        .select("id, ref_number, site_city, client_id")
-        .in("id", enquiryIds);
-
+      const { data: enquiries } = await supabase.from("enquiries").select("id, ref_number, site_city, client_id").in("id", enquiryIds);
       const clientIds = [...new Set(enquiries?.map((e) => e.client_id) ?? [])];
-      const { data: clients } = await supabase
-        .from("clients")
-        .select("id, name")
-        .in("id", clientIds);
-
+      const { data: clients } = await supabase.from("clients").select("id, name").in("id", clientIds);
       const enqMap = new Map(enquiries?.map((e) => [e.id, e]) ?? []);
       const cliMap = new Map(clients?.map((c) => [c.id, c]) ?? []);
-
       return followUps.map((f): ActionItem => {
         const enq = enqMap.get(f.enquiry_id);
         const cli = enq ? cliMap.get(enq.client_id) : null;
-        return {
-          id: f.id,
-          enquiry_id: f.enquiry_id,
-          ref_number: enq?.ref_number ?? "",
-          client_name: cli?.name ?? "Unknown",
-          site_city: enq?.site_city ?? "",
-          scheduled_date: f.scheduled_date,
-          notes: f.notes,
-        };
+        return { id: f.id, enquiry_id: f.enquiry_id, ref_number: enq?.ref_number ?? "", client_name: cli?.name ?? "Unknown", site_city: enq?.site_city ?? "", scheduled_date: f.scheduled_date, notes: f.notes };
       });
     },
   });
@@ -165,13 +135,8 @@ function useTodaysActions() {
 // ─── Job reminders ───
 
 interface ReminderItem {
-  id: string;
-  enquiry_id: string;
-  ref_number: string;
-  client_name: string;
-  reminder_type: string;
-  days_before: number;
-  scheduled_for: string;
+  id: string; enquiry_id: string; ref_number: string; client_name: string;
+  reminder_type: string; days_before: number; scheduled_for: string;
 }
 
 function useJobReminders() {
@@ -179,52 +144,25 @@ function useJobReminders() {
     queryKey: ["dashboard-reminders"],
     queryFn: async () => {
       const today = new Date().toISOString().slice(0, 10);
-      const futureDate = new Date();
-      futureDate.setDate(futureDate.getDate() + 3);
+      const futureDate = new Date(); futureDate.setDate(futureDate.getDate() + 3);
       const future = futureDate.toISOString().slice(0, 10);
-
-      const { data: reminders } = await supabase
-        .from("job_reminders")
+      const { data: reminders } = await supabase.from("job_reminders")
         .select("id, reminder_type, days_before, scheduled_for, target_date, enquiry_id, job_id")
-        .gte("scheduled_for", today)
-        .lte("scheduled_for", future)
-        .eq("sent", false)
-        .order("scheduled_for", { ascending: true })
-        .limit(8);
-
+        .gte("scheduled_for", today).lte("scheduled_for", future).eq("sent", false)
+        .order("scheduled_for", { ascending: true }).limit(8);
       if (!reminders?.length) return [];
-
       const enquiryIds = [...new Set(reminders.map((r) => r.enquiry_id))];
-      const { data: enquiries } = await supabase
-        .from("enquiries")
-        .select("id, ref_number, client_id")
-        .in("id", enquiryIds);
-
+      const { data: enquiries } = await supabase.from("enquiries").select("id, ref_number, client_id").in("id", enquiryIds);
       const clientIds = [...new Set(enquiries?.map((e) => e.client_id) ?? [])];
-      const { data: clients } = await supabase
-        .from("clients")
-        .select("id, name")
-        .in("id", clientIds);
-
+      const { data: clients } = await supabase.from("clients").select("id, name").in("id", clientIds);
       const enqMap = new Map(enquiries?.map((e) => [e.id, e]) ?? []);
       const cliMap = new Map(clients?.map((c) => [c.id, c]) ?? []);
-
       return reminders.map((r): ReminderItem => {
         const enq = enqMap.get(r.enquiry_id);
         const cli = enq ? cliMap.get(enq.client_id) : null;
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-        const schedDate = new Date(r.scheduled_for);
-        const diffDays = Math.max(0, Math.round((schedDate.getTime() - today.getTime()) / 86400000));
-        return {
-          id: r.id,
-          enquiry_id: r.enquiry_id,
-          ref_number: enq?.ref_number ?? "",
-          client_name: cli?.name ?? "Unknown",
-          reminder_type: r.reminder_type,
-          days_before: diffDays,
-          scheduled_for: r.scheduled_for,
-        };
+        const t = new Date(); t.setHours(0, 0, 0, 0);
+        const diffDays = Math.max(0, Math.round((new Date(r.scheduled_for).getTime() - t.getTime()) / 86400000));
+        return { id: r.id, enquiry_id: r.enquiry_id, ref_number: enq?.ref_number ?? "", client_name: cli?.name ?? "Unknown", reminder_type: r.reminder_type, days_before: diffDays, scheduled_for: r.scheduled_for };
       });
     },
   });
@@ -232,51 +170,28 @@ function useJobReminders() {
 
 // ─── Revenue chart ───
 
-interface RevenueMonth {
-  month: string;
-  label: string;
-  count: number;
-  revenue: number;
-}
+interface RevenueMonth { month: string; label: string; count: number; revenue: number; }
 
 function useRevenueChart() {
   return useQuery({
     queryKey: ["dashboard-revenue"],
     queryFn: async () => {
-      const sixMonthsAgo = new Date();
-      sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
+      const sixMonthsAgo = new Date(); sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
       const since = sixMonthsAgo.toISOString().slice(0, 10);
-
-      const { data: enquiries } = await supabase
-        .from("enquiries")
-        .select("id, confirmed_date")
-        .gte("confirmed_date", since)
-        .in("status", ["confirmed", "completed"]);
-
+      const { data: enquiries } = await supabase.from("enquiries").select("id, confirmed_date").gte("confirmed_date", since).in("status", ["confirmed", "completed"]);
       if (!enquiries?.length) return [];
-
       const enqIds = enquiries.map((e) => e.id);
-      const { data: quotes } = await supabase
-        .from("quotations")
-        .select("enquiry_id, total_amount")
-        .eq("status", "approved")
-        .in("enquiry_id", enqIds);
-
+      const { data: quotes } = await supabase.from("quotations").select("enquiry_id, total_amount").eq("status", "approved").in("enquiry_id", enqIds);
       const quoteMap = new Map(quotes?.map((q) => [q.enquiry_id, Number(q.total_amount)]) ?? []);
-
-      // Group by month
       const monthMap = new Map<string, { count: number; revenue: number }>();
       for (const e of enquiries) {
         if (!e.confirmed_date) continue;
         const d = new Date(e.confirmed_date);
         const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
         const existing = monthMap.get(key) ?? { count: 0, revenue: 0 };
-        existing.count++;
-        existing.revenue += quoteMap.get(e.id) ?? 0;
+        existing.count++; existing.revenue += quoteMap.get(e.id) ?? 0;
         monthMap.set(key, existing);
       }
-
-      // Build last 6 months array
       const months: RevenueMonth[] = [];
       const now = new Date();
       for (let i = 5; i >= 0; i--) {
@@ -294,56 +209,26 @@ function useRevenueChart() {
 // ─── Activity feed ───
 
 interface ActivityItem {
-  id: string;
-  event_type: string;
-  from_status: string | null;
-  to_status: string | null;
-  created_at: string;
-  ref_number: string;
-  enquiry_id: string;
-  client_name: string;
+  id: string; event_type: string; from_status: string | null; to_status: string | null;
+  created_at: string; ref_number: string; enquiry_id: string; client_name: string;
 }
 
 function useActivityFeed() {
   return useQuery({
     queryKey: ["dashboard-activity"],
     queryFn: async () => {
-      const { data: events } = await supabase
-        .from("enquiry_events")
-        .select("id, event_type, from_status, to_status, created_at, enquiry_id")
-        .order("created_at", { ascending: false })
-        .limit(15);
-
+      const { data: events } = await supabase.from("enquiry_events").select("id, event_type, from_status, to_status, created_at, enquiry_id").order("created_at", { ascending: false }).limit(15);
       if (!events?.length) return [];
-
       const enquiryIds = [...new Set(events.map((e) => e.enquiry_id))];
-      const { data: enquiries } = await supabase
-        .from("enquiries")
-        .select("id, ref_number, client_id")
-        .in("id", enquiryIds);
-
+      const { data: enquiries } = await supabase.from("enquiries").select("id, ref_number, client_id").in("id", enquiryIds);
       const clientIds = [...new Set(enquiries?.map((e) => e.client_id) ?? [])];
-      const { data: clients } = await supabase
-        .from("clients")
-        .select("id, name")
-        .in("id", clientIds);
-
+      const { data: clients } = await supabase.from("clients").select("id, name").in("id", clientIds);
       const enqMap = new Map(enquiries?.map((e) => [e.id, e]) ?? []);
       const cliMap = new Map(clients?.map((c) => [c.id, c]) ?? []);
-
       return events.map((ev): ActivityItem => {
         const enq = enqMap.get(ev.enquiry_id);
         const cli = enq ? cliMap.get(enq.client_id) : null;
-        return {
-          id: ev.id,
-          event_type: ev.event_type,
-          from_status: ev.from_status,
-          to_status: ev.to_status,
-          created_at: ev.created_at,
-          ref_number: enq?.ref_number ?? "",
-          enquiry_id: ev.enquiry_id,
-          client_name: cli?.name ?? "Unknown",
-        };
+        return { id: ev.id, event_type: ev.event_type, from_status: ev.from_status, to_status: ev.to_status, created_at: ev.created_at, ref_number: enq?.ref_number ?? "", enquiry_id: ev.enquiry_id, client_name: cli?.name ?? "Unknown" };
       });
     },
   });
@@ -372,9 +257,7 @@ function getEventColor(ev: ActivityItem): string {
   }
 }
 
-// ─── Custom tooltip for chart ───
-
-function RevenueTooltip({ active, payload, label }: any) {
+function RevenueTooltip({ active, payload }: any) {
   if (!active || !payload?.length) return null;
   const d = payload[0].payload as RevenueMonth;
   return (
@@ -398,7 +281,6 @@ export default function Dashboard() {
   const revenue = useRevenueChart();
   const activity = useActivityFeed();
 
-  // Realtime activity feed
   useEffect(() => {
     const channel = supabase
       .channel("dashboard-events")
@@ -418,79 +300,74 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-6">
-      <h1 className="font-heading text-2xl font-bold text-foreground">Dashboard</h1>
+      <h1 className="font-heading text-[1.875rem] font-bold" style={{ color: "hsl(var(--navy))" }}>Dashboard</h1>
 
       {/* ── Section 1: Stat Cards ── */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-4">
         {stats.isLoading
           ? Array.from({ length: 5 }).map((_, i) => (
-              <Skeleton key={i} className="h-32 rounded-xl" />
+              <div key={i} className="rounded-2xl border border-border bg-card p-6 shadow-sm">
+                <Skeleton className="h-5 w-5 ml-auto mb-4 rounded-full" />
+                <Skeleton className="h-12 w-24 mb-2" />
+                <Skeleton className="h-4 w-28" />
+              </div>
             ))
-          : stats.data?.map((card) => {
-              const Icon = card.icon;
-              const isGold = card.color.startsWith("hsl");
+          : STAT_CARD_DEFS.map((def, i) => {
+              const Icon = def.icon;
+              const value = stats.data?.[i] ?? 0;
               return (
-                <Card key={card.label} className="rounded-xl shadow-sm">
-                  <CardContent className="p-6 relative">
-                    <Icon
-                      className={`absolute top-4 right-4 h-6 w-6 ${isGold ? "" : card.color}`}
-                      style={isGold ? { color: card.color } : undefined}
-                    />
-                    <AnimatedNumber value={card.value} />
-                    <p className="mt-1 text-sm text-muted-foreground">{card.label}</p>
-                  </CardContent>
-                </Card>
+                <div key={def.label} className="rounded-2xl border border-border bg-card p-6 shadow-sm relative">
+                  <div className={`absolute top-4 right-4 h-10 w-10 rounded-full ${def.bgClass} flex items-center justify-center`}>
+                    <Icon className={`h-5 w-5 ${def.iconClass}`} />
+                  </div>
+                  <div className="font-heading font-bold" style={{ fontSize: "3rem", lineHeight: 1.1, color: "#0F2A47" }}>
+                    <AnimatedNumber value={value} />
+                  </div>
+                  <p className="mt-1 text-sm text-muted-foreground">{def.label}</p>
+                </div>
               );
             })}
       </div>
 
       {/* ── Section 2: Pipeline Strip ── */}
-      <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1">
+      <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-thin">
         {pipeline.isLoading
           ? Array.from({ length: 8 }).map((_, i) => <Skeleton key={i} className="h-8 w-28 rounded-full flex-shrink-0" />)
           : pipeline.data?.map(({ status, count }) => (
               <button
                 key={status}
                 onClick={() => navigate("/enquiries")}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-white text-xs font-medium flex-shrink-0 hover:opacity-90 transition-opacity ${STATUS_COLORS[status]}`}
+                className={`flex items-center gap-1.5 px-4 py-1.5 rounded-full text-white text-xs font-medium flex-shrink-0 hover:opacity-90 transition-opacity ${STATUS_COLORS[status]}`}
               >
                 {STATUS_LABELS[status]}
-                <span className="bg-white/25 rounded-full px-1.5 text-[10px] font-bold">{count}</span>
+                <span className="bg-white/25 rounded-full px-2 py-0.5 text-[10px] font-bold">{count}</span>
               </button>
             ))}
       </div>
 
       {/* ── Section 3: Two column row ── */}
-      <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
-        {/* Today's Actions — 60% */}
-        <Card className="lg:col-span-3 rounded-xl shadow-sm">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        {/* Today's Actions — 2/3 */}
+        <Card className="lg:col-span-2 rounded-2xl shadow-sm border-border">
           <CardContent className="p-6">
             <div className="flex items-center gap-2 mb-4">
               <CalendarClock className="h-5 w-5 text-amber-600" />
-              <h2 className="font-heading text-lg font-semibold text-foreground">Today's Actions</h2>
+              <h2 className="font-heading text-lg font-semibold" style={{ color: "#0F2A47" }}>Today's Actions</h2>
             </div>
-
             {actions.isLoading ? (
-              <div className="space-y-3">
-                {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-12 w-full" />)}
-              </div>
+              <div className="space-y-3">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-14 w-full rounded-lg" />)}</div>
             ) : !actions.data?.length ? (
-              <div className="flex flex-col items-center py-8 text-center">
+              <div className="flex flex-col items-center py-10 text-center">
                 <CheckCircle className="h-10 w-10 text-green-500 mb-2" />
                 <p className="text-sm text-muted-foreground">All caught up! No follow-ups due today.</p>
               </div>
             ) : (
-              <div className="space-y-2">
+              <div className="space-y-1">
                 {actions.data.map((item) => {
-                  const today = new Date();
-                  today.setHours(0, 0, 0, 0);
+                  const today = new Date(); today.setHours(0, 0, 0, 0);
                   const isOverdue = new Date(item.scheduled_date) < today;
                   return (
-                    <div
-                      key={item.id}
-                      className="flex items-center gap-3 p-2.5 rounded-lg hover:bg-muted/20 cursor-pointer transition-colors"
-                      onClick={() => navigate(`/enquiries/${item.enquiry_id}`)}
-                    >
+                    <div key={item.id} className="flex items-center gap-3 p-3 rounded-lg hover:bg-muted/30 cursor-pointer transition-colors" onClick={() => navigate(`/enquiries/${item.enquiry_id}`)}>
                       <span className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${isOverdue ? "bg-red-500 animate-pulse" : "bg-amber-500"}`} />
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2">
@@ -510,33 +387,24 @@ export default function Dashboard() {
           </CardContent>
         </Card>
 
-        {/* Job Reminders — 40% */}
-        <Card className="lg:col-span-2 rounded-xl shadow-sm">
+        {/* Job Reminders — 1/3 */}
+        <Card className="rounded-2xl shadow-sm border-border">
           <CardContent className="p-6">
             <div className="flex items-center gap-2 mb-4">
               <Bell className="h-5 w-5 text-red-500" />
-              <h2 className="font-heading text-lg font-semibold text-foreground">Upcoming Reminders</h2>
+              <h2 className="font-heading text-lg font-semibold" style={{ color: "#0F2A47" }}>Upcoming Reminders</h2>
             </div>
-
             {reminders.isLoading ? (
-              <div className="space-y-3">
-                {Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-12 w-full" />)}
-              </div>
+              <div className="space-y-3">{Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-14 w-full rounded-lg" />)}</div>
             ) : !reminders.data?.length ? (
-              <p className="text-sm text-muted-foreground text-center py-8">No upcoming reminders.</p>
+              <p className="text-sm text-muted-foreground text-center py-10">No upcoming reminders.</p>
             ) : (
-              <div className="space-y-2">
+              <div className="space-y-1">
                 {reminders.data.map((item) => {
-                  const RIcon = item.reminder_type === "site" ? Hammer
-                    : item.reminder_type === "report" ? FileText : Receipt;
-                  const dotColor = item.days_before <= 1 ? "bg-red-500"
-                    : item.days_before === 2 ? "bg-amber-500" : "bg-yellow-500";
+                  const RIcon = item.reminder_type === "site" ? Hammer : item.reminder_type === "report" ? FileText : Receipt;
+                  const dotColor = item.days_before <= 1 ? "bg-red-500" : item.days_before === 2 ? "bg-amber-500" : "bg-yellow-500";
                   return (
-                    <div
-                      key={item.id}
-                      className="flex items-center gap-3 p-2.5 rounded-lg hover:bg-muted/20 cursor-pointer transition-colors"
-                      onClick={() => navigate(`/enquiries/${item.enquiry_id}`)}
-                    >
+                    <div key={item.id} className="flex items-center gap-3 p-3 rounded-lg hover:bg-muted/30 cursor-pointer transition-colors" onClick={() => navigate(`/enquiries/${item.enquiry_id}`)}>
                       <span className={`w-2 h-2 rounded-full flex-shrink-0 ${dotColor}`} />
                       <RIcon className="h-4 w-4 text-muted-foreground flex-shrink-0" />
                       <div className="min-w-0 flex-1">
@@ -556,34 +424,33 @@ export default function Dashboard() {
       </div>
 
       {/* ── Section 4: Revenue Chart ── */}
-      <Card className="rounded-xl shadow-sm">
+      <Card className="rounded-2xl shadow-sm border-border">
         <CardContent className="p-6">
           <div className="flex items-center justify-between mb-4">
-            <h2 className="font-heading text-lg font-semibold text-foreground">
+            <h2 className="font-heading text-lg font-semibold" style={{ color: "#0F2A47" }}>
               Confirmed Revenue — Last 6 Months
             </h2>
             {thisMonthRevenue > 0 && (
-              <span className="font-heading font-bold text-lg" style={{ color: "hsl(var(--navy))" }}>
+              <span className="font-heading font-bold text-lg" style={{ color: "#0F2A47" }}>
                 {formatCurrency(thisMonthRevenue)}
               </span>
             )}
           </div>
-
           {revenue.isLoading ? (
-            <Skeleton className="h-[280px] w-full" />
+            <Skeleton className="h-[300px] w-full rounded-lg" />
           ) : !revenue.data?.some((m) => m.revenue > 0) ? (
-            <div className="flex flex-col items-center justify-center h-[280px] text-center">
+            <div className="flex flex-col items-center justify-center h-[300px] text-center">
               <p className="text-sm text-muted-foreground">No confirmed revenue yet.</p>
             </div>
           ) : (
-            <ResponsiveContainer width="100%" height={280}>
+            <ResponsiveContainer width="100%" height={300}>
               <BarChart data={revenue.data} barSize={40}>
-                <XAxis dataKey="label" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: "hsl(var(--muted))" }} />
+                <XAxis dataKey="label" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: "#64748B" }} />
                 <YAxis hide />
                 <Tooltip content={<RevenueTooltip />} cursor={{ fill: "hsl(var(--accent))" }} />
                 <Bar dataKey="revenue" radius={[4, 4, 0, 0]}>
                   {revenue.data?.map((_, i) => (
-                    <Cell key={i} fill="hsl(var(--navy))" />
+                    <Cell key={i} fill="#0F2A47" />
                   ))}
                 </Bar>
               </BarChart>
@@ -593,23 +460,20 @@ export default function Dashboard() {
       </Card>
 
       {/* ── Section 5: Activity Feed ── */}
-      <Card className="rounded-xl shadow-sm">
+      <Card className="rounded-2xl shadow-sm border-border">
         <CardContent className="p-6">
           <div className="flex items-center gap-2 mb-4">
             <Activity className="h-5 w-5 text-muted-foreground" />
-            <h2 className="font-heading text-lg font-semibold text-foreground">Recent Activity</h2>
+            <h2 className="font-heading text-lg font-semibold" style={{ color: "#0F2A47" }}>Recent Activity</h2>
           </div>
-
           {activity.isLoading ? (
-            <div className="space-y-3">
-              {Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-10 w-full" />)}
-            </div>
+            <div className="space-y-3">{Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-12 w-full rounded-lg" />)}</div>
           ) : !activity.data?.length ? (
-            <p className="text-sm text-muted-foreground text-center py-8">
+            <p className="text-sm text-muted-foreground text-center py-10">
               No activity yet. Actions will appear here as you use the system.
             </p>
           ) : (
-            <div className="space-y-1">
+            <div className="space-y-0.5">
               <AnimatePresence initial={false}>
                 {activity.data.map((ev) => (
                   <motion.div
@@ -617,10 +481,10 @@ export default function Dashboard() {
                     initial={{ y: -20, opacity: 0 }}
                     animate={{ y: 0, opacity: 1 }}
                     exit={{ opacity: 0 }}
-                    className="flex items-center gap-3 p-2.5 rounded-lg hover:bg-muted/20 cursor-pointer transition-colors"
+                    className="flex items-center gap-3 p-3 rounded-lg hover:bg-muted/30 cursor-pointer transition-colors"
                     onClick={() => navigate(`/enquiries/${ev.enquiry_id}`)}
                   >
-                    <span className={`w-2 h-2 rounded-full flex-shrink-0 ${getEventColor(ev)}`} />
+                    <span className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${getEventColor(ev)}`} />
                     <div className="min-w-0 flex-1">
                       <span className="text-sm">{getEventDescription(ev)}</span>
                       <span className="text-xs text-muted-foreground ml-2">{ev.client_name}</span>

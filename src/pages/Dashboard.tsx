@@ -4,8 +4,8 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { formatCurrency, relativeTime } from "@/lib/utils";
 import { Card, CardContent } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { SkeletonCard } from "@/components/ui/SkeletonLoader";
 import {
   FileText, Send, CalendarClock, CreditCard, Briefcase,
   CheckCircle, Bell, Activity, Hammer, Receipt,
@@ -300,30 +300,24 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-6">
-      <h1 className="font-heading text-[1.875rem] font-bold" style={{ color: "hsl(var(--navy))" }}>Dashboard</h1>
+      <h1 className="font-sora text-[1.875rem] font-bold" style={{ color: "#0F2A47" }}>Dashboard</h1>
 
       {/* ── Section 1: Stat Cards ── */}
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-4">
         {stats.isLoading
-          ? Array.from({ length: 5 }).map((_, i) => (
-              <div key={i} className="rounded-2xl border border-border bg-card p-6 shadow-sm">
-                <Skeleton className="h-5 w-5 ml-auto mb-4 rounded-full" />
-                <Skeleton className="h-12 w-24 mb-2" />
-                <Skeleton className="h-4 w-28" />
-              </div>
-            ))
+          ? Array.from({ length: 5 }).map((_, i) => <SkeletonCard key={i} />)
           : STAT_CARD_DEFS.map((def, i) => {
               const Icon = def.icon;
               const value = stats.data?.[i] ?? 0;
               return (
-                <div key={def.label} className="rounded-2xl border border-border bg-card p-6 shadow-sm relative">
+                <div key={def.label} className="rounded-2xl border border-[#CBD5E1] bg-white p-6 shadow-sm relative hover:shadow-md transition-shadow duration-200">
                   <div className={`absolute top-4 right-4 h-10 w-10 rounded-full ${def.bgClass} flex items-center justify-center`}>
                     <Icon className={`h-5 w-5 ${def.iconClass}`} />
                   </div>
-                  <div className="font-heading font-bold" style={{ fontSize: "3rem", lineHeight: 1.1, color: "#0F2A47" }}>
+                  <div className="text-5xl font-bold font-sora" style={{ lineHeight: 1.1, color: "#0F2A47" }}>
                     <AnimatedNumber value={value} />
                   </div>
-                  <p className="mt-1 text-sm text-muted-foreground">{def.label}</p>
+                  <p className="mt-1 text-sm text-[#64748B]">{def.label}</p>
                 </div>
               );
             })}
@@ -352,7 +346,7 @@ export default function Dashboard() {
           <CardContent className="p-6">
             <div className="flex items-center gap-2 mb-4">
               <CalendarClock className="h-5 w-5 text-amber-600" />
-              <h2 className="font-heading text-lg font-semibold" style={{ color: "#0F2A47" }}>Today's Actions</h2>
+              <h2 className="font-sora text-lg font-semibold" style={{ color: "#0F2A47" }}>Today's Actions</h2>
             </div>
             {actions.isLoading ? (
               <div className="space-y-3">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-14 w-full rounded-lg" />)}</div>
@@ -392,7 +386,7 @@ export default function Dashboard() {
           <CardContent className="p-6">
             <div className="flex items-center gap-2 mb-4">
               <Bell className="h-5 w-5 text-red-500" />
-              <h2 className="font-heading text-lg font-semibold" style={{ color: "#0F2A47" }}>Upcoming Reminders</h2>
+              <h2 className="font-sora text-lg font-semibold" style={{ color: "#0F2A47" }}>Upcoming Reminders</h2>
             </div>
             {reminders.isLoading ? (
               <div className="space-y-3">{Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-14 w-full rounded-lg" />)}</div>
@@ -427,11 +421,11 @@ export default function Dashboard() {
       <Card className="rounded-2xl shadow-sm border-border">
         <CardContent className="p-6">
           <div className="flex items-center justify-between mb-4">
-            <h2 className="font-heading text-lg font-semibold" style={{ color: "#0F2A47" }}>
+            <h2 className="font-sora text-lg font-semibold" style={{ color: "#0F2A47" }}>
               Confirmed Revenue — Last 6 Months
             </h2>
             {thisMonthRevenue > 0 && (
-              <span className="font-heading font-bold text-lg" style={{ color: "#0F2A47" }}>
+              <span className="font-sora font-bold text-lg" style={{ color: "#0F2A47" }}>
                 {formatCurrency(thisMonthRevenue)}
               </span>
             )}
@@ -464,7 +458,7 @@ export default function Dashboard() {
         <CardContent className="p-6">
           <div className="flex items-center gap-2 mb-4">
             <Activity className="h-5 w-5 text-muted-foreground" />
-            <h2 className="font-heading text-lg font-semibold" style={{ color: "#0F2A47" }}>Recent Activity</h2>
+            <h2 className="font-sora text-lg font-semibold" style={{ color: "#0F2A47" }}>Recent Activity</h2>
           </div>
           {activity.isLoading ? (
             <div className="space-y-3">{Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-12 w-full rounded-lg" />)}</div>

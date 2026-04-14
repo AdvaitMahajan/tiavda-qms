@@ -14,6 +14,9 @@ export default {
       fontFamily: {
         sans: ["DM Sans", "sans-serif"],
         heading: ["Sora", "sans-serif"],
+        // Design system aliases (Tasks 1 & 2)
+        sora: ["Sora", "sans-serif"],
+        "dm-sans": ["DM Sans", "sans-serif"],
         mono: ["JetBrains Mono", "monospace"],
       },
       colors: {
@@ -23,10 +26,26 @@ export default {
         background: "hsl(var(--background))",
         foreground: "hsl(var(--foreground))",
         surface: "hsl(var(--surface))",
-        navy: "hsl(var(--navy))",
-        blue: "hsl(var(--blue))",
-        steel: "hsl(var(--steel))",
-        gold: "hsl(var(--gold))",
+        navy: {
+          DEFAULT: "hsl(var(--navy))",
+          light: "#1A3A5C",
+        },
+        // `blue` — DEFAULT is brand blue; shades preserved from Tailwind defaults so bg-blue-100 etc. still work.
+        blue: {
+          DEFAULT: "hsl(var(--blue))",
+          50: "#eff6ff", 100: "#dbeafe", 200: "#bfdbfe", 300: "#93c5fd",
+          400: "#60a5fa", 500: "#3b82f6", 600: "#2563eb", 700: "#1d4ed8",
+          800: "#1e40af", 900: "#1e3a8a", 950: "#172554",
+        },
+        steel: {
+          DEFAULT: "#2E7FC1",
+        },
+        // Alias for explicit brand blue usage
+        "tiavda-blue": "#1B5EA0",
+        gold: {
+          DEFAULT: "hsl(var(--gold))",
+          hex: "#D4930A",
+        },
         green: "hsl(var(--green))",
         red: "hsl(var(--red))",
         amber: "hsl(var(--amber))",

@@ -7,8 +7,6 @@ import { formatCurrency, relativeTime } from "@/lib/utils";
 import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Skeleton } from "@/components/ui/skeleton";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -24,6 +22,9 @@ import {
   Search, List, LayoutGrid, Download, Filter, FileQuestion,
 } from "lucide-react";
 import { EnquiryKanban } from "@/components/EnquiryKanban";
+import { StatusBadge } from "@/components/ui/StatusBadge";
+import { SkeletonRow } from "@/components/ui/SkeletonLoader";
+import { EmptyState } from "@/components/ui/EmptyState";
 import type { Tables } from "@/integrations/supabase/types";
 
 type LeadStatus = Tables<"enquiries">["status"];
@@ -197,7 +198,7 @@ export default function Enquiries() {
     <div className="space-y-6">
       {/* Header */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <h1 className="font-heading text-2xl font-bold text-foreground">Enquiries</h1>
+        <h1 className="font-sora text-2xl font-bold text-foreground">Enquiries</h1>
         <div className="flex items-center gap-2">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -285,23 +286,19 @@ function StatusFilterPopover({ selected, onChange }: { selected: LeadStatus[]; o
 function EnquiryListView({ rows, isLoading, onRowClick }: { rows: EnquiryRow[]; isLoading: boolean; onRowClick: (id: string) => void }) {
   if (isLoading) {
     return (
-      <div className="space-y-2">
-        {Array.from({ length: 8 }).map((_, i) => (
-          <Skeleton key={i} className="h-12 w-full" />
-        ))}
+      <div className="border rounded-lg overflow-hidden">
+        {Array.from({ length: 8 }).map((_, i) => <SkeletonRow key={i} />)}
       </div>
     );
   }
 
   if (!rows.length) {
     return (
-      <div className="flex flex-col items-center justify-center py-20 text-center">
-        <FileQuestion className="h-16 w-16 text-muted-foreground/40 mb-4" />
-        <p className="text-lg font-medium text-foreground">No enquiries found.</p>
-        <p className="text-sm text-muted-foreground mt-1">
-          Generate an intake link from the Clients page to create your first enquiry.
-        </p>
-      </div>
+      <EmptyState
+        icon={FileQuestion}
+        title="No enquiries found"
+        subtitle="Generate an intake link from the Clients page to create your first enquiry."
+      />
     );
   }
 
@@ -321,14 +318,12 @@ function EnquiryListView({ rows, isLoading, onRowClick }: { rows: EnquiryRow[]; 
         </TableHeader>
         <TableBody>
           {rows.map((r) => (
-            <TableRow key={r.id} className="cursor-pointer" onClick={() => onRowClick(r.id)}>
-              <TableCell className="font-mono text-[--navy] font-medium">{r.ref_number}</TableCell>
+            <TableRow key={r.id} className="cursor-pointer hover:bg-[#F8FAFC] transition-colors duration-100" onClick={() => onRowClick(r.id)}>
+              <TableCell className="font-mono text-[#0F2A47] font-medium">{r.ref_number}</TableCell>
               <TableCell className="font-semibold">{r.client_name}</TableCell>
               <TableCell>{r.site_city}</TableCell>
               <TableCell>
-                <Badge className={`${STATUS_COLORS[r.status]} text-white border-0`}>
-                  {STATUS_LABELS[r.status]}
-                </Badge>
+                <StatusBadge status={r.status} />
               </TableCell>
               <TableCell className="text-right">
                 {r.quote_amount ? (

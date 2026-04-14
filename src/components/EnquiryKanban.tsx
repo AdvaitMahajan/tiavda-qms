@@ -203,9 +203,9 @@ export function EnquiryKanban({ rows, isLoading }: Props) {
 
   if (isLoading) {
     return (
-      <div className="flex gap-4 overflow-x-auto pb-4">
+      <div className="flex gap-4 overflow-x-auto pb-6 px-1 -mx-1" style={{ minHeight: "500px" }}>
         {ALL_STATUSES.map((s) => (
-          <div key={s} className="min-w-[260px] space-y-3">
+          <div key={s} className="min-w-[260px] w-[260px] flex-shrink-0 space-y-3">
             <Skeleton className="h-8 w-full" />
             <Skeleton className="h-24 w-full" />
             <Skeleton className="h-24 w-full" />
@@ -229,7 +229,7 @@ export function EnquiryKanban({ rows, isLoading }: Props) {
         onDragOver={handleDragOver}
         onDragEnd={handleDragEnd}
       >
-        <div className="flex gap-4 overflow-x-auto pb-4 -mx-2 px-2">
+        <div className="flex gap-4 overflow-x-auto pb-6 px-1 -mx-1" style={{ minHeight: "500px" }}>
           {columns.map(({ status, cards }) => (
             <KanbanColumn
               key={status}
@@ -301,23 +301,25 @@ function KanbanColumn({ status, cards, isOver, onCardClick }: {
   return (
     <div
       ref={setNodeRef}
-      className={`min-w-[260px] w-[260px] flex-shrink-0 rounded-lg p-3 transition-colors ${
-        isOver ? "bg-blue-50 border-2 border-dashed border-blue-400" : "bg-muted/30"
+      className={`min-w-[260px] w-[260px] flex-shrink-0 rounded-xl transition-colors ${
+        isOver ? "bg-blue-50 ring-2 ring-dashed ring-blue-400" : "bg-[#F8FAFC]"
       }`}
     >
-      <div className="flex items-center justify-between mb-3">
-        <span className="text-sm font-semibold text-foreground">{STATUS_LABELS[status]}</span>
-        <Badge className={`${STATUS_COLORS[status]} text-white border-0 text-[10px] px-1.5 py-0`}>
+      {/* Column header */}
+      <div className="flex items-center justify-between px-3 py-2.5 border-b border-[#CBD5E1]">
+        <span className="text-sm font-semibold text-[#0F2A47]">{STATUS_LABELS[status]}</span>
+        <span className={`${STATUS_COLORS[status]} text-white text-[10px] font-bold px-2 py-0.5 rounded-full`}>
           {cards.length}
-        </Badge>
+        </span>
       </div>
 
-      <div className="space-y-2 min-h-[60px]">
+      {/* Column body */}
+      <div className="p-2 space-y-2 min-h-[60px]">
         {cards.length === 0 ? (
-          <div className={`rounded-lg border-2 border-dashed p-4 text-center text-xs text-muted-foreground transition-colors ${
-            isOver ? "border-blue-400 bg-blue-50/50" : "border-border"
+          <div className={`rounded-lg border-2 border-dashed p-4 text-center text-xs text-[#64748B] transition-colors ${
+            isOver ? "border-blue-400 bg-blue-50/50" : "border-[#CBD5E1]"
           }`}>
-            No enquiries
+            Drop here
           </div>
         ) : (
           cards.map((card) => (
@@ -345,12 +347,12 @@ function KanbanCard({ row, onClick }: { row: EnquiryRow; onClick: () => void }) 
       {...attributes}
       {...listeners}
       whileDrag={{ scale: 1.02 }}
-      className="bg-card border rounded-lg p-3 shadow-sm cursor-grab active:cursor-grabbing hover:shadow-md transition-shadow"
+      className="bg-white border border-[#CBD5E1] rounded-lg p-3 shadow-sm cursor-grab active:cursor-grabbing hover:shadow-md transition-shadow duration-200"
       onClick={onClick}
     >
-      <p className="font-mono text-[11px] text-muted-foreground">{row.ref_number}</p>
-      <p className="font-semibold text-sm text-foreground truncate">{row.client_name}</p>
-      <p className="text-xs text-muted-foreground">{row.site_city}</p>
+      <p className="font-mono text-[11px] text-[#64748B]">{row.ref_number}</p>
+      <p className="font-semibold text-sm text-[#0F2A47] truncate">{row.client_name}</p>
+      <p className="text-xs text-[#64748B]">{row.site_city}</p>
       {row.quote_amount && (
         <p className="text-[13px] font-medium text-[--navy] mt-1">
           {formatCurrency(Number(row.quote_amount))}

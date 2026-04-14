@@ -3,7 +3,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
-import { formatCurrency, formatDate, relativeTime, cn } from "@/lib/utils";
+import { formatCurrency, cn } from "@/lib/utils";
 import { pdf } from "@react-pdf/renderer";
 import QuotationPDF from "@/components/QuotationPDF";
 import { PaymentsTab } from "@/components/enquiry/PaymentsTab";
@@ -11,27 +11,16 @@ import { CommunicationTab } from "@/components/enquiry/CommunicationTab";
 import { JobCompletionTab } from "@/components/enquiry/JobCompletionTab";
 import { MobilisationSection } from "@/components/enquiry/MobilisationSection";
 import { FollowUpsTab } from "@/components/enquiry/FollowUpsTab";
+import { StatusBadge } from "@/components/ui/StatusBadge";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { Loader2, ChevronDown, ChevronUp, Download, Send, AlertTriangle, ArrowLeft, CheckCircle2 } from "lucide-react";
+import { Loader2, ChevronDown, ChevronUp, Download, Send, AlertTriangle, ArrowLeft, CheckCircle2, MapPin } from "lucide-react";
 import type { Tables } from "@/integrations/supabase/types";
 
 type Enquiry = Tables<"enquiries">;
 type Client = Tables<"clients">;
 type Quotation = Tables<"quotations">;
-
-const STATUS_COLORS: Record<string, string> = {
-  new: "bg-slate-100 text-slate-700",
-  pending: "bg-blue/10 text-blue",
-  sent: "bg-indigo-100 text-indigo-700",
-  follow_up: "bg-amber/10 text-amber",
-  approved: "bg-purple-100 text-purple-700",
-  confirmed: "bg-green/10 text-green",
-  lost: "bg-red/10 text-red",
-  completed: "bg-teal-100 text-teal-700",
-};
 
 type LineItem = { description: string; unit: string; qty: number; rate: number; amount: number };
 
@@ -60,7 +49,7 @@ function VariantCard({
         </div>
       </div>
 
-      <p className="font-heading text-3xl font-bold text-navy mb-3">{formatCurrency(q.total_amount)}</p>
+      <p className="font-sora text-3xl font-bold text-navy mb-3">{formatCurrency(q.total_amount)}</p>
 
       <div className="space-y-1 text-sm text-muted-foreground mb-3">
         <p>Mobilisation: {formatCurrency(q.mobilisation_cost)}</p>
@@ -133,6 +122,7 @@ export default function EnquiryDetail() {
   const [approveTarget, setApproveTarget] = useState<Quotation | null>(null);
   const [approving, setApproving] = useState(false);
   const [pdfLoading, setPdfLoading] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState("quotations");
 
   const fetchAll = useCallback(async () => {
     if (!id) return;
@@ -285,111 +275,105 @@ export default function EnquiryDetail() {
   const bestId = drafts.length > 0 ? drafts.reduce((a, b) => a.total_amount < b.total_amount ? a : b).id : null;
   const showJobTabs = enquiry.status === "confirmed" || enquiry.status === "completed";
 
-  return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-start justify-between">
-        <div>
-          <div className="flex items-center gap-3 mb-1">
-            <Button variant="ghost" size="sm" onClick={() => navigate("/enquiries")}><ArrowLeft className="h-4 w-4" /></Button>
-            <h1 className="font-heading text-2xl font-bold text-foreground">{enquiry.ref_number}</h1>
-            <Badge className={cn("capitalize", STATUS_COLORS[enquiry.status])}>{enquiry.status.replace("_", " ")}</Badge>
-          </div>
-          <p className="text-sm text-muted-foreground ml-12">{enquiry.site_address}, {enquiry.site_city}</p>
-        </div>
-      </div>
+  // Tab definitions for custom tab bar (Task 4)
+  const allTabs = [
+    { key: "quotations", label: "Quotations" },
+    { key: "follow-ups", label: "Follow-ups" },
+    { key: "payments", label: "Payments" },
+    { key: "communications", label: "Communications" },
+    ...(showJobTabs ? [{ key: "job", label: "Job Completion" }] : []),
+  ];
 
-      {/* Summary cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        {[
-          ["Structure", enquiry.structure_type],
-          ["Bores", enquiry.num_bores.toString()],
-          ["Depth", enquiry.expected_depth_m ? `${enquiry.expected_depth_m}m` : "TBD"],
-          ["Soil Hint", enquiry.soil_type_hint ?? "Unknown"],
-        ].map(([label, val]) => (
-          <div key={label} className="rounded-lg border border-border bg-card p-4">
-            <p className="text-xs text-muted-foreground mb-1">{label}</p>
-            <p className="font-semibold capitalize text-foreground">{val}</p>
+  return (
+    <div className="flex h-full overflow-hidden flex-col space-y-0">
+      {/* Header (Task 5) */}
+      <div className="px-1 pb-4 space-y-4">
+        <div className="flex items-start gap-3">
+          <Button variant="ghost" size="sm" onClick={() => navigate("/enquiries")} className="mt-0.5">
+            <ArrowLeft className="h-4 w-4" />
+          </Button>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-3 flex-wrap">
+              <h1 className="font-mono text-2xl font-bold text-[#0F2A47]">{enquiry.ref_number}</h1>
+              <StatusBadge status={enquiry.status} />
+            </div>
+            <div className="flex items-center gap-1 mt-1">
+              <MapPin className="w-3.5 h-3.5 text-[#64748B]" />
+              <span className="text-sm text-[#64748B]">{enquiry.site_city}</span>
+            </div>
           </div>
-        ))}
+        </div>
+
+        {/* Site info grid (Task 5) */}
+        <div className="grid grid-cols-2 gap-3">
+          {[
+            ["Structure", enquiry.structure_type],
+            ["Bores", enquiry.num_bores.toString()],
+            ["Depth", enquiry.expected_depth_m ? `${enquiry.expected_depth_m}m` : "TBD"],
+            ["Soil Hint", enquiry.soil_type_hint ?? "Unknown"],
+          ].map(([label, val]) => (
+            <div key={label} className="bg-[#F8FAFC] rounded-lg p-3 border border-[#CBD5E1]">
+              <p className="text-xs text-[#64748B] uppercase tracking-wide">{label}</p>
+              <p className="text-sm font-semibold text-[#0F2A47] mt-1 capitalize">{val}</p>
+            </div>
+          ))}
+        </div>
       </div>
 
       {/* Mobilisation Section */}
       {showJobTabs && <MobilisationSection enquiryId={enquiry.id} />}
 
-      {/* Tabs */}
-      <Tabs defaultValue="quotations">
-        <TabsList className="flex-wrap">
-          <TabsTrigger value="quotations">Quotations</TabsTrigger>
-          <TabsTrigger value="follow-ups">Follow-ups</TabsTrigger>
-          <TabsTrigger value="details">Details</TabsTrigger>
-          <TabsTrigger value="payments">Payments</TabsTrigger>
-          <TabsTrigger value="communications">Communications</TabsTrigger>
-          {showJobTabs && <TabsTrigger value="job">Job Completion</TabsTrigger>}
-        </TabsList>
+      {/* Custom Tab Bar (Task 4) */}
+      <div className="flex border-b-2 border-gray-200 bg-white overflow-x-auto">
+        {allTabs.map((tab) => (
+          <button
+            key={tab.key}
+            onClick={() => setActiveTab(tab.key)}
+            className={`px-4 py-3 text-sm font-medium whitespace-nowrap border-b-2 -mb-0.5 transition-colors duration-150 ${
+              activeTab === tab.key
+                ? "text-[#0F2A47] border-[#0F2A47] font-semibold bg-white"
+                : "text-gray-500 border-transparent hover:text-gray-700 hover:border-gray-300"
+            }`}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
 
-        <TabsContent value="quotations" className="space-y-4 pt-4">
-          <div className="flex items-center justify-between">
-            <h2 className="font-heading text-lg font-semibold text-foreground">Quotation Variants</h2>
-            <Button onClick={generateQuotations} disabled={generating} className="bg-blue text-white hover:bg-blue/90">
-              {generating ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Generating…</> : quotations.length > 0 ? "Re-generate" : "Generate Quotation"}
-            </Button>
-          </div>
-          {quotations.length === 0 ? (
-            <div className="rounded-xl border border-border bg-card p-12 text-center">
-              <AlertTriangle className="mx-auto mb-3 h-10 w-10 text-amber" />
-              <p className="text-muted-foreground mb-4">No quotations yet. Click "Generate Quotation" to create 4 variants based on the rate matrix.</p>
-              <Button variant="outline" onClick={() => navigate("/rate-matrix")}>Go to Rate Matrix</Button>
+      {/* Tab Content */}
+      <div className="pt-4 overflow-y-auto flex-1">
+        {activeTab === "quotations" && (
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <h2 className="font-sora text-lg font-semibold text-foreground">Quotation Variants</h2>
+              <Button onClick={generateQuotations} disabled={generating} className="bg-[#1B5EA0] text-white hover:opacity-90 transition-opacity">
+                {generating ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Generating…</> : quotations.length > 0 ? "Re-generate" : "Generate Quotation"}
+              </Button>
             </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {quotations.map((q) => (
-                <VariantCard key={q.id} q={q} isBest={q.id === bestId} onApprove={setApproveTarget} pdfLoading={pdfLoading} />
-              ))}
-            </div>
-          )}
-        </TabsContent>
-
-        <TabsContent value="follow-ups" className="pt-4">
-          <FollowUpsTab enquiryId={enquiry.id} />
-        </TabsContent>
-
-        <TabsContent value="details" className="pt-4">
-          <div className="rounded-xl border border-border bg-card p-6 space-y-3">
-            <h2 className="font-heading text-lg font-semibold text-foreground">Enquiry Details</h2>
-            {[
-              ["Reference", enquiry.ref_number],
-              ["Date", formatDate(enquiry.enquiry_date)],
-              ["Site Address", enquiry.site_address],
-              ["City", enquiry.site_city],
-              ["Structure Type", enquiry.structure_type],
-              ["Bores", enquiry.num_bores.toString()],
-              ["Expected Depth", enquiry.expected_depth_m ? `${enquiry.expected_depth_m}m` : "Not specified"],
-              ["Soil Hint", enquiry.soil_type_hint ?? "Not specified"],
-              ["Remarks", enquiry.remarks ?? "None"],
-            ].map(([l, v]) => (
-              <div key={l} className="flex justify-between border-b border-border pb-2 last:border-0">
-                <span className="text-sm text-muted-foreground">{l}</span>
-                <span className="text-sm font-medium capitalize text-foreground">{v}</span>
+            {quotations.length === 0 ? (
+              <div className="rounded-xl border border-border bg-card p-12 text-center">
+                <AlertTriangle className="mx-auto mb-3 h-10 w-10 text-amber" />
+                <p className="text-muted-foreground mb-4">No quotations yet. Click "Generate Quotation" to create 4 variants based on the rate matrix.</p>
+                <Button variant="outline" onClick={() => navigate("/rate-matrix")}>Go to Rate Matrix</Button>
               </div>
-            ))}
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {quotations.map((q) => (
+                  <VariantCard key={q.id} q={q} isBest={q.id === bestId} onApprove={setApproveTarget} pdfLoading={pdfLoading} />
+                ))}
+              </div>
+            )}
           </div>
-        </TabsContent>
-
-        <TabsContent value="payments" className="pt-4">
-          <PaymentsTab enquiryId={enquiry.id} />
-        </TabsContent>
-
-        <TabsContent value="communications" className="pt-4">
-          <CommunicationTab enquiryId={enquiry.id} />
-        </TabsContent>
-
-        {showJobTabs && (
-          <TabsContent value="job" className="pt-4">
-            <JobCompletionTab enquiryId={enquiry.id} />
-          </TabsContent>
         )}
-      </Tabs>
+
+        {activeTab === "follow-ups" && <FollowUpsTab enquiryId={enquiry.id} />}
+
+        {activeTab === "payments" && <PaymentsTab enquiryId={enquiry.id} />}
+
+        {activeTab === "communications" && <CommunicationTab enquiryId={enquiry.id} />}
+
+        {activeTab === "job" && showJobTabs && <JobCompletionTab enquiryId={enquiry.id} />}
+      </div>
 
       {/* Approve modal */}
       <Dialog open={!!approveTarget} onOpenChange={(o) => !o && setApproveTarget(null)}>

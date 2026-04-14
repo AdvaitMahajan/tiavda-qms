@@ -8,11 +8,12 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { CreditCard, ExternalLink } from "lucide-react";
 import type { Tables } from "@/integrations/supabase/types";
+import { EmptyState } from "@/components/ui/EmptyState";
 
 type Payment = Tables<"payments">;
 
@@ -122,17 +123,14 @@ export function PaymentsTab({ enquiryId }: { enquiryId: string }) {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h2 className="font-heading text-lg font-semibold text-foreground">Payments</h2>
+        <h2 className="font-sora text-lg font-semibold text-foreground">Payments</h2>
         <Button onClick={openRequest} className="bg-gold text-white hover:bg-gold/90">
           Request Advance Payment
         </Button>
       </div>
 
       {!payments?.length ? (
-        <Card><CardContent className="py-12 text-center">
-          <CreditCard className="mx-auto h-10 w-10 text-muted-foreground/40 mb-3" />
-          <p className="text-muted-foreground">No payment requested yet.</p>
-        </CardContent></Card>
+        <EmptyState icon={CreditCard} title="No payment requested yet." />
       ) : (
         payments.map((p) => (
           <Card key={p.id}>

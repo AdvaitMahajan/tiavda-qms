@@ -7,9 +7,11 @@ import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Badge } from "@/components/ui/badge";
-import { AlertTriangle, Plus, Loader2 } from "lucide-react";
+
+import { AlertTriangle, Plus, Loader2, Table2 } from "lucide-react";
 import type { Tables } from "@/integrations/supabase/types";
+import { EmptyState } from "@/components/ui/EmptyState";
+import { SkeletonRow } from "@/components/ui/SkeletonLoader";
 
 type Rate = Tables<"rate_matrix">;
 
@@ -120,7 +122,7 @@ export default function RateMatrix() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="font-heading text-2xl font-bold text-foreground">Rate Matrix</h1>
+        <h1 className="font-sora text-2xl font-bold text-[#0F2A47]">Rate Matrix</h1>
         <Dialog open={open} onOpenChange={setOpen}>
           <DialogTrigger asChild>
             <Button className="bg-blue text-white hover:bg-blue/90"><Plus className="mr-2 h-4 w-4" />Add Rate</Button>
@@ -190,15 +192,19 @@ export default function RateMatrix() {
       )}
 
       {loading ? (
-        <div className="flex justify-center py-20"><Loader2 className="h-8 w-8 animate-spin text-blue" /></div>
-      ) : rates.length === 0 ? (
-        <div className="rounded-xl border border-border bg-card p-12 text-center">
-          <p className="text-muted-foreground">No rates configured yet. Add your first rate to start generating quotations.</p>
+        <div className="rounded-xl border border-[#CBD5E1] overflow-hidden">
+          {Array.from({ length: 5 }).map((_, i) => <SkeletonRow key={i} />)}
         </div>
+      ) : rates.length === 0 ? (
+        <EmptyState
+          icon={Table2}
+          title="No rates configured yet."
+          subtitle="Add your first rate to start generating quotations."
+        />
       ) : (
         Object.entries(grouped).map(([city, rows]) => (
           <div key={city} className="space-y-2">
-            <h2 className="font-heading text-lg font-bold text-navy">{city}</h2>
+            <h2 className="font-sora text-lg font-bold text-[#0F2A47]">{city}</h2>
             <div className="overflow-x-auto rounded-lg border border-border bg-card">
               <Table>
                 <TableHeader>
@@ -215,7 +221,7 @@ export default function RateMatrix() {
                 </TableHeader>
                 <TableBody>
                   {rows.map((r) => (
-                    <TableRow key={r.id}>
+                    <TableRow key={r.id} className="hover:bg-[#F8FAFC] transition-colors duration-100">
                       <TableCell className="capitalize">{r.structure_type}</TableCell>
                       <TableCell className="capitalize">{r.soil_type}</TableCell>
                       <TableCell className="text-right font-mono">{inr(r.rate_per_bore)}</TableCell>

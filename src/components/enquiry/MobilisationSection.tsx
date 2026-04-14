@@ -86,7 +86,7 @@ export function MobilisationSection({ enquiryId }: { enquiryId: string }) {
   return (
     <Card>
       <CardContent className="p-4">
-        <h3 className="font-heading text-sm font-semibold text-foreground mb-2 flex items-center gap-2">
+        <h3 className="font-sora text-sm font-semibold text-foreground mb-2 flex items-center gap-2">
           <CalendarDays className="h-4 w-4" /> Mobilisation
         </h3>
         <div className="grid grid-cols-2 gap-2 text-sm">

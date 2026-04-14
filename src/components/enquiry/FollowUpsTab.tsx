@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/dialog";
 import { CalendarClock, Plus, Check } from "lucide-react";
 import type { Tables } from "@/integrations/supabase/types";
+import { EmptyState } from "@/components/ui/EmptyState";
 
 type FollowUp = Tables<"follow_ups">;
 type FollowUpOutcome = FollowUp["outcome"];
@@ -162,20 +163,18 @@ export function FollowUpsTab({ enquiryId }: { enquiryId: string }) {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h2 className="font-heading text-lg font-semibold text-foreground">Follow-ups</h2>
+        <h2 className="font-sora text-lg font-semibold text-foreground">Follow-ups</h2>
         <Button onClick={() => setShowAdd(true)} variant="outline" size="sm">
           <Plus className="mr-1 h-4 w-4" /> Add Follow-up
         </Button>
       </div>
 
       {followUps.length === 0 ? (
-        <Card>
-          <CardContent className="py-12 text-center">
-            <CalendarClock className="mx-auto h-10 w-10 text-muted-foreground/40 mb-3" />
-            <p className="text-muted-foreground mb-3">No follow-ups scheduled.</p>
-            <Button onClick={() => setShowAdd(true)} variant="outline">Add Follow-up</Button>
-          </CardContent>
-        </Card>
+        <EmptyState
+          icon={CalendarClock}
+          title="No follow-ups scheduled."
+          action={<Button onClick={() => setShowAdd(true)} variant="outline">Add Follow-up</Button>}
+        />
       ) : (
         followUps.map((fu) => {
           const isOverdue = fu.outcome === "pending" && fu.scheduled_date < today;

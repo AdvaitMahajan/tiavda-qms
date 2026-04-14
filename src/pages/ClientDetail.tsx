@@ -11,20 +11,10 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Badge } from "@/components/ui/badge";
+
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
-
-const STATUS_COLORS: Record<string, string> = {
-  new: "bg-slate-100 text-slate-700",
-  pending: "bg-blue/10 text-blue",
-  sent: "bg-indigo-100 text-indigo-700",
-  follow_up: "bg-amber/10 text-amber",
-  approved: "bg-purple-100 text-purple-700",
-  confirmed: "bg-green/10 text-green",
-  lost: "bg-destructive/10 text-destructive",
-  completed: "bg-teal-100 text-teal-700",
-};
+import { StatusBadge } from "@/components/ui/StatusBadge";
 
 function validateIndianMobile(phone: string): boolean {
   const cleaned = phone.replace(/[\s-]/g, "");
@@ -152,7 +142,7 @@ export default function ClientDetail() {
       <div className="rounded-xl border border-border bg-card p-6 shadow-sm">
         <div className="flex items-start justify-between">
           <div>
-            <h1 className="font-heading text-2xl font-bold text-navy">{client.name}</h1>
+            <h1 className="font-sora text-2xl font-bold text-navy">{client.name}</h1>
             {client.company && <p className="text-sm italic text-muted-foreground">{client.company}</p>}
             <div className="mt-3 flex flex-wrap items-center gap-4 text-sm">
               <a href={`tel:${client.phone}`} className="flex items-center gap-1.5 text-blue hover:underline"><Phone className="h-4 w-4" />{client.phone}</a>
@@ -177,7 +167,7 @@ export default function ClientDetail() {
 
       {/* Intake Link */}
       <div className="rounded-xl border border-border bg-card p-6 shadow-sm">
-        <h2 className="mb-4 flex items-center gap-2 font-heading text-lg font-semibold text-navy"><LinkIcon className="h-5 w-5" /> Intake Form Link</h2>
+        <h2 className="mb-4 flex items-center gap-2 font-sora text-lg font-semibold text-navy"><LinkIcon className="h-5 w-5" /> Intake Form Link</h2>
         {intakeLink ? (
           <div className="space-y-3">
             <div className="flex items-center gap-2 rounded-lg bg-surface px-3 py-2">
@@ -213,7 +203,7 @@ export default function ClientDetail() {
 
       {/* Enquiry History */}
       <div className="rounded-xl border border-border bg-card p-6 shadow-sm">
-        <h2 className="mb-4 font-heading text-lg font-semibold text-navy">Enquiry History</h2>
+        <h2 className="mb-4 font-sora text-lg font-semibold text-navy">Enquiry History</h2>
         {enquiries.length === 0 ? (
           <p className="py-8 text-center text-sm text-muted-foreground">No enquiries yet for this client.</p>
         ) : (
@@ -231,9 +221,7 @@ export default function ClientDetail() {
                     <TableCell className="font-mono text-sm">{e.ref_number}</TableCell>
                     <TableCell className="text-sm">{formatDate(e.enquiry_date)}</TableCell>
                     <TableCell>
-                      <Badge className={cn("text-xs capitalize", STATUS_COLORS[e.status] || "bg-muted/20 text-muted-foreground")}>
-                        {e.status.replace("_", " ")}
-                      </Badge>
+                      <StatusBadge status={e.status} />
                     </TableCell>
                     <TableCell>{e.num_bores}</TableCell>
                     <TableCell>{e.site_city}</TableCell>
@@ -251,7 +239,7 @@ export default function ClientDetail() {
       {/* Edit Panel */}
       <Sheet open={editOpen} onOpenChange={setEditOpen}>
         <SheetContent className="overflow-y-auto sm:max-w-md">
-          <SheetHeader><SheetTitle className="font-heading text-navy">Edit Client</SheetTitle></SheetHeader>
+          <SheetHeader><SheetTitle className="font-sora text-navy">Edit Client</SheetTitle></SheetHeader>
           <div className="mt-6 space-y-4">
             <EditField label="Full Name" required value={editForm.name} onChange={(v) => setEditForm((p) => ({ ...p, name: v }))} error={editErrors.name} />
             <EditField label="Phone Number" required value={editForm.phone} onChange={(v) => setEditForm((p) => ({ ...p, phone: v }))} error={editErrors.phone}

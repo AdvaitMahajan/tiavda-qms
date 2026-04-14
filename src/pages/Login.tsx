@@ -57,7 +57,7 @@ export default function Login() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-surface">
       <div className="w-full max-w-md rounded-xl bg-card p-8 shadow-lg border border-border">
-        <h1 className="mb-1 text-center font-heading text-2xl font-bold text-navy">
+        <h1 className="mb-1 text-center font-sora text-2xl font-bold text-[#0F2A47]">
           Tiavda Enterprises
         </h1>
         <p className="mb-8 text-center text-sm text-muted">

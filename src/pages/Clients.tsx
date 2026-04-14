@@ -11,6 +11,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { EmptyState } from "@/components/ui/EmptyState";
+import { SkeletonRow } from "@/components/ui/SkeletonLoader";
 
 function validateIndianMobile(phone: string): boolean {
   const cleaned = phone.replace(/[\s-]/g, "");
@@ -80,7 +82,7 @@ export default function Clients() {
   return (
     <div>
       <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <h1 className="font-heading text-2xl font-bold text-navy">Clients</h1>
+        <h1 className="font-sora text-2xl font-bold text-[#0F2A47]">Clients</h1>
         <Button onClick={() => { setForm(emptyForm); setFormErrors({}); setPanelOpen(true); }} className="bg-blue text-white hover:bg-blue/90">
           <Plus className="mr-2 h-4 w-4" /> Add Client
         </Button>
@@ -92,12 +94,15 @@ export default function Clients() {
       </div>
 
       {isLoading ? (
-        <div className="py-20 text-center text-muted-foreground">Loading…</div>
-      ) : filtered.length === 0 ? (
-        <div className="flex flex-col items-center justify-center rounded-xl border border-border bg-card py-20">
-          <Users className="mb-4 h-12 w-12 text-muted-foreground/40" />
-          <p className="text-muted-foreground">{search ? "No clients match your search." : "No clients yet. Generate an intake link to add your first client."}</p>
+        <div className="overflow-x-auto rounded-xl border border-border bg-card">
+          {Array.from({ length: 6 }).map((_, i) => <SkeletonRow key={i} />)}
         </div>
+      ) : filtered.length === 0 ? (
+        <EmptyState
+          icon={Users}
+          title={search ? "No clients match your search." : "No clients yet."}
+          subtitle={!search ? "Generate an intake link to add your first client." : undefined}
+        />
       ) : (
         <div className="overflow-x-auto rounded-xl border border-border bg-card">
           <Table>
@@ -110,19 +115,19 @@ export default function Clients() {
             </TableHeader>
             <TableBody>
               {filtered.map((c) => (
-                <TableRow key={c.id}>
+                <TableRow key={c.id} className="hover:bg-[#F8FAFC] transition-colors duration-100 cursor-pointer" onClick={() => navigate(`/clients/${c.id}`)}>
                   <TableCell className="font-medium">{c.name}</TableCell>
                   <TableCell className="font-mono text-sm">{c.phone}</TableCell>
                   <TableCell className="text-sm">{c.email || "—"}</TableCell>
                   <TableCell>{c.city}</TableCell>
                   <TableCell>
-                    <Badge variant="secondary" className={cn("text-xs", c.source === "intake_form" ? "bg-blue/10 text-blue" : "bg-muted/20 text-muted-foreground")}>
+                    <Badge variant="secondary" className={cn("text-xs", c.source === "intake_form" ? "bg-blue-100 text-blue-700" : "bg-muted/20 text-muted-foreground")}>
                       {c.source === "intake_form" ? "Form" : "Manual"}
                     </Badge>
                   </TableCell>
                   <TableCell className="text-sm text-muted-foreground">{formatDate(c.created_at)}</TableCell>
                   <TableCell className="text-right">
-                    <Button variant="ghost" size="sm" onClick={() => navigate(`/clients/${c.id}`)}>View</Button>
+                    <Button variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); navigate(`/clients/${c.id}`); }}>View</Button>
                   </TableCell>
                 </TableRow>
               ))}
@@ -133,7 +138,7 @@ export default function Clients() {
 
       <Sheet open={panelOpen} onOpenChange={setPanelOpen}>
         <SheetContent className="overflow-y-auto sm:max-w-md">
-          <SheetHeader><SheetTitle className="font-heading text-navy">Add New Client</SheetTitle></SheetHeader>
+          <SheetHeader><SheetTitle className="font-sora text-[#0F2A47]">Add New Client</SheetTitle></SheetHeader>
           <div className="mt-6 space-y-4">
             <Field label="Full Name" required value={form.name} onChange={(v) => updateForm({ name: v })} error={formErrors.name} />
             <Field label="Phone Number" required value={form.phone} onChange={(v) => updateForm({ phone: v })} error={formErrors.phone}

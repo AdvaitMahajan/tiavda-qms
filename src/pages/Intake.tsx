@@ -1,12 +1,13 @@
 import { useState, useEffect, useCallback } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useSearchParams, useNavigate } from "react-router-dom";
 import { PUBLIC_SUPABASE_CLIENT_NAME, supabasePublic } from "@/integrations/supabase/publicClient";
+import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  Home, Building2, Factory, Landmark, CheckCircle2, AlertTriangle,
-  Minus, Plus, Loader2
+  Home, Building2, Factory, Landmark, CheckCircle, AlertTriangle,
+  Minus, Plus, Loader2, ArrowLeft
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -35,6 +36,7 @@ type FormData = {
 
 type SubmitIntakeRpcResult = {
   ref_number?: string | null;
+  enquiry_id?: string | null;
   error?: string | null;
 };
 
@@ -104,12 +106,12 @@ function ErrorCard({ title, message }: { title: string; message: string }) {
   return (
     <div className="flex min-h-screen flex-col">
       <div className="bg-navy px-6 py-6">
-        <h1 className="font-heading text-xl font-bold text-white">Tiavda Enterprises</h1>
+        <h1 className="font-sora text-xl font-bold text-white">Tiavda Enterprises</h1>
       </div>
       <div className="flex flex-1 items-center justify-center bg-surface p-6">
         <div className="w-full max-w-md rounded-xl border border-border bg-card p-8 text-center shadow-lg">
           <AlertTriangle className="mx-auto mb-4 h-12 w-12 text-amber" />
-          <h2 className="mb-2 font-heading text-xl font-bold text-navy">{title}</h2>
+          <h2 className="mb-2 font-sora text-xl font-bold text-navy">{title}</h2>
           <p className="text-sm text-muted-foreground">{message}</p>
         </div>
       </div>
@@ -119,6 +121,7 @@ function ErrorCard({ title, message }: { title: string; message: string }) {
 
 export default function Intake() {
   const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
   const tokenStr = searchParams.get("t");
 
   const [tokenData, setTokenData] = useState<TokenData | null>(null);
@@ -131,6 +134,15 @@ export default function Intake() {
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [refNumber, setRefNumber] = useState("");
+  const [submittedEnquiryId, setSubmittedEnquiryId] = useState<string | null>(null);
+  const [isAdmin, setIsAdmin] = useState(false);
+
+  // Check if the current browser session is an authenticated admin (Task 9)
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => {
+      setIsAdmin(!!data.session);
+    });
+  }, []);
 
   useEffect(() => {
     async function validate() {
@@ -230,6 +242,7 @@ export default function Intake() {
       }
 
       setRefNumber(result.ref_number);
+      if (result.enquiry_id) setSubmittedEnquiryId(result.enquiry_id);
       setSubmitted(true);
     } catch (err: any) {
       toast.error(err.message || "Submission failed. Please try again.");
@@ -246,14 +259,34 @@ export default function Intake() {
   if (submitted) {
     return (
       <div className="flex min-h-screen flex-col">
-        <div className="bg-navy px-6 py-6"><h1 className="font-heading text-xl font-bold text-white">Tiavda Enterprises</h1></div>
+        <div className="bg-navy px-6 py-6">
+          <h1 className="font-sora text-xl font-bold text-white">Tiavda Enterprises</h1>
+        </div>
         <div className="flex flex-1 items-center justify-center bg-surface p-6">
           <div className="w-full max-w-md rounded-xl border border-border bg-card p-8 text-center shadow-lg">
-            <CheckCircle2 className="mx-auto mb-4 h-16 w-16 text-green" />
-            <h2 className="mb-2 font-heading text-2xl font-bold text-navy">Submitted Successfully!</h2>
-            <p className="mb-1 text-sm text-muted-foreground">Your Reference Number:</p>
-            <p className="font-mono text-2xl font-bold text-navy">{refNumber}</p>
-            <p className="mt-4 text-sm text-muted-foreground">Our team will contact you shortly.</p>
+            <CheckCircle className="mx-auto mb-4 h-16 w-16 text-green-600" />
+            <h2 className="mb-2 font-sora text-2xl font-bold text-[#0F2A47]">Submitted Successfully!</h2>
+            <p className="mb-1 text-sm text-[#64748B]">Your Reference Number:</p>
+            <p className="font-mono text-2xl font-bold text-[#0F2A47]">{refNumber}</p>
+            <p className="mt-4 text-sm text-[#64748B]">Our team will contact you shortly.</p>
+            {isAdmin && (
+              <div className="mt-6 flex gap-3 justify-center">
+                <button
+                  onClick={() => navigate("/dashboard")}
+                  className="px-4 py-2 bg-[#0F2A47] text-white text-sm font-medium rounded-lg hover:opacity-90 transition-opacity active:scale-95"
+                >
+                  Go to Dashboard
+                </button>
+                {submittedEnquiryId && (
+                  <button
+                    onClick={() => navigate("/enquiries/" + submittedEnquiryId)}
+                    className="px-4 py-2 border border-[#1B5EA0] text-[#1B5EA0] text-sm font-medium rounded-lg hover:bg-blue-50 transition-colors active:scale-95"
+                  >
+                    View Enquiry
+                  </button>
+                )}
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -269,8 +302,21 @@ export default function Intake() {
 
   return (
     <div className="flex min-h-screen flex-col">
+      {/* Admin mode banner (Task 9) */}
+      {isAdmin && (
+        <div className="bg-white border-b border-[#CBD5E1] px-6 py-3 flex items-center gap-3">
+          <button
+            onClick={() => navigate(-1)}
+            className="flex items-center gap-2 text-sm text-[#64748B] hover:text-[#0F2A47] transition-colors"
+          >
+            <ArrowLeft className="w-4 h-4" /> Back
+          </button>
+          <span className="text-sm text-[#64748B]">Filling form on behalf of client</span>
+          <span className="ml-auto text-xs bg-amber-100 text-amber-700 px-2 py-1 rounded-full">Admin Mode</span>
+        </div>
+      )}
       <div className="bg-navy px-6 py-6">
-        <h1 className="font-heading text-xl font-bold text-white">Tiavda Enterprises</h1>
+        <h1 className="font-sora text-xl font-bold text-white">Tiavda Enterprises</h1>
         <p className="text-sm text-white/60">Project Information Form</p>
       </div>
       <div className="flex flex-1 justify-center bg-surface p-4 sm:p-8">
@@ -281,7 +327,7 @@ export default function Intake() {
               <motion.div key={step} custom={direction} variants={slideVariants} initial="enter" animate="center" exit="exit" transition={{ duration: 0.25 }}>
                 {step === 1 && (
                   <div className="space-y-5">
-                    <h2 className="font-heading text-lg font-semibold text-navy">Site Details</h2>
+                    <h2 className="font-sora text-lg font-semibold text-navy">Site Details</h2>
                     <div>
                       <label className="mb-1.5 block text-sm font-medium">Site Address <span className="text-destructive">*</span></label>
                       <Textarea placeholder="Full site address including landmark" value={form.site_address} onChange={(e) => updateForm({ site_address: e.target.value })} rows={3} />
@@ -307,7 +353,7 @@ export default function Intake() {
                 )}
                 {step === 2 && (
                   <div className="space-y-5">
-                    <h2 className="font-heading text-lg font-semibold text-navy">Project Details</h2>
+                    <h2 className="font-sora text-lg font-semibold text-navy">Project Details</h2>
                     <div>
                       <label className="mb-2 block text-sm font-medium">Structure Type <span className="text-destructive">*</span></label>
                       <div className="grid grid-cols-2 gap-3">
@@ -336,7 +382,7 @@ export default function Intake() {
                 )}
                 {step === 3 && (
                   <div className="space-y-5">
-                    <h2 className="font-heading text-lg font-semibold text-navy">Additional Information</h2>
+                    <h2 className="font-sora text-lg font-semibold text-navy">Additional Information</h2>
                     <div>
                       <label className="mb-2 block text-sm font-medium">Soil Type (optional)</label>
                       <div className="flex gap-2">

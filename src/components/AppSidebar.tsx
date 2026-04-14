@@ -3,7 +3,6 @@ import { LayoutDashboard, FileText, Users, Table2, Settings, LogOut } from "luci
 import { useAuth } from "@/hooks/useAuth";
 import { cn } from "@/lib/utils";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { useIsMobile } from "@/hooks/use-mobile";
 
 const navItems = [
   { path: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -16,26 +15,21 @@ const navItems = [
 export function AppSidebar() {
   const { pathname } = useLocation();
   const { user, signOut } = useAuth();
-  const isMobile = useIsMobile();
-
-  // Hide on mobile — bottom tab bar is used instead
-  if (isMobile) return null;
 
   return (
     <aside
-      className="fixed left-0 top-0 z-30 flex h-screen flex-col text-white transition-all duration-200
-        w-16 lg:w-60"
+      className="fixed left-0 top-0 z-30 hidden md:flex h-screen flex-col text-white transition-all duration-200 w-16 lg:w-60"
       style={{ backgroundColor: "#0F2A47" }}
     >
       {/* Logo */}
       <div className="flex items-center gap-3 px-4 py-5 lg:px-5">
         <div
-          className="flex h-9 w-9 items-center justify-center rounded-lg font-heading text-sm font-bold text-white flex-shrink-0"
-          style={{ backgroundColor: "#D4930A" }}
+          className="flex h-9 w-9 items-center justify-center rounded-lg font-sora text-sm font-bold text-white flex-shrink-0"
+          style={{ backgroundColor: "#1A3A5C" }}
         >
           TQ
         </div>
-        <span className="font-heading text-base font-semibold tracking-tight hidden lg:block">
+        <span className="font-sora text-sm font-semibold text-white hidden lg:block">
           Tiavda QMS
         </span>
       </div>
@@ -49,12 +43,16 @@ export function AppSidebar() {
               key={item.path}
               to={item.path}
               className={cn(
-                "flex items-center gap-3 rounded-md px-3 py-2.5 text-[15px] font-medium transition-colors duration-150",
+                "flex items-center gap-3 rounded-md py-2.5 text-[15px] font-medium transition-colors duration-150",
                 active
-                  ? "border-l-[3px] bg-white/10"
-                  : "border-l-[3px] border-transparent hover:bg-white/[0.06]"
+                  ? "rounded-l-none pl-[calc(1rem-3px)] pr-3"
+                  : "px-3 hover:bg-white/[0.06]"
               )}
-              style={active ? { borderLeftColor: "#D4930A" } : undefined}
+              style={
+                active
+                  ? { backgroundColor: "rgba(255,255,255,0.12)", color: "white", borderLeft: "3px solid #D4930A" }
+                  : { color: "rgba(255,255,255,0.65)" }
+              }
             >
               <item.icon className="h-[18px] w-[18px] flex-shrink-0" />
               <span className="hidden lg:block">{item.label}</span>

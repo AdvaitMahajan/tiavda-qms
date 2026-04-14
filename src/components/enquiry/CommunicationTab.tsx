@@ -13,6 +13,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Mail, MessageSquare, Bell, ArrowRight, ArrowLeft, Pencil } from "lucide-react";
 import type { Tables } from "@/integrations/supabase/types";
+import { EmptyState } from "@/components/ui/EmptyState";
 
 type CommLog = Tables<"communication_log">;
 
@@ -74,18 +75,18 @@ export function CommunicationTab({ enquiryId }: { enquiryId: string }) {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h2 className="font-heading text-lg font-semibold text-foreground">Communications</h2>
+        <h2 className="font-sora text-lg font-semibold text-foreground">Communications</h2>
         <Button onClick={() => setShowCompose(true)} variant="outline">
           <Pencil className="mr-1 h-4 w-4" /> Compose
         </Button>
       </div>
 
       {!logs?.length ? (
-        <Card><CardContent className="py-12 text-center">
-          <Mail className="mx-auto h-10 w-10 text-muted-foreground/40 mb-3" />
-          <p className="text-muted-foreground">No communications yet.</p>
-          <p className="text-xs text-muted-foreground mt-1">Communications will appear here when emails or WhatsApp messages are sent.</p>
-        </CardContent></Card>
+        <EmptyState
+          icon={Mail}
+          title="No communications yet."
+          subtitle="Communications will appear here when emails or WhatsApp messages are sent."
+        />
       ) : (
         logs.map((log) => {
           const Icon = CHANNEL_ICONS[log.channel] ?? Mail;

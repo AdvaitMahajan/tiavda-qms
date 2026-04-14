@@ -34,7 +34,7 @@
 
     --radius: 0.5rem;
 
-    /* Brand tokens */
+    /* Brand tokens (HSL for Tailwind) */
     --navy: 211 65% 17%;
     --blue: 210 70% 37%;
     --steel: 204 63% 47%;
@@ -43,6 +43,18 @@
     --red: 0 72% 42%;
     --amber: 28 80% 31%;
     --surface: 210 40% 98%;
+
+    /* Brand hex tokens (Task 2) — used via inline styles and var() */
+    --navy-hex: #0F2A47;
+    --blue-hex: #1B5EA0;
+    --steel-hex: #2E7FC1;
+    --gold-hex: #D4930A;
+    --green-hex: #15673A;
+    --red-hex: #B91C1C;
+    --amber-hex: #92400E;
+    --surface-hex: #F8FAFC;
+    --muted-hex: #64748B;
+    --border-hex: #CBD5E1;
 
     --sidebar-background: 211 65% 17%;
     --sidebar-foreground: 0 0% 100%;

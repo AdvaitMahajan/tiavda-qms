@@ -350,7 +350,10 @@ export default function EnquiryDetail() {
           )}
         </TabsContent>
 
-        <TabsContent value="details" className="pt-4">
+        <TabsContent value="follow-ups" className="pt-4">
+          <FollowUpsTab enquiryId={enquiry.id} />
+        </TabsContent>
+
           <div className="rounded-xl border border-border bg-card p-6 space-y-3">
             <h2 className="font-heading text-lg font-semibold text-foreground">Enquiry Details</h2>
             {[

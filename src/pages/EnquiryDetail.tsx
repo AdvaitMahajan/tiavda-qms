@@ -1,10 +1,15 @@
 import { useState, useEffect, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
-import { formatCurrency, formatDate, cn } from "@/lib/utils";
+import { formatCurrency, formatDate, relativeTime, cn } from "@/lib/utils";
 import { pdf } from "@react-pdf/renderer";
 import QuotationPDF from "@/components/QuotationPDF";
+import { PaymentsTab } from "@/components/enquiry/PaymentsTab";
+import { CommunicationTab } from "@/components/enquiry/CommunicationTab";
+import { JobCompletionTab } from "@/components/enquiry/JobCompletionTab";
+import { MobilisationSection } from "@/components/enquiry/MobilisationSection";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -15,7 +20,6 @@ import type { Tables } from "@/integrations/supabase/types";
 type Enquiry = Tables<"enquiries">;
 type Client = Tables<"clients">;
 type Quotation = Tables<"quotations">;
-type Rate = Tables<"rate_matrix">;
 
 const STATUS_COLORS: Record<string, string> = {
   new: "bg-slate-100 text-slate-700",
@@ -26,15 +30,6 @@ const STATUS_COLORS: Record<string, string> = {
   confirmed: "bg-green/10 text-green",
   lost: "bg-red/10 text-red",
   completed: "bg-teal-100 text-teal-700",
-};
-
-const QUOT_STATUS_COLORS: Record<string, string> = {
-  draft: "bg-slate-100 text-slate-700",
-  approved: "bg-green/10 text-green",
-  sent: "bg-blue/10 text-blue",
-  accepted: "bg-green/10 text-green",
-  rejected: "bg-red/10 text-red",
-  superseded: "bg-muted/10 text-muted-foreground",
 };
 
 type LineItem = { description: string; unit: string; qty: number; rate: number; amount: number };
@@ -128,6 +123,7 @@ function VariantCard({
 export default function EnquiryDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [enquiry, setEnquiry] = useState<Enquiry | null>(null);
   const [client, setClient] = useState<Client | null>(null);
   const [quotations, setQuotations] = useState<Quotation[]>([]);
@@ -159,14 +155,9 @@ export default function EnquiryDetail() {
     setGenerating(true);
 
     const { data: rate, error: rateErr } = await supabase
-      .from("rate_matrix")
-      .select("*")
-      .eq("city", enquiry.site_city)
-      .eq("structure_type", enquiry.structure_type)
-      .eq("is_active", true)
-      .is("effective_to", null)
-      .limit(1)
-      .maybeSingle();
+      .from("rate_matrix").select("*")
+      .eq("city", enquiry.site_city).eq("structure_type", enquiry.structure_type)
+      .eq("is_active", true).is("effective_to", null).limit(1).maybeSingle();
 
     if (rateErr || !rate) {
       toast.error(`No rate matrix configured for ${enquiry.site_city}. Please add rates first.`);
@@ -177,17 +168,15 @@ export default function EnquiryDetail() {
     const B = enquiry.num_bores;
     const D = enquiry.expected_depth_m ? Number(enquiry.expected_depth_m) : 10;
     const soilR = 0.7, rockR = 0.3;
-
     const currentMaxVersion = quotations.length > 0 ? Math.max(...quotations.map((q) => q.version)) : 0;
     const newVersion = currentMaxVersion + 1;
 
-    // Supersede existing drafts
     const draftIds = quotations.filter((q) => q.status === "draft").map((q) => q.id);
     if (draftIds.length) {
       await supabase.from("quotations").update({ status: "superseded" as any }).in("id", draftIds);
     }
 
-    const variants: { variant: string; label: string; bores: number; depth: number }[] = [
+    const variants = [
       { variant: "A", label: "Standard", bores: B, depth: D },
       { variant: "B", label: "Conservative", bores: B, depth: +(D * 1.15).toFixed(2) },
       { variant: "C", label: "Extended", bores: B + 2, depth: +(D * 1.15).toFixed(2) },
@@ -211,25 +200,14 @@ export default function EnquiryDetail() {
       ];
 
       await supabase.from("quotations").insert({
-        enquiry_id: enquiry.id,
-        variant: v.variant,
-        variant_label: v.label,
-        num_bores: v.bores,
-        depth_per_bore_m: v.depth,
+        enquiry_id: enquiry.id, variant: v.variant, variant_label: v.label,
+        num_bores: v.bores, depth_per_bore_m: v.depth,
         soil_type: (enquiry.soil_type_hint || "soil") as any,
-        mobilisation_cost: +mob.toFixed(2),
-        drilling_cost: +drill.toFixed(2),
-        reporting_cost: +report.toFixed(2),
-        travel_cost: 0,
-        subtotal: +sub.toFixed(2),
-        gst_rate: 18.0,
-        gst_type: "igst",
-        gst_amount: gst,
-        total_amount: total,
-        line_items: JSON.stringify(line_items) as any,
-        rate_matrix_id: rate.id,
-        status: "draft",
-        version: newVersion,
+        mobilisation_cost: +mob.toFixed(2), drilling_cost: +drill.toFixed(2),
+        reporting_cost: +report.toFixed(2), travel_cost: 0, subtotal: +sub.toFixed(2),
+        gst_rate: 18.0, gst_type: "igst", gst_amount: gst, total_amount: total,
+        line_items: JSON.stringify(line_items) as any, rate_matrix_id: rate.id,
+        status: "draft", version: newVersion,
       });
     }
 
@@ -242,30 +220,15 @@ export default function EnquiryDetail() {
     if (!client || !enquiry) return;
     setPdfLoading(q.id);
     await supabase.from("quotations").update({ pdf_status: "generating" }).eq("id", q.id);
-
     try {
-      const blob = await pdf(
-        <QuotationPDF quotation={q} client={client} enquiry={enquiry} />
-      ).toBlob();
-
+      const blob = await pdf(<QuotationPDF quotation={q} client={client} enquiry={enquiry} />).toBlob();
       const year = new Date().getFullYear();
       const filename = `${enquiry.ref_number}-v${q.version}-${q.variant}.pdf`;
       const path = `${year}/${enquiry.ref_number}/${filename}`;
-
-      const { error: upErr } = await supabase.storage
-        .from("quotation-pdfs")
-        .upload(path, blob, { contentType: "application/pdf", upsert: true });
+      const { error: upErr } = await supabase.storage.from("quotation-pdfs").upload(path, blob, { contentType: "application/pdf", upsert: true });
       if (upErr) throw upErr;
-
-      const { data: urlData } = await supabase.storage
-        .from("quotation-pdfs")
-        .createSignedUrl(path, 3600);
-
-      await supabase.from("quotations").update({
-        pdf_url: urlData?.signedUrl ?? null,
-        pdf_status: "ready",
-      }).eq("id", q.id);
-
+      const { data: urlData } = await supabase.storage.from("quotation-pdfs").createSignedUrl(path, 3600);
+      await supabase.from("quotations").update({ pdf_url: urlData?.signedUrl ?? null, pdf_status: "ready" }).eq("id", q.id);
       toast.success("PDF generated successfully");
     } catch (err: any) {
       await supabase.from("quotations").update({ pdf_status: "failed" }).eq("id", q.id);
@@ -280,49 +243,26 @@ export default function EnquiryDetail() {
     if (!approveTarget || !enquiry) return;
     setApproving(true);
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-
       const { error: approveErr } = await supabase.from("quotations").update({
-        status: "approved" as any,
-        approved_at: new Date().toISOString(),
-        approved_by: user!.id,
+        status: "approved" as any, approved_at: new Date().toISOString(), approved_by: user!.id,
       }).eq("id", approveTarget.id);
       if (approveErr) {
         if (approveErr.code === "23505") {
           toast.error("Another variant was just approved — please refresh the page.");
-          setApproving(false);
-          setApproveTarget(null);
-          return;
+          setApproving(false); setApproveTarget(null); return;
         }
         throw approveErr;
       }
-
-      // Supersede other drafts
-      await supabase.from("quotations")
-        .update({ status: "superseded" as any })
-        .eq("enquiry_id", enquiry.id)
-        .neq("id", approveTarget.id)
-        .eq("status", "draft" as any);
-
-      // Update enquiry status
+      await supabase.from("quotations").update({ status: "superseded" as any }).eq("enquiry_id", enquiry.id).neq("id", approveTarget.id).eq("status", "draft" as any);
       const prevStatus = enquiry.status;
       await supabase.from("enquiries").update({ status: "pending" as any }).eq("id", enquiry.id);
-
-      // Log event
       await supabase.from("enquiry_events").insert({
-        enquiry_id: enquiry.id,
-        event_type: "quotation_approved",
-        from_status: prevStatus as any,
-        to_status: "pending" as any,
-        triggered_by: user!.id,
+        enquiry_id: enquiry.id, event_type: "quotation_approved",
+        from_status: prevStatus as any, to_status: "pending" as any, triggered_by: user!.id,
       });
-
       toast.success(`Variant ${approveTarget.variant} approved successfully!`);
       setApproveTarget(null);
-
-      // Generate PDF for approved variant
       await fetchAll();
-      // Re-fetch the approved quotation to get updated status
       const { data: updatedQ } = await supabase.from("quotations").select("*").eq("id", approveTarget.id).single();
       if (updatedQ) generatePdf(updatedQ);
     } catch (err: any) {
@@ -342,7 +282,7 @@ export default function EnquiryDetail() {
 
   const drafts = quotations.filter((q) => q.status === "draft");
   const bestId = drafts.length > 0 ? drafts.reduce((a, b) => a.total_amount < b.total_amount ? a : b).id : null;
-  const hasNoRate = quotations.length === 0;
+  const showJobTabs = enquiry.status === "confirmed" || enquiry.status === "completed";
 
   return (
     <div className="space-y-6">
@@ -373,43 +313,36 @@ export default function EnquiryDetail() {
         ))}
       </div>
 
+      {/* Mobilisation Section */}
+      {showJobTabs && <MobilisationSection enquiryId={enquiry.id} />}
+
       {/* Tabs */}
       <Tabs defaultValue="quotations">
-        <TabsList>
+        <TabsList className="flex-wrap">
           <TabsTrigger value="quotations">Quotations</TabsTrigger>
           <TabsTrigger value="details">Details</TabsTrigger>
+          <TabsTrigger value="payments">Payments</TabsTrigger>
+          <TabsTrigger value="communications">Communications</TabsTrigger>
+          {showJobTabs && <TabsTrigger value="job">Job Completion</TabsTrigger>}
         </TabsList>
 
         <TabsContent value="quotations" className="space-y-4 pt-4">
           <div className="flex items-center justify-between">
             <h2 className="font-heading text-lg font-semibold text-foreground">Quotation Variants</h2>
-            <Button
-              onClick={generateQuotations}
-              disabled={generating}
-              className="bg-blue text-white hover:bg-blue/90"
-            >
+            <Button onClick={generateQuotations} disabled={generating} className="bg-blue text-white hover:bg-blue/90">
               {generating ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Generating…</> : quotations.length > 0 ? "Re-generate" : "Generate Quotation"}
             </Button>
           </div>
-
           {quotations.length === 0 ? (
             <div className="rounded-xl border border-border bg-card p-12 text-center">
               <AlertTriangle className="mx-auto mb-3 h-10 w-10 text-amber" />
-              <p className="text-muted-foreground mb-4">
-                No quotations yet. Click "Generate Quotation" to create 4 variants based on the rate matrix.
-              </p>
+              <p className="text-muted-foreground mb-4">No quotations yet. Click "Generate Quotation" to create 4 variants based on the rate matrix.</p>
               <Button variant="outline" onClick={() => navigate("/rate-matrix")}>Go to Rate Matrix</Button>
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {quotations.map((q) => (
-                <VariantCard
-                  key={q.id}
-                  q={q}
-                  isBest={q.id === bestId}
-                  onApprove={setApproveTarget}
-                  pdfLoading={pdfLoading}
-                />
+                <VariantCard key={q.id} q={q} isBest={q.id === bestId} onApprove={setApproveTarget} pdfLoading={pdfLoading} />
               ))}
             </div>
           )}
@@ -436,6 +369,20 @@ export default function EnquiryDetail() {
             ))}
           </div>
         </TabsContent>
+
+        <TabsContent value="payments" className="pt-4">
+          <PaymentsTab enquiryId={enquiry.id} />
+        </TabsContent>
+
+        <TabsContent value="communications" className="pt-4">
+          <CommunicationTab enquiryId={enquiry.id} />
+        </TabsContent>
+
+        {showJobTabs && (
+          <TabsContent value="job" className="pt-4">
+            <JobCompletionTab enquiryId={enquiry.id} />
+          </TabsContent>
+        )}
       </Tabs>
 
       {/* Approve modal */}

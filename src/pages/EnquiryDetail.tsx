@@ -321,6 +321,7 @@ export default function EnquiryDetail() {
       <Tabs defaultValue="quotations">
         <TabsList className="flex-wrap">
           <TabsTrigger value="quotations">Quotations</TabsTrigger>
+          <TabsTrigger value="follow-ups">Follow-ups</TabsTrigger>
           <TabsTrigger value="details">Details</TabsTrigger>
           <TabsTrigger value="payments">Payments</TabsTrigger>
           <TabsTrigger value="communications">Communications</TabsTrigger>

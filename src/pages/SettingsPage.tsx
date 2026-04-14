@@ -6,10 +6,9 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
-import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Loader2, Settings, LogOut, Mail, MessageSquare, FolderOpen, Database } from "lucide-react";
+import { Loader2, Settings, LogOut, Mail, MessageSquare } from "lucide-react";
 
 export default function SettingsPage() {
   const navigate = useNavigate();
@@ -140,22 +139,26 @@ export default function SettingsPage() {
           </div>
 
           <div className="bg-white rounded-2xl p-6 border border-[#CBD5E1]">
-            <h2 className="font-sora text-lg font-semibold text-[#0F2A47] mb-4">Integration Status</h2>
+            <h2 className="font-sora text-lg font-semibold text-[#0F2A47] mb-4">Connections</h2>
             <div className="space-y-3">
-              {[
-                { name: "SendGrid Email", icon: Mail, status: "Configured", color: "bg-green-100 text-green-700" },
-                { name: "WATI WhatsApp", icon: MessageSquare, status: "Pending template approval", color: "bg-amber-100 text-amber-700" },
-                { name: "Google Drive", icon: FolderOpen, status: "Setup required", color: "bg-slate-100 text-slate-600" },
-                { name: "Supabase Storage", icon: Database, status: "Configured", color: "bg-green-100 text-green-700" },
-              ].map((int) => (
-                <div key={int.name} className="flex items-center justify-between py-2">
-                  <div className="flex items-center gap-2">
-                    <int.icon className="h-4 w-4 text-muted-foreground" />
-                    <span className="text-sm font-medium">{int.name}</span>
-                  </div>
-                  <Badge className={int.color}>{int.status}</Badge>
+              <div className="flex items-center justify-between py-2 border-b border-slate-100">
+                <div className="flex items-center gap-2">
+                  <MessageSquare className="w-4 h-4 text-slate-400" />
+                  <span className="text-sm font-medium text-slate-700">WhatsApp</span>
                 </div>
-              ))}
+                <span className="text-xs font-medium px-2.5 py-1 rounded-full bg-amber-100 text-amber-700">
+                  Pending template approval
+                </span>
+              </div>
+              <div className="flex items-center justify-between py-2">
+                <div className="flex items-center gap-2">
+                  <Mail className="w-4 h-4 text-slate-400" />
+                  <span className="text-sm font-medium text-slate-700">Email</span>
+                </div>
+                <span className="text-xs font-medium px-2.5 py-1 rounded-full bg-green-100 text-green-700">
+                  Configured
+                </span>
+              </div>
               <Separator />
               <div className="flex gap-2">
                 <Button variant="outline" size="sm" onClick={() => toast.info("Test email functionality will be available after Edge Functions are deployed.")}>

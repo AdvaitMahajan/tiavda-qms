@@ -57,7 +57,13 @@ export function EnquiryKanban({ rows, isLoading }: Props) {
     mutationFn: async ({ id, fromStatus, toStatus, lostReason: reason }: {
       id: string; fromStatus: LeadStatus; toStatus: LeadStatus; lostReason?: string;
     }) => {
-      const updates: Record<string, unknown> = { status: toStatus, updated_at: new Date().toISOString() };
+      const updates: {
+        status: LeadStatus;
+        updated_at: string;
+        lost_reason?: string;
+        lost_date?: string;
+        confirmed_date?: string;
+      } = { status: toStatus, updated_at: new Date().toISOString() };
       if (toStatus === "lost") {
         updates.lost_reason = reason;
         updates.lost_date = new Date().toISOString().slice(0, 10);

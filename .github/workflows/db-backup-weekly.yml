@@ -1,0 +1,50 @@
+name: DB Backup (Weekly)
+
+# Weekly logical backup of the Supabase Postgres database (roles + schema + data).
+# Stored as a downloadable workflow artifact with 35-day retention.
+#
+# REQUIRED REPO SECRET:
+#   SUPABASE_DB_URL  — the database connection URI (includes password).
+#   Dashboard -> Project Settings -> Database -> Connection string (URI).
+#   Prefer the session/pooler URI; ensure it allows pg_dump (direct connection).
+
+on:
+  schedule:
+    - cron: "0 2 * * 1" # Mondays 02:00 UTC
+  workflow_dispatch: {} # allow manual runs
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Dump database (roles + schema + data)
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          set -euo pipefail
+          if [ -z "${SUPABASE_DB_URL:-}" ]; then
+            echo "::error::SUPABASE_DB_URL secret is not set."
+            exit 1
+          fi
+          stamp="$(date -u +%Y-%m-%d)"
+          mkdir -p backup
+          supabase db dump --db-url "$SUPABASE_DB_URL" --role-only -f "backup/roles.sql"
+          supabase db dump --db-url "$SUPABASE_DB_URL"             -f "backup/schema.sql"
+          supabase db dump --db-url "$SUPABASE_DB_URL" --data-only -f "backup/data.sql"
+          echo "stamp=$stamp" >> "$GITHUB_ENV"
+          ls -lh backup
+
+      - name: Upload backup artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: qms-db-backup-weekly-${{ env.stamp }}
+          path: backup/*.sql
+          retention-days: 35

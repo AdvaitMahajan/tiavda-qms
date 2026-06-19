@@ -17,7 +17,7 @@ export const supabasePublic = createClient<Database>(SUPABASE_URL, SUPABASE_PUBL
     persistSession: false,
     autoRefreshToken: false,
     detectSessionInUrl: false,
-    storageKey: 'tiavda-qms-intake-public',
+    storageKey: 'qms-intake-public',
     storage: noSessionStorage,
   }
 });

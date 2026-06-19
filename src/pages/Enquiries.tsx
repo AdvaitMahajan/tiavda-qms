@@ -3,6 +3,8 @@ import { useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { formatCurrency, relativeTime } from "@/lib/utils";
+import { useAuth } from "@/hooks/useAuth";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -12,9 +14,10 @@ import {
   Popover, PopoverContent, PopoverTrigger,
 } from "@/components/ui/popover";
 import {
-  Search, List, LayoutGrid, Download, Filter, FileQuestion,
+  Search, List, LayoutGrid, Download, Filter, FileQuestion, Plus,
 } from "lucide-react";
-import { EnquiryKanban } from "@/components/EnquiryKanban";
+import { EnquiryKanban, VALID_TRANSITIONS } from "@/components/EnquiryKanban";
+import { AddLeadDialog } from "@/components/AddLeadDialog";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { SkeletonRow } from "@/components/ui/SkeletonLoader";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -24,29 +27,46 @@ type LeadStatus = Tables<"enquiries">["status"];
 
 const STATUS_COLORS: Record<LeadStatus, string> = {
   new: "bg-slate-500",
+  intake_pending: "bg-sky-500",
   pending: "bg-blue-600",
   sent: "bg-indigo-600",
   follow_up: "bg-amber-600",
+  negotiation: "bg-orange-600",
   approved: "bg-purple-600",
+  payment_received: "bg-violet-600",
+  mobilization_scheduled: "bg-cyan-700",
+  job_active: "bg-emerald-600",
   confirmed: "bg-green-700",
   lost: "bg-red-600",
+  inactive: "bg-gray-500",
   completed: "bg-teal-600",
 };
 
 const STATUS_LABELS: Record<LeadStatus, string> = {
   new: "New",
-  pending: "Pending",
-  sent: "Sent",
+  intake_pending: "Intake Pending",
+  pending: "Quotation Prep",
+  sent: "Quote Sent",
   follow_up: "Follow Up",
-  approved: "Approved",
+  negotiation: "Negotiation",
+  approved: "Won",
+  payment_received: "Payment Received",
+  mobilization_scheduled: "Mob Scheduled",
+  job_active: "Job Active",
   confirmed: "Confirmed",
   lost: "Lost",
+  inactive: "Inactive",
   completed: "Completed",
 };
 
-const ALL_STATUSES: LeadStatus[] = [
-  "new", "pending", "sent", "follow_up", "approved", "confirmed", "lost", "completed",
+export const PIPELINE_STATUSES: LeadStatus[] = [
+  "new", "intake_pending", "pending", "sent", "follow_up", "negotiation",
+  "approved", "payment_received", "mobilization_scheduled", "job_active",
 ];
+
+export const CLOSED_STATUSES: LeadStatus[] = ["lost", "inactive", "completed"];
+
+const ALL_STATUSES: LeadStatus[] = [...PIPELINE_STATUSES, ...CLOSED_STATUSES];
 
 export interface EnquiryRow {
   id: string;
@@ -60,10 +80,11 @@ export interface EnquiryRow {
   created_at: string;
   enquiry_date: string;
   client_id: string;
-  num_bores: number;
-  structure_type: string;
+  num_bores: number | null;
+  structure_type: string | null;
   expected_depth_m: number | null;
   soil_type_hint: string | null;
+  service_type: string;
 }
 
 function useEnquiries() {
@@ -72,7 +93,7 @@ function useEnquiries() {
     queryFn: async (): Promise<EnquiryRow[]> => {
       const { data: enquiries, error: eErr } = await supabase
         .from("enquiries")
-        .select("id, ref_number, client_id, site_city, status, next_follow_up, created_at, enquiry_date, num_bores, structure_type, expected_depth_m, soil_type_hint")
+        .select("id, ref_number, client_id, site_city, status, next_follow_up, created_at, enquiry_date, num_bores, structure_type, expected_depth_m, soil_type_hint, service_type")
         .is("deleted_at", null)
         .order("created_at", { ascending: false });
 
@@ -154,6 +175,8 @@ export default function Enquiries() {
   const [view, setView] = useState<"list" | "board">("list");
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<LeadStatus[]>([]);
+  const [showAddLead, setShowAddLead] = useState(false);
+  const [showClosed, setShowClosed] = useState(false);
   const { data: rows, isLoading } = useEnquiries();
   const navigate = useNavigate();
 
@@ -188,17 +211,17 @@ export default function Enquiries() {
 
   const totalCount = rows?.length ?? 0;
   const pipelineCounts = useMemo(() => {
-    const counts = { active: 0, follow_up: 0, confirmed: 0 };
+    const counts = { active: 0, follow_up: 0, won: 0 };
     for (const r of rows ?? []) {
       if (r.status === "pending" || r.status === "sent") counts.active++;
       else if (r.status === "follow_up") counts.follow_up++;
-      else if (r.status === "confirmed") counts.confirmed++;
+      else if (r.status === "approved") counts.won++;
     }
     return counts;
   }, [rows]);
 
   return (
-    <div className="min-h-screen p-6" style={{ background: "#F0F4F8" }}>
+    <div style={{ background: "#F0F4F8" }}>
       {/* Gradient header */}
       <div
         style={{
@@ -210,7 +233,9 @@ export default function Enquiries() {
           alignItems: "center",
           justifyContent: "space-between",
           boxShadow: "0 8px 32px rgba(10,25,41,0.25)",
-          position: "relative",
+          position: "sticky",
+          top: 0,
+          zIndex: 20,
           overflow: "hidden",
           flexWrap: "wrap",
           gap: "16px",
@@ -237,11 +262,11 @@ export default function Enquiries() {
             {[
               { emoji: "🔵", label: "Active", count: pipelineCounts.active },
               { emoji: "🟡", label: "Follow-up", count: pipelineCounts.follow_up },
-              { emoji: "🟢", label: "Confirmed", count: pipelineCounts.confirmed },
+              { emoji: "🟢", label: "Won", count: pipelineCounts.won },
             ].map((p) => (
               <span
                 key={p.label}
-                className="text-xs font-medium px-3 py-1 rounded-full"
+                className="text-[13px] font-medium px-3 py-1 rounded-full"
                 style={{
                   background: "rgba(255,255,255,0.12)",
                   color: "white",
@@ -304,6 +329,50 @@ export default function Enquiries() {
             </button>
           )}
 
+          {/* Add Lead */}
+          <button
+            onClick={() => setShowAddLead(true)}
+            style={{
+              background: "linear-gradient(135deg, #FF8F00, #FFB300)",
+              border: "none",
+              borderRadius: "10px",
+              padding: "8px 16px",
+              color: "white",
+              fontSize: "13px",
+              fontWeight: 600,
+              display: "flex",
+              alignItems: "center",
+              gap: "6px",
+              cursor: "pointer",
+              boxShadow: "0 4px 12px rgba(255,143,0,0.3)",
+            }}
+          >
+            <Plus className="h-4 w-4" /> Add Lead
+          </button>
+
+          {/* Show Closed toggle (board view only) */}
+          {view === "board" && (
+            <button
+              onClick={() => setShowClosed((p) => !p)}
+              style={{
+                background: showClosed ? "rgba(255,255,255,0.25)" : "rgba(255,255,255,0.12)",
+                border: "1px solid rgba(255,255,255,0.2)",
+                borderRadius: "10px",
+                padding: "8px 14px",
+                color: "rgba(255,255,255,0.85)",
+                fontSize: "13px",
+                fontWeight: 500,
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                gap: "5px",
+                transition: "background 150ms",
+              }}
+            >
+              {showClosed ? "Hide Closed" : "Show Closed"}
+            </button>
+          )}
+
           {/* View toggle */}
           <div
             style={{
@@ -353,8 +422,10 @@ export default function Enquiries() {
       {view === "list" ? (
         <EnquiryListView rows={filtered} isLoading={isLoading} onRowClick={(id) => navigate(`/enquiries/${id}`)} />
       ) : (
-        <EnquiryKanban rows={filtered} isLoading={isLoading} statusFilter={statusFilter} search={search} />
+        <EnquiryKanban rows={filtered} isLoading={isLoading} statusFilter={statusFilter} search={search} showClosed={showClosed} />
       )}
+
+      <AddLeadDialog open={showAddLead} onOpenChange={setShowAddLead} />
     </div>
   );
 }
@@ -385,7 +456,7 @@ function StatusFilterPopover({ selected, onChange }: { selected: LeadStatus[]; o
           <Filter className="h-4 w-4" /> Status
           {selected.length > 0 && (
             <span
-              className="absolute -top-1.5 -right-1.5 text-white text-[10px] rounded-full w-4 h-4 flex items-center justify-center"
+              className="absolute -top-1.5 -right-1.5 text-white text-[12px] rounded-full w-4 h-4 flex items-center justify-center"
               style={{ background: "linear-gradient(135deg,#FF8F00,#FFB300)" }}
             >
               {selected.length}
@@ -394,7 +465,7 @@ function StatusFilterPopover({ selected, onChange }: { selected: LeadStatus[]; o
         </button>
       </PopoverTrigger>
       <PopoverContent className="w-48 p-2" align="end">
-        {ALL_STATUSES.map((s) => (
+        {ALL_STATUSES.filter((s) => s !== "confirmed").map((s) => (
           <label key={s} className="flex items-center gap-2 px-2 py-1.5 hover:bg-muted rounded cursor-pointer text-sm">
             <Checkbox checked={selected.includes(s)} onCheckedChange={() => toggle(s)} />
             <span className={`w-2 h-2 rounded-full ${STATUS_COLORS[s]}`} />
@@ -412,6 +483,44 @@ function StatusFilterPopover({ selected, onChange }: { selected: LeadStatus[]; o
 }
 
 function EnquiryListView({ rows, isLoading, onRowClick }: { rows: EnquiryRow[]; isLoading: boolean; onRowClick: (id: string) => void }) {
+  const queryClient = useQueryClient();
+  const { user } = useAuth();
+
+  const handleStatusChange = async (row: EnquiryRow, toStatus: LeadStatus) => {
+    try {
+      const updates: Record<string, unknown> = {
+        status: toStatus,
+        updated_at: new Date().toISOString(),
+      };
+      if (toStatus === "lost") {
+        updates.lost_date = new Date().toISOString().slice(0, 10);
+      }
+      if (toStatus === "inactive") {
+        updates.lost_date = new Date().toISOString().slice(0, 10);
+        updates.lost_reason = "No response after follow-up cycle";
+      }
+      if (toStatus === "follow_up" && (row.status === "lost" || row.status === "inactive")) {
+        updates.lost_date = null;
+        updates.lost_reason = null;
+      }
+
+      const { error } = await supabase.from("enquiries").update(updates).eq("id", row.id);
+      if (error) throw error;
+
+      await supabase.from("enquiry_events").insert({
+        enquiry_id: row.id,
+        event_type: "status_change",
+        from_status: row.status,
+        to_status: toStatus,
+        triggered_by: user?.id ?? null,
+      });
+
+      queryClient.invalidateQueries({ queryKey: ["enquiries-list"] });
+      toast.success(`${row.ref_number} → ${STATUS_LABELS[toStatus]}`);
+    } catch (err: any) {
+      toast.error(err.message || "Failed to update status");
+    }
+  };
   if (isLoading) {
     return (
       <div
@@ -448,16 +557,18 @@ function EnquiryListView({ rows, isLoading, onRowClick }: { rows: EnquiryRow[]; 
         overflow: "hidden",
       }}
     >
+      <div className="overflow-x-auto">
       <Table>
         <TableHeader>
           <TableRow style={{ background: "#F8FAFC" }}>
-            <TableHead style={{ fontSize: "10px", color: "#546E7A", textTransform: "uppercase", letterSpacing: "0.08em", fontWeight: 600 }}>Ref#</TableHead>
-            <TableHead style={{ fontSize: "10px", color: "#546E7A", textTransform: "uppercase", letterSpacing: "0.08em", fontWeight: 600 }}>Client</TableHead>
-            <TableHead style={{ fontSize: "10px", color: "#546E7A", textTransform: "uppercase", letterSpacing: "0.08em", fontWeight: 600 }}>City</TableHead>
-            <TableHead style={{ fontSize: "10px", color: "#546E7A", textTransform: "uppercase", letterSpacing: "0.08em", fontWeight: 600 }}>Status</TableHead>
-            <TableHead className="text-right" style={{ fontSize: "10px", color: "#546E7A", textTransform: "uppercase", letterSpacing: "0.08em", fontWeight: 600 }}>Quote</TableHead>
-            <TableHead style={{ fontSize: "10px", color: "#546E7A", textTransform: "uppercase", letterSpacing: "0.08em", fontWeight: 600 }}>Follow-up</TableHead>
-            <TableHead style={{ fontSize: "10px", color: "#546E7A", textTransform: "uppercase", letterSpacing: "0.08em", fontWeight: 600 }}>Created</TableHead>
+            <TableHead style={{ fontSize: "12px", color: "#546E7A", textTransform: "uppercase", letterSpacing: "0.08em", fontWeight: 600 }}>Ref#</TableHead>
+            <TableHead style={{ fontSize: "12px", color: "#546E7A", textTransform: "uppercase", letterSpacing: "0.08em", fontWeight: 600 }}>Type</TableHead>
+            <TableHead style={{ fontSize: "12px", color: "#546E7A", textTransform: "uppercase", letterSpacing: "0.08em", fontWeight: 600 }}>Client</TableHead>
+            <TableHead style={{ fontSize: "12px", color: "#546E7A", textTransform: "uppercase", letterSpacing: "0.08em", fontWeight: 600 }}>City</TableHead>
+            <TableHead style={{ fontSize: "12px", color: "#546E7A", textTransform: "uppercase", letterSpacing: "0.08em", fontWeight: 600 }}>Status</TableHead>
+            <TableHead className="text-right" style={{ fontSize: "12px", color: "#546E7A", textTransform: "uppercase", letterSpacing: "0.08em", fontWeight: 600 }}>Quote</TableHead>
+            <TableHead style={{ fontSize: "12px", color: "#546E7A", textTransform: "uppercase", letterSpacing: "0.08em", fontWeight: 600 }}>Follow-up</TableHead>
+            <TableHead style={{ fontSize: "12px", color: "#546E7A", textTransform: "uppercase", letterSpacing: "0.08em", fontWeight: 600 }}>Created</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -471,10 +582,44 @@ function EnquiryListView({ rows, isLoading, onRowClick }: { rows: EnquiryRow[]; 
               onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = "transparent"; }}
             >
               <TableCell className="font-mono font-medium" style={{ color: "#0A1929" }}>{r.ref_number}</TableCell>
+              <TableCell>
+                <span
+                  className="text-[12px] font-semibold px-1.5 py-0.5 rounded"
+                  style={{
+                    background: r.service_type === "consultancy" ? "#EDE7F6" : "#E3F2FD",
+                    color: r.service_type === "consultancy" ? "#6A1B9A" : "#1565C0",
+                  }}
+                >
+                  {r.service_type === "consultancy" ? "CONSULT" : "SI"}
+                </span>
+              </TableCell>
               <TableCell className="font-semibold" style={{ color: "#0A1929" }}>{r.client_name}</TableCell>
               <TableCell style={{ color: "#546E7A" }}>{r.site_city}</TableCell>
-              <TableCell>
-                <StatusBadge status={r.status} />
+              <TableCell onClick={(e) => e.stopPropagation()}>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <button className="cursor-pointer hover:ring-2 hover:ring-blue-200 rounded-full transition-all">
+                      <StatusBadge status={r.status} />
+                    </button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-44 p-1.5" align="start">
+                    <p className="text-[12px] font-semibold uppercase px-2 py-1" style={{ color: "#546E7A" }}>Move to</p>
+                    {(VALID_TRANSITIONS[r.status] ?? []).length === 0 ? (
+                      <p className="text-[13px] px-2 py-1.5" style={{ color: "#94A3B8" }}>No transitions available</p>
+                    ) : (
+                      (VALID_TRANSITIONS[r.status] ?? []).map((s) => (
+                        <button
+                          key={s}
+                          onClick={() => handleStatusChange(r, s)}
+                          className="flex items-center gap-2 w-full text-left px-2 py-1.5 rounded text-[13px] hover:bg-slate-100 transition-colors"
+                        >
+                          <span className={`w-2 h-2 rounded-full ${STATUS_COLORS[s]}`} />
+                          {STATUS_LABELS[s]}
+                        </button>
+                      ))
+                    )}
+                  </PopoverContent>
+                </Popover>
               </TableCell>
               <TableCell className="text-right">
                 {r.quote_amount ? (
@@ -491,6 +636,7 @@ function EnquiryListView({ rows, isLoading, onRowClick }: { rows: EnquiryRow[]; 
           ))}
         </TableBody>
       </Table>
+      </div>
     </div>
   );
 }

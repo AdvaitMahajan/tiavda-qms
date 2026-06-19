@@ -18,6 +18,7 @@ import {
 import { CalendarClock, Plus, Check } from "lucide-react";
 import type { Tables } from "@/integrations/supabase/types";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { cleanupConditionalFollowUps } from "@/lib/followUpCadence";
 
 type FollowUp = Tables<"follow_ups">;
 type FollowUpOutcome = FollowUp["outcome"];
@@ -28,6 +29,7 @@ const OUTCOME_COLORS: Record<string, string> = {
   no_response: "bg-red-100 text-red-700",
   callback_requested: "bg-amber-100 text-amber-700",
   closed: "bg-slate-100 text-slate-600",
+  cancelled: "bg-gray-100 text-gray-400 line-through",
 };
 
 const OUTCOME_LABELS: Record<string, string> = {
@@ -36,6 +38,7 @@ const OUTCOME_LABELS: Record<string, string> = {
   no_response: "No Response",
   callback_requested: "Callback Requested",
   closed: "Closed",
+  cancelled: "Cancelled",
 };
 
 export function FollowUpsTab({ enquiryId }: { enquiryId: string }) {
@@ -167,6 +170,34 @@ export function FollowUpsTab({ enquiryId }: { enquiryId: string }) {
         triggered_by: user?.id ?? null,
         metadata: { outcome, follow_up_id: completeTarget.id } as any,
       });
+
+      // Auto-advance enquiry from "sent" → "follow_up" when a follow-up is completed
+      const { data: enqStatus } = await supabase
+        .from("enquiries")
+        .select("status")
+        .eq("id", enquiryId)
+        .single();
+
+      if (enqStatus?.status === "sent") {
+        await supabase.from("enquiries").update({
+          status: "follow_up" as any,
+          updated_at: new Date().toISOString(),
+        }).eq("id", enquiryId);
+
+        await supabase.from("enquiry_events").insert({
+          enquiry_id: enquiryId,
+          event_type: "status_change",
+          from_status: "sent",
+          to_status: "follow_up",
+          triggered_by: user?.id ?? null,
+          metadata: { trigger: "follow_up_completed" } as any,
+        });
+      }
+
+      // Cleanup conditional (Day 15/30) follow-ups if client reached and deal progressing
+      if (outcome === "reached" || outcome === "closed") {
+        await cleanupConditionalFollowUps(enquiryId);
+      }
     },
     onSuccess: () => {
       toast.success("Follow-up completed!");
@@ -219,10 +250,10 @@ export function FollowUpsTab({ enquiryId }: { enquiryId: string }) {
                     <Badge className={OUTCOME_COLORS[fu.outcome] ?? ""}>
                       {OUTCOME_LABELS[fu.outcome] ?? fu.outcome}
                     </Badge>
-                    {isOverdue && <Badge className="bg-red-100 text-red-700 text-[10px]">Overdue</Badge>}
+                    {isOverdue && <Badge className="bg-red-100 text-red-700 text-[12px]">Overdue</Badge>}
                   </div>
                   {fu.notes && <p className="text-sm text-muted-foreground truncate">{fu.notes}</p>}
-                  {fu.outcome_notes && <p className="text-xs text-muted-foreground mt-1 italic">→ {fu.outcome_notes}</p>}
+                  {fu.outcome_notes && <p className="text-[13px] text-muted-foreground mt-1 italic">→ {fu.outcome_notes}</p>}
                 </div>
                 {fu.outcome === "pending" && (
                   <Button

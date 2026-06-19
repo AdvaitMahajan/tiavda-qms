@@ -91,6 +91,17 @@ export function JobCompletionTab({ enquiryId }: { enquiryId: string }) {
 
   const handleMarkDone = async (stage: StageConfig) => {
     if (!job) return;
+
+    // Don't let a stage be completed without its required data.
+    const missing: string[] = [];
+    if (!job[stage.dateField]) missing.push("Target Date");
+    if (stage.key === "report" && !job.report_file_url) missing.push("Report upload");
+    if (stage.key === "bill" && !(Number(job.final_bill_amount) > 0)) missing.push("Final Bill Amount");
+    if (missing.length > 0) {
+      toast.error(`Add ${missing.join(" & ")} before marking "${stage.title}" as done.`);
+      return;
+    }
+
     const today = new Date().toISOString().slice(0, 10);
     await supabase.from("job_completion").update({
       [stage.doneField]: true,
@@ -107,8 +118,19 @@ export function JobCompletionTab({ enquiryId }: { enquiryId: string }) {
     // Check if all 3 done
     const updatedJob = { ...job, [stage.doneField]: true, [stage.actualField]: today };
     if (updatedJob.site_done && updatedJob.report_done && updatedJob.final_bill_done) {
-      await supabase.from("enquiries").update({ status: "completed" as any }).eq("id", enquiryId);
-      toast.success("All stages complete! Enquiry marked as completed. 🎉");
+      const { error: completeErr } = await supabase.from("enquiries").update({ status: "completed" as any }).eq("id", enquiryId);
+      if (completeErr) {
+        toast.error("All stages done, but the enquiry could not be marked completed: " + completeErr.message);
+      } else {
+        await supabase.from("enquiry_events").insert({
+          enquiry_id: enquiryId,
+          event_type: "status_change",
+          to_status: "completed" as any,
+          triggered_by: user?.id ?? null,
+          metadata: { trigger: "job_completed" } as any,
+        });
+        toast.success("All stages complete! Enquiry marked as completed. 🎉");
+      }
     } else {
       toast.success(`${stage.title} marked as done!`);
     }
@@ -144,7 +166,7 @@ export function JobCompletionTab({ enquiryId }: { enquiryId: string }) {
                 }`}>
                   {done ? <Check className="h-5 w-5" /> : i + 1}
                 </div>
-                <span className="text-xs mt-1 text-muted-foreground">{stage.title}</span>
+                <span className="text-[13px] mt-1 text-muted-foreground">{stage.title}</span>
               </div>
               {i < STAGES.length - 1 && (
                 <div className={`w-16 h-0.5 mx-2 ${completedCount > i + 1 || (done && job[STAGES[i + 1].doneField]) ? "bg-green-600" : "bg-border"}`} />
@@ -176,7 +198,7 @@ export function JobCompletionTab({ enquiryId }: { enquiryId: string }) {
                 </CardHeader>
                 <CardContent className="space-y-3">
                   <div>
-                    <Label className="text-xs">Target Date</Label>
+                    <Label className="text-[13px]">Target Date</Label>
                     <Input
                       type="date"
                       value={(job[stage.dateField] as string) ?? ""}
@@ -187,13 +209,13 @@ export function JobCompletionTab({ enquiryId }: { enquiryId: string }) {
 
                   {done && job[stage.actualField] && (
                     <div>
-                      <Label className="text-xs">Actual Date</Label>
+                      <Label className="text-[13px]">Actual Date</Label>
                       <p className="text-sm font-medium text-green-700">{job[stage.actualField] as string}</p>
                     </div>
                   )}
 
                   <div>
-                    <Label className="text-xs">Notes</Label>
+                    <Label className="text-[13px]">Notes</Label>
                     <Input
                       defaultValue={(job[stage.notesField] as string) ?? ""}
                       onBlur={(e) => updateField(stage.notesField, e.target.value || null)}
@@ -207,17 +229,22 @@ export function JobCompletionTab({ enquiryId }: { enquiryId: string }) {
                     {[3, 2, 1].map((d) => {
                       const rem = stageReminders.find((r) => r.days_before === d);
                       const color = !rem ? "bg-slate-200 text-slate-500" : rem.sent ? "bg-green-100 text-green-700" : "bg-amber-100 text-amber-700";
-                      return <Badge key={d} className={`text-[10px] ${color}`}>{d} day{d > 1 ? "s" : ""}</Badge>;
+                      const tooltip = !rem
+                        ? `${d}-day reminder — set a target date to activate`
+                        : rem.sent
+                          ? `Reminder sent on ${rem.scheduled_for}`
+                          : `Reminder scheduled for ${rem.scheduled_for}`;
+                      return <Badge key={d} className={`text-[12px] ${color} cursor-default`} title={tooltip}>{d} day{d > 1 ? "s" : ""}</Badge>;
                     })}
                   </div>
 
                   {/* Report upload */}
                   {stage.key === "report" && !done && (
                     <div>
-                      <Label className="text-xs">Upload Report</Label>
+                      <Label className="text-[13px]">Upload Report</Label>
                       <Input type="file" onChange={(e) => e.target.files?.[0] && handleReportUpload(e.target.files[0])} />
                       {job.report_file_url && (
-                        <a href={job.report_file_url} target="_blank" rel="noreferrer" className="text-xs text-blue-600 hover:underline mt-1 inline-block">View uploaded report</a>
+                        <a href={job.report_file_url} target="_blank" rel="noreferrer" className="text-[13px] text-blue-600 hover:underline mt-1 inline-block">View uploaded report</a>
                       )}
                     </div>
                   )}
@@ -225,7 +252,7 @@ export function JobCompletionTab({ enquiryId }: { enquiryId: string }) {
                   {/* Final bill amount */}
                   {stage.key === "bill" && (
                     <div>
-                      <Label className="text-xs">Final Bill Amount ₹</Label>
+                      <Label className="text-[13px]">Final Bill Amount ₹</Label>
                       <Input
                         type="number"
                         defaultValue={job.final_bill_amount ? Number(job.final_bill_amount) : ""}

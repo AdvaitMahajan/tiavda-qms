@@ -1,19 +1,25 @@
 import { Link, useLocation } from "react-router-dom";
-import { LayoutDashboard, FileText, Users, Table2, Settings, LogOut } from "lucide-react";
+import { LayoutDashboard, FileText, Users, CalendarClock, Settings, LogOut, ClipboardList, Truck, Wallet } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
+import { useRole } from "@/hooks/useRole";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 const navItems = [
   { path: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { path: "/enquiries", label: "Enquiries", icon: FileText },
   { path: "/clients", label: "Clients", icon: Users },
-  { path: "/rate-matrix", label: "Rate Matrix", icon: Table2 },
-  { path: "/settings", label: "Settings", icon: Settings },
+  { path: "/enquiries", label: "Enquiries", icon: FileText },
+  { path: "/follow-ups", label: "Follow-ups", icon: CalendarClock },
+  { path: "/mobilisation", label: "Mobilisation", icon: Truck },
+  { path: "/accounts", label: "Accounts", icon: Wallet },
+  { path: "/quotation-config", label: "Quotation Config", icon: ClipboardList, adminOnly: true },
+  { path: "/settings", label: "Settings", icon: Settings, adminOnly: true },
 ];
 
 export function AppSidebar() {
   const { pathname } = useLocation();
-  const { user, signOut } = useAuth();
+  const { user, signOut, profileLoading } = useAuth();
+  const { isAdmin } = useRole();
+  const visibleItems = navItems.filter((item) => !item.adminOnly || profileLoading || isAdmin);
 
   return (
     <aside
@@ -26,28 +32,28 @@ export function AppSidebar() {
           className="flex h-10 w-10 items-center justify-center rounded-xl font-bold text-white flex-shrink-0 text-sm"
           style={{ background: "linear-gradient(135deg, #1565C0 0%, #2979FF 100%)", boxShadow: "0 4px 12px rgba(21,101,192,0.4)" }}
         >
-          TQ
+          GG
         </div>
         <div className="hidden lg:block min-w-0">
           <span className="block font-bold text-white text-sm leading-tight" style={{ fontFamily: "Sora, sans-serif" }}>
-            Tiavda QMS
+            Global Geo
           </span>
-          <span className="block text-[11px]" style={{ color: "rgba(255,255,255,0.45)" }}>
-            Enterprise
+          <span className="block text-[12px]" style={{ color: "rgba(255,255,255,0.45)" }}>
+            Consultancy
           </span>
         </div>
       </div>
 
       {/* Nav label */}
       <div className="hidden lg:block px-5 pt-5 pb-2">
-        <span className="text-[10px] font-semibold uppercase tracking-widest" style={{ color: "rgba(255,255,255,0.35)" }}>
+        <span className="text-[12px] font-semibold uppercase tracking-widest" style={{ color: "rgba(255,255,255,0.35)" }}>
           Main Menu
         </span>
       </div>
 
       {/* Nav */}
       <nav className="flex-1 space-y-0.5 px-2 lg:px-3 pt-2 lg:pt-0">
-        {navItems.map((item) => {
+        {visibleItems.map((item) => {
           const active = pathname === item.path || pathname.startsWith(item.path + "/");
           const linkContent = (
             <Link
@@ -110,12 +116,12 @@ export function AppSidebar() {
       <div className="px-3 py-4 lg:px-4" style={{ borderTop: "1px solid rgba(255,255,255,0.08)" }}>
         <div className="hidden lg:flex items-center gap-2 mb-3 px-1">
           <div
-            className="flex h-7 w-7 items-center justify-center rounded-lg text-xs font-bold text-white flex-shrink-0"
+            className="flex h-7 w-7 items-center justify-center rounded-lg text-[13px] font-bold text-white flex-shrink-0"
             style={{ background: "linear-gradient(135deg, #1565C0, #2979FF)" }}
           >
             {user?.email ? user.email[0].toUpperCase() : "U"}
           </div>
-          <p className="truncate text-xs flex-1 min-w-0" style={{ color: "rgba(255,255,255,0.5)" }}>
+          <p className="truncate text-[13px] flex-1 min-w-0" style={{ color: "rgba(255,255,255,0.5)" }}>
             {user?.email}
           </p>
         </div>

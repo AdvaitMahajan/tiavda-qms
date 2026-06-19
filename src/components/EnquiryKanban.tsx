@@ -2,6 +2,7 @@ import { useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQueryClient, useMutation } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { sendNotification } from "@/lib/notifications";
 import { useAuth } from "@/hooks/useAuth";
 import { formatCurrency } from "@/lib/utils";
 import { toast } from "sonner";
@@ -20,16 +21,23 @@ import { CSS } from "@dnd-kit/utilities";
 import { useDroppable } from "@dnd-kit/core";
 import { motion, AnimatePresence } from "framer-motion";
 import type { EnquiryRow, LeadStatus } from "@/pages/Enquiries";
-import { STATUS_LABELS, ALL_STATUSES } from "@/pages/Enquiries";
+import { STATUS_LABELS, ALL_STATUSES, PIPELINE_STATUSES, CLOSED_STATUSES } from "@/pages/Enquiries";
+import { cancelPendingFollowUps, shouldCancelFollowUps } from "@/lib/followUpCadence";
 
-const VALID_TRANSITIONS: Record<LeadStatus, LeadStatus[]> = {
-  new: ["pending", "lost"],
-  pending: ["sent", "lost"],
-  sent: ["follow_up", "approved", "lost"],
-  follow_up: ["sent", "approved", "lost"],
-  approved: ["confirmed", "lost"],
-  confirmed: ["completed"],
-  lost: [],
+export const VALID_TRANSITIONS: Record<LeadStatus, LeadStatus[]> = {
+  new: ["intake_pending", "pending", "lost", "inactive"],
+  intake_pending: ["pending", "lost", "inactive"],
+  pending: ["sent", "lost", "inactive"],
+  sent: ["follow_up", "negotiation", "approved", "lost", "inactive"],
+  follow_up: ["sent", "negotiation", "approved", "lost", "inactive"],
+  negotiation: ["sent", "approved", "lost", "inactive"],
+  approved: ["payment_received", "lost", "inactive"],
+  payment_received: ["mobilization_scheduled", "lost", "inactive"],
+  mobilization_scheduled: ["job_active", "lost", "inactive"],
+  job_active: ["completed", "lost", "inactive"],
+  confirmed: ["completed", "lost", "inactive"],
+  lost: ["follow_up"],
+  inactive: ["follow_up"],
   completed: [],
 };
 
@@ -38,9 +46,10 @@ interface Props {
   isLoading: boolean;
   statusFilter: LeadStatus[];
   search: string;
+  showClosed: boolean;
 }
 
-export function EnquiryKanban({ rows, isLoading }: Props) {
+export function EnquiryKanban({ rows, isLoading, showClosed }: Props) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { user } = useAuth();
@@ -56,49 +65,128 @@ export function EnquiryKanban({ rows, isLoading }: Props) {
     mutationFn: async ({ id, fromStatus, toStatus, lostReason: reason }: {
       id: string; fromStatus: LeadStatus; toStatus: LeadStatus; lostReason?: string;
     }) => {
-      const updates: {
-        status: LeadStatus;
-        updated_at: string;
-        lost_reason?: string;
-        lost_date?: string;
-        confirmed_date?: string;
-      } = { status: toStatus, updated_at: new Date().toISOString() };
+      // Won (and therefore payment/mobilisation downstream) requires a finalized
+      // quotation (approved/sent/accepted) — no advancing the pipeline off a draft.
+      let wonQuote: { id: string; total_amount: number } | null = null;
+      if (toStatus === "approved") {
+        const { data: fq } = await supabase.from("quotations")
+          .select("id, total_amount")
+          .eq("enquiry_id", id)
+          .in("status", ["approved", "sent", "accepted"] as any)
+          .order("version", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (!fq) throw new Error("Approve and send a quotation to the client before marking this enquiry as Won.");
+        wonQuote = fq as { id: string; total_amount: number };
+      }
+
+      const updates: Record<string, unknown> = {
+        status: toStatus,
+        updated_at: new Date().toISOString(),
+      };
       if (toStatus === "lost") {
         updates.lost_reason = reason;
         updates.lost_date = new Date().toISOString().slice(0, 10);
       }
-      if (toStatus === "confirmed") {
+      if (toStatus === "inactive") {
+        updates.lost_date = new Date().toISOString().slice(0, 10);
+        updates.lost_reason = reason || "No response after follow-up cycle";
+      }
+      if (toStatus === "approved") {
         updates.confirmed_date = new Date().toISOString().slice(0, 10);
+      }
+      if (toStatus === "follow_up" && (fromStatus === "lost" || fromStatus === "inactive")) {
+        updates.lost_date = null;
+        updates.lost_reason = null;
       }
 
       const { error } = await supabase.from("enquiries").update(updates).eq("id", id);
       if (error) throw error;
 
+      const eventType = (fromStatus === "lost" || fromStatus === "inactive") && toStatus === "follow_up"
+        ? "reactivated"
+        : "status_change";
+
       await supabase.from("enquiry_events").insert({
         enquiry_id: id,
-        event_type: "status_change",
+        event_type: eventType,
         from_status: fromStatus,
         to_status: toStatus,
         triggered_by: user?.id ?? null,
+        metadata: reason ? { reason } : null,
       });
 
-      if (toStatus === "confirmed") {
-        const { data: approvedQ } = await supabase
-          .from("quotations")
-          .select("total_amount, id")
-          .eq("enquiry_id", id)
-          .eq("status", "approved")
-          .limit(1)
-          .single();
+      if (toStatus === "approved" && wonQuote) {
+        // Mark the winning quotation accepted so the quote status mirrors the deal.
+        await supabase.from("quotations").update({ status: "accepted" as any }).eq("id", wonQuote.id);
 
-        if (approvedQ) {
+        // Auto-create the advance when the winning quote has a real total.
+        if (Number(wonQuote.total_amount) > 0) {
+          const advanceAmount = Math.round(Number(wonQuote.total_amount) * 0.5 * 100) / 100;
           await supabase.from("payments").insert({
             enquiry_id: id,
-            quotation_id: approvedQ.id,
+            quotation_id: wonQuote.id,
             payment_type: "advance",
-            amount_requested: Number(approvedQ.total_amount) * 0.5,
+            amount_requested: advanceAmount,
             status: "pending_request",
           });
+
+          // Auto-send advance payment request to client
+          const { data: enqData } = await supabase
+            .from("enquiries")
+            .select("ref_number, client_id, clients(name, email, email_bounced, whatsapp_number, whatsapp_invalid)")
+            .eq("id", id)
+            .single();
+
+          if (enqData) {
+            const client = (enqData as any).clients;
+            const ref = enqData.ref_number;
+            const amt = new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(advanceAmount);
+
+            // Send email
+            if (client?.email && !client.email_bounced) {
+              sendNotification({
+                to: client.email,
+                template: "payment_request",
+                params: { client_name: client.name, ref_number: ref, amount: amt },
+              });
+
+              await supabase.from("communication_log").insert({
+                enquiry_id: id,
+                client_id: enqData.client_id,
+                channel: "email",
+                direction: "outbound",
+                subject: `Advance Payment Request — ${ref}`,
+                body: `Advance payment of ${amt} requested automatically on Won status`,
+                status: "sent",
+              });
+            }
+
+            // Send WhatsApp
+            if (client?.whatsapp_number && !client.whatsapp_invalid) {
+              supabase.functions.invoke("send-whatsapp", {
+                body: {
+                  phone_number: client.whatsapp_number,
+                  template_name: "qms_payment_request",
+                  parameters: [
+                    { name: "client_name", value: client.name },
+                    { name: "ref_number", value: ref },
+                    { name: "amount", value: amt },
+                  ],
+                },
+              }).catch(() => {});
+
+              await supabase.from("communication_log").insert({
+                enquiry_id: id,
+                client_id: enqData.client_id,
+                channel: "whatsapp",
+                direction: "outbound",
+                subject: `Advance Payment Request — ${ref}`,
+                body: `Advance payment of ${amt} requested via WhatsApp`,
+                status: "sent",
+              });
+            }
+          }
         }
 
         const { data: existing } = await supabase
@@ -112,8 +200,16 @@ export function EnquiryKanban({ rows, isLoading }: Props) {
           await supabase.from("job_completion").insert({ enquiry_id: id });
         }
       }
+
+      if (shouldCancelFollowUps(toStatus)) {
+        await cancelPendingFollowUps(id);
+      }
     },
     onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["enquiries-list"] });
+    },
+    onError: (e: any) => {
+      toast.error(e?.message || "Could not update status.");
       queryClient.invalidateQueries({ queryKey: ["enquiries-list"] });
     },
   });
@@ -152,13 +248,18 @@ export function EnquiryKanban({ rows, isLoading }: Props) {
         return;
       }
 
-      if (toStatus === "lost") {
+      if (toStatus === "lost" || toStatus === "inactive") {
         setLostModal({ row: card, toStatus });
         return;
       }
 
-      if (toStatus === "confirmed") {
+      if (toStatus === "approved") {
         setConfirmModal(card);
+        return;
+      }
+
+      if (toStatus === "follow_up" && (card.status === "lost" || card.status === "inactive")) {
+        setLostModal({ row: card, toStatus });
         return;
       }
 
@@ -171,12 +272,22 @@ export function EnquiryKanban({ rows, isLoading }: Props) {
   );
 
   const handleLostConfirm = () => {
-    if (!lostModal || !lostReason.trim()) return;
+    if (!lostModal) return;
+    const isReactivation = lostModal.toStatus === "follow_up";
+    if (!isReactivation && !lostReason.trim()) return;
     statusMutation.mutate(
-      { id: lostModal.row.id, fromStatus: lostModal.row.status, toStatus: "lost", lostReason: lostReason.trim() },
+      {
+        id: lostModal.row.id,
+        fromStatus: lostModal.row.status,
+        toStatus: lostModal.toStatus,
+        lostReason: isReactivation ? lostReason.trim() || "Reactivated" : lostReason.trim(),
+      },
       {
         onSuccess: () => {
-          toast.success("Marked as Lost");
+          const msg = isReactivation
+            ? "Lead reactivated! Moved to Follow Up."
+            : lostModal.toStatus === "inactive" ? "Marked as Inactive" : "Marked as Lost";
+          toast.success(msg);
           setLostModal(null);
           setLostReason("");
         },
@@ -187,21 +298,23 @@ export function EnquiryKanban({ rows, isLoading }: Props) {
   const handleConfirmConfirm = () => {
     if (!confirmModal) return;
     statusMutation.mutate(
-      { id: confirmModal.id, fromStatus: confirmModal.status, toStatus: "confirmed" },
+      { id: confirmModal.id, fromStatus: confirmModal.status, toStatus: "approved" },
       {
         onSuccess: () => {
-          toast.success("Marked as Confirmed! Payment record and job tracker created.");
+          toast.success("Marked as Won! Payment record and job tracker created.");
           setConfirmModal(null);
         },
       }
     );
   };
 
+  const visibleStatuses = showClosed ? [...PIPELINE_STATUSES, ...CLOSED_STATUSES] : PIPELINE_STATUSES;
+
   if (isLoading) {
     return (
       <div className="w-full overflow-x-auto">
         <div className="flex gap-3 pb-4" style={{ minWidth: "max-content" }}>
-          {ALL_STATUSES.map((s) => (
+          {visibleStatuses.map((s) => (
             <div key={s} className="flex flex-col w-[200px] flex-shrink-0 space-y-3">
               <Skeleton className="h-8 w-full" />
               <Skeleton className="h-24 w-full" />
@@ -213,7 +326,7 @@ export function EnquiryKanban({ rows, isLoading }: Props) {
     );
   }
 
-  const columns = ALL_STATUSES.map((status) => ({
+  const columns = visibleStatuses.map((status) => ({
     status,
     cards: rows.filter((r) => r.status === status),
   }));
@@ -246,19 +359,27 @@ export function EnquiryKanban({ rows, isLoading }: Props) {
         </DragOverlay>
       </DndContext>
 
-      {/* Lost Reason Modal */}
+      {/* Lost / Inactive / Reactivation Modal */}
       <Dialog open={!!lostModal} onOpenChange={(open) => { if (!open) { setLostModal(null); setLostReason(""); } }}>
         <DialogContent style={{ borderRadius: "20px", padding: "32px", boxShadow: "0 24px 64px rgba(0,0,0,0.2)" }}>
           <DialogHeader>
             <DialogTitle style={{ fontFamily: "Sora, sans-serif", color: "#0A1929", fontSize: "18px", fontWeight: 700 }}>
-              Reason for Loss
+              {lostModal?.toStatus === "follow_up" ? "Reactivate Lead" : lostModal?.toStatus === "inactive" ? "Mark as Inactive" : "Reason for Loss"}
             </DialogTitle>
             <DialogDescription style={{ color: "#546E7A", fontSize: "14px" }}>
-              Please provide a reason for marking this enquiry as lost.
+              {lostModal?.toStatus === "follow_up"
+                ? "This lead will be moved back to Follow Up. Optionally add a reason."
+                : lostModal?.toStatus === "inactive"
+                ? "This lead will be marked inactive due to no response."
+                : "Please provide a reason for marking this enquiry as lost."}
             </DialogDescription>
           </DialogHeader>
           <Textarea
-            placeholder="Why was this enquiry lost?"
+            placeholder={
+              lostModal?.toStatus === "follow_up" ? "Reason for reactivation (optional)"
+              : lostModal?.toStatus === "inactive" ? "Additional notes (optional)"
+              : "Why was this enquiry lost?"
+            }
             value={lostReason}
             onChange={(e) => setLostReason(e.target.value)}
             rows={3}
@@ -273,26 +394,31 @@ export function EnquiryKanban({ rows, isLoading }: Props) {
               Cancel
             </button>
             <button
-              disabled={!lostReason.trim() || statusMutation.isPending}
+              disabled={lostModal?.toStatus === "lost" && !lostReason.trim() || statusMutation.isPending}
               onClick={handleLostConfirm}
               className="px-4 py-2 rounded-lg text-sm font-semibold transition-all disabled:opacity-50"
-              style={{ background: "#C62828", color: "white" }}
+              style={{
+                background: lostModal?.toStatus === "follow_up"
+                  ? "linear-gradient(135deg,#1565C0,#42A5F5)"
+                  : lostModal?.toStatus === "inactive" ? "#78909C" : "#C62828",
+                color: "white",
+              }}
             >
-              Mark as Lost
+              {lostModal?.toStatus === "follow_up" ? "Reactivate" : lostModal?.toStatus === "inactive" ? "Mark Inactive" : "Mark as Lost"}
             </button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Confirmed Modal */}
+      {/* Won / Approved Modal */}
       <Dialog open={!!confirmModal} onOpenChange={(open) => { if (!open) setConfirmModal(null); }}>
         <DialogContent style={{ borderRadius: "20px", padding: "32px", boxShadow: "0 24px 64px rgba(0,0,0,0.2)" }}>
           <DialogHeader>
             <DialogTitle style={{ fontFamily: "Sora, sans-serif", color: "#0A1929", fontSize: "18px", fontWeight: 700 }}>
-              Mark as Confirmed?
+              Mark as Won?
             </DialogTitle>
             <DialogDescription style={{ color: "#546E7A", fontSize: "14px" }}>
-              This will automatically create a payment record and job completion tracker.
+              This will create a 50% advance payment record and a job completion tracker for this enquiry.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -309,7 +435,7 @@ export function EnquiryKanban({ rows, isLoading }: Props) {
               className="px-4 py-2 rounded-lg text-sm font-semibold transition-all disabled:opacity-50"
               style={{ background: "linear-gradient(135deg,#00897B,#26A69A)", color: "white" }}
             >
-              Confirm
+              Confirm Won
             </button>
           </DialogFooter>
         </DialogContent>
@@ -334,11 +460,11 @@ function KanbanColumn({ status, cards, isOver, onCardClick }: {
           borderBottom: "none",
         }}
       >
-        <span className="text-xs font-semibold uppercase tracking-wide" style={{ color: "#546E7A" }}>
+        <span className="text-[13px] font-semibold uppercase tracking-wide" style={{ color: "#546E7A" }}>
           {STATUS_LABELS[status]}
         </span>
         <span
-          className="text-xs font-bold px-2 py-0.5 rounded-full"
+          className="text-[13px] font-bold px-2 py-0.5 rounded-full"
           style={{ background: "#F0F4F8", color: "#0A1929" }}
         >
           {cards.length}
@@ -348,7 +474,7 @@ function KanbanColumn({ status, cards, isOver, onCardClick }: {
       {/* Column body */}
       <div
         ref={setNodeRef}
-        className="flex-1 p-2 min-h-[400px] transition-colors"
+        className="flex-1 p-2 min-h-[calc(100vh-280px)] transition-colors"
         style={{
           background: isOver ? "rgba(21,101,192,0.06)" : "rgba(255,255,255,0.6)",
           backdropFilter: "blur(4px)",
@@ -360,7 +486,7 @@ function KanbanColumn({ status, cards, isOver, onCardClick }: {
       >
         {cards.length === 0 ? (
           <div
-            className="rounded-lg p-3 text-center text-xs min-h-[60px] flex items-center justify-center"
+            className="rounded-lg p-3 text-center text-[13px] min-h-[60px] flex items-center justify-center"
             style={{ border: "2px dashed #E0E7EF", color: "#546E7A" }}
           >
             Drop here
@@ -403,12 +529,19 @@ function KanbanCard({ row, onClick }: { row: EnquiryRow; onClick: () => void }) 
           boxShadow: "0 1px 4px rgba(0,0,0,0.06)",
         }}
       >
-        <div className="text-[10px] font-mono mb-1" style={{ color: "#546E7A" }}>{row.ref_number}</div>
+        <div className="flex items-center justify-between mb-1">
+          <span className="text-[12px] font-mono" style={{ color: "#546E7A" }}>{row.ref_number}</span>
+          {row.service_type === "consultancy" ? (
+            <span style={{ background: "#EDE7F6", color: "#7B1FA2", fontSize: "12px", fontWeight: 700, padding: "1px 6px", borderRadius: "4px" }}>CONSULT</span>
+          ) : (
+            <span style={{ background: "#E3F2FD", color: "#1565C0", fontSize: "12px", fontWeight: 700, padding: "1px 6px", borderRadius: "4px" }}>SI</span>
+          )}
+        </div>
         <div className="text-sm font-semibold leading-snug" style={{ color: "#0A1929" }}>{row.client_name}</div>
-        <div className="text-xs mt-0.5" style={{ color: "#546E7A" }}>{row.site_city}</div>
+        <div className="text-[13px] mt-0.5" style={{ color: "#546E7A" }}>{row.site_city}</div>
         {row.quote_amount && (
           <div
-            className="text-xs font-mono font-semibold mt-2 pt-2"
+            className="text-[13px] font-mono font-semibold mt-2 pt-2"
             style={{ color: "#0A1929", borderTop: "1px solid #F0F4F8" }}
           >
             {formatCurrency(Number(row.quote_amount))}
@@ -426,9 +559,9 @@ function KanbanCardOverlay({ row }: { row: EnquiryRow }) {
       className="rounded-xl p-3 shadow-lg w-[240px] rotate-2"
       style={{ background: "#FFFFFF", border: "1px solid #E0E7EF" }}
     >
-      <p className="font-mono text-[11px]" style={{ color: "#546E7A" }}>{row.ref_number}</p>
+      <p className="font-mono text-[12px]" style={{ color: "#546E7A" }}>{row.ref_number}</p>
       <p className="font-semibold text-sm" style={{ color: "#0A1929" }}>{row.client_name}</p>
-      <p className="text-xs" style={{ color: "#546E7A" }}>{row.site_city}</p>
+      <p className="text-[13px]" style={{ color: "#546E7A" }}>{row.site_city}</p>
     </div>
   );
 }
@@ -443,7 +576,7 @@ function FollowUpTag({ date }: { date: string }) {
 
   return (
     <div
-      className="text-[10px] mt-1.5 flex items-center gap-1"
+      className="text-[12px] mt-1.5 flex items-center gap-1"
       style={{ color: isOverdue ? "#C62828" : isToday ? "#E65100" : "#546E7A" }}
     >
       {isOverdue && <span className="w-1.5 h-1.5 rounded-full bg-red-400 animate-pulse inline-block" />}

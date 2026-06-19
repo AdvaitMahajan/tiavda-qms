@@ -27,8 +27,8 @@ function avatarGradient(name: string): string {
   return "linear-gradient(135deg,#E65100,#FF8F00)";
 }
 
-type ClientForm = { name: string; phone: string; email: string; company: string; city: string; state: string; whatsapp_number: string; notes: string };
-const emptyForm: ClientForm = { name: "", phone: "", email: "", company: "", city: "", state: "", whatsapp_number: "", notes: "" };
+type ClientForm = { name: string; phone: string; email: string; company: string; city: string; state: string; pincode: string; whatsapp_number: string; source: string; notes: string };
+const emptyForm: ClientForm = { name: "", phone: "", email: "", company: "", city: "", state: "", pincode: "", whatsapp_number: "", source: "", notes: "" };
 
 export default function Clients() {
   const navigate = useNavigate();
@@ -82,8 +82,9 @@ export default function Clients() {
       name: form.name.trim(), phone: normalizePhone(form.phone),
       email: form.email.trim() || null, company: form.company.trim() || null,
       city: form.city.trim(), state: form.state.trim() || null,
+      pincode: form.pincode.trim() || null,
       whatsapp_number: form.whatsapp_number.trim() ? normalizePhone(form.whatsapp_number) : null,
-      notes: form.notes.trim() || null, source: "manual",
+      notes: form.notes.trim() || null, source: form.source.trim() || "manual",
     });
     setSaving(false);
     if (error) { toast.error(error.message); }
@@ -159,7 +160,7 @@ export default function Clients() {
         }}>
           <div>
             <div style={{ fontFamily: "Sora, sans-serif", fontWeight: 700, fontSize: "28px", color: "#0A1929", lineHeight: 1 }}>{clients.length}</div>
-            <div style={{ fontSize: "10px", color: "#546E7A", textTransform: "uppercase", letterSpacing: "0.08em", marginTop: "6px" }}>Total Clients</div>
+            <div style={{ fontSize: "12px", color: "#546E7A", textTransform: "uppercase", letterSpacing: "0.08em", marginTop: "6px" }}>Total Clients</div>
           </div>
           <div style={{ width: "40px", height: "40px", borderRadius: "50%", background: "#EBF2FF", display: "flex", alignItems: "center", justifyContent: "center" }}>
             <Users style={{ width: "18px", height: "18px", color: "#1565C0" }} />
@@ -174,7 +175,7 @@ export default function Clients() {
         }}>
           <div>
             <div style={{ fontFamily: "Sora, sans-serif", fontWeight: 700, fontSize: "28px", color: "#0A1929", lineHeight: 1 }}>{addedThisMonth}</div>
-            <div style={{ fontSize: "10px", color: "#546E7A", textTransform: "uppercase", letterSpacing: "0.08em", marginTop: "6px" }}>Added This Month</div>
+            <div style={{ fontSize: "12px", color: "#546E7A", textTransform: "uppercase", letterSpacing: "0.08em", marginTop: "6px" }}>Added This Month</div>
           </div>
           <div style={{ width: "40px", height: "40px", borderRadius: "50%", background: "#FFF3E0", display: "flex", alignItems: "center", justifyContent: "center" }}>
             <UserPlus style={{ width: "18px", height: "18px", color: "#E65100" }} />
@@ -189,7 +190,7 @@ export default function Clients() {
         }}>
           <div>
             <div style={{ fontFamily: "Sora, sans-serif", fontWeight: 700, fontSize: "28px", color: "#0A1929", lineHeight: 1 }}>{withActiveLinks}</div>
-            <div style={{ fontSize: "10px", color: "#546E7A", textTransform: "uppercase", letterSpacing: "0.08em", marginTop: "6px" }}>With Active Links</div>
+            <div style={{ fontSize: "12px", color: "#546E7A", textTransform: "uppercase", letterSpacing: "0.08em", marginTop: "6px" }}>With Active Links</div>
           </div>
           <div style={{ width: "40px", height: "40px", borderRadius: "50%", background: "#E8F5E9", display: "flex", alignItems: "center", justifyContent: "center" }}>
             <Link2 style={{ width: "18px", height: "18px", color: "#00897B" }} />
@@ -226,7 +227,7 @@ export default function Clients() {
                     key={h}
                     className="text-left"
                     style={{
-                      fontSize: "10px", fontWeight: 600, textTransform: "uppercase",
+                      fontSize: "12px", fontWeight: 600, textTransform: "uppercase",
                       letterSpacing: "0.1em", padding: "14px 24px", color: "#546E7A",
                     }}
                   >
@@ -257,7 +258,7 @@ export default function Clients() {
                       </div>
                       <div>
                         <div style={{ fontWeight: 600, fontSize: "14px", color: "#0A1929" }}>{c.name}</div>
-                        <div style={{ fontSize: "12px", color: "#546E7A" }}>{c.company || c.city}</div>
+                        <div style={{ fontSize: "13px", color: "#546E7A" }}>{c.company || c.city}</div>
                       </div>
                     </div>
                   </td>
@@ -286,14 +287,14 @@ export default function Clients() {
                   <td style={{ padding: "14px 24px" }}>
                     {c.source === "intake_form" ? (
                       <span
-                        className="text-[10px] font-semibold px-2.5 py-1 rounded-full uppercase tracking-wide"
+                        className="text-[12px] font-semibold px-2.5 py-1 rounded-full uppercase tracking-wide"
                         style={{ background: "#EBF2FF", color: "#1565C0", border: "1px solid #BFDBFE" }}
                       >
                         Form
                       </span>
                     ) : (
                       <span
-                        className="text-[10px] font-semibold px-2.5 py-1 rounded-full uppercase tracking-wide"
+                        className="text-[12px] font-semibold px-2.5 py-1 rounded-full uppercase tracking-wide"
                         style={{ background: "#F1F5F9", color: "#546E7A", border: "1px solid #E2E8F0" }}
                       >
                         Manual
@@ -306,7 +307,7 @@ export default function Clients() {
                       style={{
                         background: viewHover === c.id ? "#E3EAF2" : "#F0F4F8",
                         color: "#0A1929", border: "1px solid #E0E7EF",
-                        borderRadius: "8px", padding: "5px 14px", fontSize: "12px", fontWeight: 600,
+                        borderRadius: "8px", padding: "5px 14px", fontSize: "13px", fontWeight: 600,
                         cursor: "pointer", transition: "all 150ms",
                       }}
                       onMouseEnter={() => setViewHover(c.id)}
@@ -347,10 +348,12 @@ export default function Clients() {
             <Field label="Company Name" value={form.company} onChange={(v) => updateForm({ company: v })} />
             <Field label="City" required value={form.city} onChange={(v) => updateForm({ city: v })} error={formErrors.city} />
             <Field label="State" value={form.state} onChange={(v) => updateForm({ state: v })} />
+            <Field label="Pincode" value={form.pincode} onChange={(v) => updateForm({ pincode: v })} />
             <Field label="WhatsApp Number (if different from phone)" value={form.whatsapp_number} onChange={(v) => updateForm({ whatsapp_number: v })} error={formErrors.whatsapp_number}
               onBlur={() => { if (form.whatsapp_number) updateForm({ whatsapp_number: normalizePhone(form.whatsapp_number) }); }} />
+            <Field label="Source (e.g. referral, website, walk-in)" value={form.source} onChange={(v) => updateForm({ source: v })} />
             <div>
-              <label className="mb-1.5 block" style={{ fontSize: "11px", fontWeight: 600, color: "#546E7A", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+              <label className="mb-1.5 block" style={{ fontSize: "12px", fontWeight: 600, color: "#546E7A", textTransform: "uppercase", letterSpacing: "0.05em" }}>
                 Notes
               </label>
               <Textarea
@@ -388,7 +391,7 @@ function Field({ label, required, value, onChange, error, type = "text", onBlur 
 }) {
   return (
     <div>
-      <label className="mb-1.5 block" style={{ fontSize: "11px", fontWeight: 600, color: "#546E7A", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+      <label className="mb-1.5 block" style={{ fontSize: "12px", fontWeight: 600, color: "#546E7A", textTransform: "uppercase", letterSpacing: "0.05em" }}>
         {label} {required && <span style={{ color: "#C62828" }}>*</span>}
       </label>
       <Input
@@ -398,7 +401,7 @@ function Field({ label, required, value, onChange, error, type = "text", onBlur 
         onBlur={onBlur}
         style={{ borderColor: "#E0E7EF", borderRadius: "10px", fontSize: "14px" }}
       />
-      {error && <p className="mt-1 text-xs" style={{ color: "#C62828" }}>{error}</p>}
+      {error && <p className="mt-1 text-[13px]" style={{ color: "#C62828" }}>{error}</p>}
     </div>
   );
 }

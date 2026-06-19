@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
+import { AddLeadDialog } from "@/components/AddLeadDialog";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { formatCurrency, relativeTime } from "@/lib/utils";
@@ -8,11 +9,9 @@ import { SkeletonCard } from "@/components/ui/SkeletonLoader";
 import {
   FileText, Send, CalendarClock, CreditCard, Briefcase,
   CheckCircle, Bell, Activity, Hammer, Receipt,
+  Plus, Users, Settings, TrendingUp, IndianRupee, ClipboardList, BarChart3, ClipboardCheck,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
-import {
-  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
-} from "recharts";
 
 // ─── Animated counter ───
 
@@ -84,16 +83,67 @@ const STAT_CARD_DEFS = [
     iconBg: "#E0F2F1",
     iconColor: "#00897B",
   },
-];
+  {
+    label: "Conversion %",
+    icon: TrendingUp,
+    gradient: "linear-gradient(90deg,#15673A,#22C55E)",
+    iconBg: "#DCFCE7",
+    iconColor: "#15673A",
+  },
+  {
+    label: "Pipeline Value",
+    icon: IndianRupee,
+    gradient: "linear-gradient(90deg,#7C3AED,#A78BFA)",
+    iconBg: "#EDE9FE",
+    iconColor: "#7C3AED",
+    isCurrency: true,
+  },
+  {
+    label: "Order Book",
+    icon: ClipboardList,
+    gradient: "linear-gradient(90deg,#0E7490,#22D3EE)",
+    iconBg: "#CFFAFE",
+    iconColor: "#0E7490",
+  },
+  {
+    label: "Pending Quotes",
+    icon: Send,
+    gradient: "linear-gradient(90deg,#D97706,#F59E0B)",
+    iconBg: "#FEF3C7",
+    iconColor: "#D97706",
+  },
+  {
+    label: "Quotation Book",
+    icon: IndianRupee,
+    gradient: "linear-gradient(90deg,#059669,#34D399)",
+    iconBg: "#D1FAE5",
+    iconColor: "#059669",
+    isCurrency: true,
+  },
+  {
+    label: "Intake Pending",
+    icon: ClipboardCheck,
+    gradient: "linear-gradient(90deg,#0284C7,#38BDF8)",
+    iconBg: "#E0F2FE",
+    iconColor: "#0284C7",
+    link: "/enquiries",
+  },
+] as const;
 
 const PIPELINE_PILL_CLASSES: Record<LeadStatus, string> = {
   new: "bg-slate-100 text-slate-700 border-slate-200",
+  intake_pending: "bg-sky-100 text-sky-700 border-sky-200",
   pending: "bg-blue-100 text-blue-700 border-blue-200",
   sent: "bg-indigo-100 text-indigo-700 border-indigo-200",
   follow_up: "bg-amber-100 text-amber-700 border-amber-200",
+  negotiation: "bg-orange-100 text-orange-700 border-orange-200",
   approved: "bg-purple-100 text-purple-700 border-purple-200",
+  payment_received: "bg-violet-100 text-violet-700 border-violet-200",
+  mobilization_scheduled: "bg-cyan-100 text-cyan-700 border-cyan-200",
+  job_active: "bg-emerald-100 text-emerald-700 border-emerald-200",
   confirmed: "bg-green-100 text-green-700 border-green-200",
   lost: "bg-red-100 text-red-700 border-red-200",
+  inactive: "bg-gray-100 text-gray-500 border-gray-200",
   completed: "bg-teal-100 text-teal-700 border-teal-200",
 };
 
@@ -104,25 +154,43 @@ function useStatCards() {
     queryKey: ["dashboard-stats"],
     queryFn: async () => {
       const today = new Date().toISOString().slice(0, 10);
-      const [r1, r2, r3, r4, r5] = await Promise.all([
+      const [r1, r2, r3, r4, r5, rTotal, rWon, rPipeline, rOrderBook, rPendingQuotes, rQuotationBook, rIntakePending] = await Promise.all([
         supabase.from("enquiries").select("id", { count: "exact", head: true }).eq("status", "new").is("deleted_at", null),
         supabase.from("enquiries").select("id", { count: "exact", head: true }).eq("status", "sent").is("deleted_at", null),
         supabase.from("follow_ups").select("id", { count: "exact", head: true }).eq("scheduled_date", today).eq("outcome", "pending"),
         supabase.from("payments").select("id", { count: "exact", head: true }).eq("status", "request_sent"),
-        supabase.from("enquiries").select("id", { count: "exact", head: true }).eq("status", "confirmed").is("deleted_at", null),
+        supabase.from("enquiries").select("id", { count: "exact", head: true }).in("status", ["job_active", "mobilization_scheduled"]).is("deleted_at", null),
+        supabase.from("enquiries").select("id", { count: "exact", head: true }).is("deleted_at", null),
+        supabase.from("enquiries").select("id", { count: "exact", head: true }).in("status", ["approved", "payment_received", "mobilization_scheduled", "job_active", "confirmed", "completed"]).is("deleted_at", null),
+        supabase.from("quotations").select("total_amount").eq("status", "approved"),
+        supabase.from("enquiries").select("id", { count: "exact", head: true }).in("status", ["approved", "payment_received", "mobilization_scheduled", "job_active"]).is("deleted_at", null),
+        supabase.from("enquiries").select("id", { count: "exact", head: true }).in("status", ["sent", "follow_up", "negotiation"]).is("deleted_at", null),
+        supabase.from("quotations").select("total_amount, enquiry_id, enquiries!inner(status)").eq("status", "approved").not("enquiries.status", "in", "(lost,inactive,completed)"),
+        supabase.from("enquiries").select("id", { count: "exact", head: true }).eq("status", "intake_pending").is("deleted_at", null),
       ]);
-      return [r1.count ?? 0, r2.count ?? 0, r3.count ?? 0, r4.count ?? 0, r5.count ?? 0];
+      const total = rTotal.count ?? 0;
+      const won = rWon.count ?? 0;
+      const conversionRate = total > 0 ? Math.round((won / total) * 100) : 0;
+      const pipelineValue = (rPipeline.data ?? []).reduce((sum, q) => sum + Number(q.total_amount), 0);
+      const quotationBookValue = (rQuotationBook.data ?? []).reduce((sum, q) => sum + Number(q.total_amount), 0);
+      return [r1.count ?? 0, r2.count ?? 0, r3.count ?? 0, r4.count ?? 0, r5.count ?? 0, conversionRate, Math.round(pipelineValue), rOrderBook.count ?? 0, rPendingQuotes.count ?? 0, Math.round(quotationBookValue), rIntakePending.count ?? 0];
     },
   });
 }
 
-type LeadStatus = "new" | "pending" | "sent" | "follow_up" | "approved" | "confirmed" | "lost" | "completed";
+type LeadStatus = "new" | "intake_pending" | "pending" | "sent" | "follow_up" | "negotiation" | "approved" | "payment_received" | "mobilization_scheduled" | "job_active" | "confirmed" | "lost" | "inactive" | "completed";
 
 const STATUS_LABELS: Record<LeadStatus, string> = {
-  new: "New", pending: "Pending", sent: "Sent", follow_up: "Follow Up",
-  approved: "Approved", confirmed: "Confirmed", lost: "Lost", completed: "Completed",
+  new: "New", intake_pending: "Intake Pending", pending: "Quotation Prep", sent: "Quote Sent",
+  follow_up: "Follow Up", negotiation: "Negotiation", approved: "Won",
+  payment_received: "Payment Recd", mobilization_scheduled: "Mob Scheduled",
+  job_active: "Job Active", confirmed: "Confirmed", lost: "Lost", inactive: "Inactive", completed: "Completed",
 };
-const ALL_STATUSES: LeadStatus[] = ["new", "pending", "sent", "follow_up", "approved", "confirmed", "lost", "completed"];
+const ALL_STATUSES: LeadStatus[] = [
+  "new", "intake_pending", "pending", "sent", "follow_up", "negotiation",
+  "approved", "payment_received", "mobilization_scheduled", "job_active",
+  "lost", "inactive", "completed",
+];
 
 function usePipelineCounts() {
   return useQuery({
@@ -176,7 +244,7 @@ function useJobReminders() {
     queryKey: ["dashboard-reminders"],
     queryFn: async () => {
       const today = new Date().toISOString().slice(0, 10);
-      const futureDate = new Date(); futureDate.setDate(futureDate.getDate() + 3);
+      const futureDate = new Date(); futureDate.setDate(futureDate.getDate() + 7);
       const future = futureDate.toISOString().slice(0, 10);
       const { data: reminders } = await supabase.from("job_reminders")
         .select("id, reminder_type, days_before, scheduled_for, target_date, enquiry_id, job_id")
@@ -200,41 +268,6 @@ function useJobReminders() {
   });
 }
 
-interface RevenueMonth { month: string; label: string; count: number; revenue: number; }
-
-function useRevenueChart() {
-  return useQuery({
-    queryKey: ["dashboard-revenue"],
-    queryFn: async () => {
-      const sixMonthsAgo = new Date(); sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
-      const since = sixMonthsAgo.toISOString().slice(0, 10);
-      const { data: enquiries } = await supabase.from("enquiries").select("id, confirmed_date").gte("confirmed_date", since).in("status", ["confirmed", "completed"]);
-      if (!enquiries?.length) return [];
-      const enqIds = enquiries.map((e) => e.id);
-      const { data: quotes } = await supabase.from("quotations").select("enquiry_id, total_amount").eq("status", "approved").in("enquiry_id", enqIds);
-      const quoteMap = new Map(quotes?.map((q) => [q.enquiry_id, Number(q.total_amount)]) ?? []);
-      const monthMap = new Map<string, { count: number; revenue: number }>();
-      for (const e of enquiries) {
-        if (!e.confirmed_date) continue;
-        const d = new Date(e.confirmed_date);
-        const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-        const existing = monthMap.get(key) ?? { count: 0, revenue: 0 };
-        existing.count++; existing.revenue += quoteMap.get(e.id) ?? 0;
-        monthMap.set(key, existing);
-      }
-      const months: RevenueMonth[] = [];
-      const now = new Date();
-      for (let i = 5; i >= 0; i--) {
-        const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-        const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-        const label = d.toLocaleDateString("en-US", { month: "short" });
-        const data = monthMap.get(key) ?? { count: 0, revenue: 0 };
-        months.push({ month: key, label, ...data });
-      }
-      return months;
-    },
-  });
-}
 
 interface ActivityItem {
   id: string; event_type: string; from_status: string | null; to_status: string | null;
@@ -285,26 +318,6 @@ function getEventColor(ev: ActivityItem): string {
   }
 }
 
-function RevenueTooltip({ active, payload }: any) {
-  if (!active || !payload?.length) return null;
-  const d = payload[0].payload as RevenueMonth;
-  return (
-    <div
-      className="text-sm"
-      style={{
-        background: "#FFFFFF",
-        border: "1px solid #E0E7EF",
-        borderRadius: "10px",
-        boxShadow: "0 8px 24px rgba(0,0,0,0.1)",
-        padding: "12px 16px",
-      }}
-    >
-      <p className="font-semibold" style={{ color: "#0A1929" }}>{d.label}</p>
-      <p style={{ color: "#546E7A" }}>{d.count} enquiries</p>
-      <p className="font-medium" style={{ color: "#1565C0" }}>{formatCurrency(d.revenue)}</p>
-    </div>
-  );
-}
 
 // ─── Main Dashboard ───
 
@@ -315,8 +328,9 @@ export default function Dashboard() {
   const pipeline = usePipelineCounts();
   const actions = useTodaysActions();
   const reminders = useJobReminders();
-  const revenue = useRevenueChart();
   const activity = useActivityFeed();
+
+  const [showAddLead, setShowAddLead] = useState(false);
 
   const formattedDate = new Date().toLocaleDateString("en-GB", {
     weekday: "long", day: "numeric", month: "long", year: "numeric",
@@ -334,10 +348,6 @@ export default function Dashboard() {
     return () => { supabase.removeChannel(channel); };
   }, [queryClient]);
 
-  const thisMonthRevenue = useMemo(() => {
-    if (!revenue.data?.length) return 0;
-    return revenue.data[revenue.data.length - 1].revenue;
-  }, [revenue.data]);
 
   const cardStyle = {
     background: "#FFFFFF",
@@ -357,7 +367,7 @@ export default function Dashboard() {
           className="font-bold text-3xl"
           style={{ fontFamily: "Sora, sans-serif", color: "#0A1929" }}
         >
-          Good morning, Tiavda 👋
+          {(() => { const h = new Date().getHours(); return h < 12 ? "Good morning" : h < 17 ? "Good afternoon" : "Good evening"; })()} 👋
         </h1>
         <p className="mt-1 text-sm" style={{ color: "#546E7A" }}>
           Here's what needs your attention today — {formattedDate}
@@ -365,15 +375,16 @@ export default function Dashboard() {
       </div>
 
       {/* ── Section 1: Stat Cards ── */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {stats.isLoading
-          ? Array.from({ length: 5 }).map((_, i) => <SkeletonCard key={i} />)
+          ? Array.from({ length: 8 }).map((_, i) => <SkeletonCard key={i} />)
           : STAT_CARD_DEFS.map((def, i) => {
               const Icon = def.icon;
               const value = stats.data?.[i] ?? 0;
+              const isCurrency = "isCurrency" in def && def.isCurrency;
+              const isPercentage = def.label === "Conversion %";
               return (
                 <div key={def.label} style={cardStyle}>
-                  {/* Accent bar */}
                   <div
                     style={{
                       position: "absolute",
@@ -384,14 +395,23 @@ export default function Dashboard() {
                   />
                   <div className="flex items-start justify-between mt-1">
                     <div>
-                      <p className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: "#546E7A" }}>
+                      <p className="text-[13px] font-semibold uppercase tracking-wide mb-2" style={{ color: "#546E7A" }}>
                         {def.label}
                       </p>
                       <div
                         className="font-bold"
-                        style={{ fontFamily: "Sora, sans-serif", fontSize: "42px", lineHeight: 1, color: "#0A1929" }}
+                        style={{ fontFamily: "Sora, sans-serif", fontSize: isCurrency ? "28px" : "42px", lineHeight: 1, color: "#0A1929" }}
                       >
-                        <AnimatedNumber value={value} />
+                        {isCurrency ? (
+                          <span style={{ fontFamily: "JetBrains Mono, monospace", fontSize: "26px" }}>
+                            {formatCurrency(value)}
+                          </span>
+                        ) : (
+                          <>
+                            <AnimatedNumber value={value} />
+                            {isPercentage && <span style={{ fontSize: "24px", color: "#546E7A" }}>%</span>}
+                          </>
+                        )}
                       </div>
                     </div>
                     <div
@@ -416,7 +436,7 @@ export default function Dashboard() {
           border: "1px solid #E0E7EF",
         }}
       >
-        <p className="text-[10px] font-semibold uppercase tracking-widest mb-3" style={{ color: "#546E7A" }}>
+        <p className="text-[12px] font-semibold uppercase tracking-widest mb-3" style={{ color: "#546E7A" }}>
           Pipeline Overview
         </p>
         <div className="flex items-center gap-2 overflow-x-auto pb-1">
@@ -428,14 +448,37 @@ export default function Dashboard() {
                   <button
                     key={status}
                     onClick={() => navigate("/enquiries")}
-                    className={`flex items-center gap-2 px-4 py-2 rounded-full text-xs font-semibold whitespace-nowrap border transition-all hover:scale-105 ${PIPELINE_PILL_CLASSES[status]}`}
+                    className={`flex items-center gap-2 px-4 py-2 rounded-full text-[13px] font-semibold whitespace-nowrap border transition-all hover:scale-105 ${PIPELINE_PILL_CLASSES[status]}`}
                   >
                     <span>{STATUS_LABELS[status]}</span>
-                    <span className="bg-white bg-opacity-60 rounded-full px-1.5 py-0.5 text-xs font-bold">{count}</span>
+                    <span className="bg-white bg-opacity-60 rounded-full px-1.5 py-0.5 text-[13px] font-bold">{count}</span>
                   </button>
                 );
               })}
         </div>
+      </div>
+
+      {/* ── Quick Actions ── */}
+      <div className="flex items-center gap-3 overflow-x-auto pb-1">
+        {[
+          { label: "Add Lead", icon: Plus, href: "", gradient: "linear-gradient(90deg,#1565C0,#2979FF)" },
+          { label: "Clients", icon: Users, href: "/clients", gradient: "linear-gradient(90deg,#6A1B9A,#AB47BC)" },
+          { label: "Quotation Config", icon: BarChart3, href: "/quotation-config", gradient: "linear-gradient(90deg,#E65100,#FF8F00)" },
+          { label: "Settings", icon: Settings, href: "/settings", gradient: "linear-gradient(90deg,#546E7A,#78909C)" },
+        ].map((qa) => {
+          const Icon = qa.icon;
+          return (
+            <button
+              key={qa.label}
+              onClick={() => qa.label === "Add Lead" ? setShowAddLead(true) : navigate(qa.href)}
+              className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-white text-sm font-semibold whitespace-nowrap transition-all hover:scale-105 hover:shadow-md"
+              style={{ background: qa.gradient }}
+            >
+              <Icon className="h-4 w-4" />
+              {qa.label}
+            </button>
+          );
+        })}
       </div>
 
       {/* ── Section 3: Two column row ── */}
@@ -473,12 +516,12 @@ export default function Dashboard() {
                     <span className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${isOverdue ? "bg-red-500 animate-pulse" : "bg-amber-500"}`} />
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
-                        <span className="font-mono text-xs" style={{ color: "#546E7A" }}>{item.ref_number}</span>
+                        <span className="font-mono text-[13px]" style={{ color: "#546E7A" }}>{item.ref_number}</span>
                         <span className="font-semibold text-sm truncate" style={{ color: "#0A1929" }}>{item.client_name}</span>
                       </div>
-                      <p className="text-xs" style={{ color: "#546E7A" }}>{item.site_city}</p>
+                      <p className="text-[13px]" style={{ color: "#546E7A" }}>{item.site_city}</p>
                     </div>
-                    <span className={`text-xs flex-shrink-0 ${isOverdue ? "font-medium" : ""}`} style={{ color: isOverdue ? "#C62828" : "#546E7A" }}>
+                    <span className={`text-[13px] flex-shrink-0 ${isOverdue ? "font-medium" : ""}`} style={{ color: isOverdue ? "#C62828" : "#546E7A" }}>
                       {new Date(item.scheduled_date).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}
                     </span>
                   </ActionRow>
@@ -518,10 +561,10 @@ export default function Dashboard() {
                     <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: dotColor }} />
                     <RIcon className="h-4 w-4 flex-shrink-0" style={{ color: "#546E7A" }} />
                     <div className="min-w-0 flex-1">
-                      <span className="font-mono text-xs" style={{ color: "#546E7A" }}>{item.ref_number}</span>
+                      <span className="font-mono text-[13px]" style={{ color: "#546E7A" }}>{item.ref_number}</span>
                       <p className="text-sm truncate" style={{ color: "#0A1929" }}>{item.client_name}</p>
                     </div>
-                    <span className="text-xs flex-shrink-0" style={{ color: "#546E7A" }}>
+                    <span className="text-[13px] flex-shrink-0" style={{ color: "#546E7A" }}>
                       {item.days_before === 0 ? "Today" : `in ${item.days_before}d`}
                     </span>
                   </ActionRow>
@@ -532,43 +575,7 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* ── Section 4: Revenue Chart ── */}
-      <div style={cardStyle}>
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="font-semibold text-base" style={{ fontFamily: "Sora, sans-serif", color: "#0A1929" }}>
-            Confirmed Revenue — Last 6 Months
-          </h2>
-          {thisMonthRevenue > 0 && (
-            <span className="font-bold text-lg" style={{ fontFamily: "Sora, sans-serif", color: "#0A1929" }}>
-              {formatCurrency(thisMonthRevenue)}
-            </span>
-          )}
-        </div>
-        {revenue.isLoading ? (
-          <Skeleton className="h-[300px] w-full rounded-lg" />
-        ) : !revenue.data?.some((m) => m.revenue > 0) ? (
-          <div className="flex flex-col items-center justify-center h-[300px] text-center">
-            <p className="text-sm" style={{ color: "#546E7A" }}>No confirmed revenue yet.</p>
-          </div>
-        ) : (
-          <ResponsiveContainer width="100%" height={300}>
-            <BarChart data={revenue.data} barSize={40}>
-              <defs>
-                <linearGradient id="barGradient" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#1565C0" stopOpacity={1} />
-                  <stop offset="100%" stopColor="#2979FF" stopOpacity={0.6} />
-                </linearGradient>
-              </defs>
-              <XAxis dataKey="label" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: "#546E7A" }} />
-              <YAxis hide />
-              <Tooltip content={<RevenueTooltip />} cursor={{ fill: "rgba(21,101,192,0.05)" }} />
-              <Bar dataKey="revenue" radius={[4, 4, 0, 0]} fill="url(#barGradient)" />
-            </BarChart>
-          </ResponsiveContainer>
-        )}
-      </div>
-
-      {/* ── Section 5: Activity Feed ── */}
+      {/* ── Section 4: Activity Feed ── */}
       <div style={cardStyle}>
         <div className="flex items-center gap-2 mb-4">
           <Activity className="h-5 w-5" style={{ color: "#546E7A" }} />
@@ -602,16 +609,18 @@ export default function Dashboard() {
                   />
                   <div className="min-w-0 flex-1">
                     <span className="text-sm" style={{ color: "#0A1929" }}>{getEventDescription(ev)}</span>
-                    <span className="text-xs ml-2" style={{ color: "#546E7A" }}>{ev.client_name}</span>
+                    <span className="text-[13px] ml-2" style={{ color: "#546E7A" }}>{ev.client_name}</span>
                   </div>
-                  <span className="font-mono text-[11px] flex-shrink-0" style={{ color: "#546E7A" }}>{ev.ref_number}</span>
-                  <span className="text-xs flex-shrink-0" style={{ color: "#546E7A" }}>{relativeTime(ev.created_at)}</span>
+                  <span className="font-mono text-[12px] flex-shrink-0" style={{ color: "#546E7A" }}>{ev.ref_number}</span>
+                  <span className="text-[13px] flex-shrink-0" style={{ color: "#546E7A" }}>{relativeTime(ev.created_at)}</span>
                 </motion.div>
               ))}
             </AnimatePresence>
           </div>
         )}
       </div>
+
+      <AddLeadDialog open={showAddLead} onOpenChange={setShowAddLead} />
     </div>
   );
 }

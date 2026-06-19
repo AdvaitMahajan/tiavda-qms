@@ -2,11 +2,13 @@ import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { sendNotification } from "@/lib/notifications";
 import { toast } from "sonner";
 import { cn, formatDate, relativeTime } from "@/lib/utils";
+import { createIntakeToken } from "@/lib/intakeTokenUtils";
 import {
   Phone, Mail, MapPin, AlertTriangle, Link2, Copy, Check,
-  RefreshCw, ArrowLeft, Pencil, Clock, BarChart2,
+  RefreshCw, ArrowLeft, Pencil, Clock, BarChart2, Send, CheckCircle2,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -64,7 +66,75 @@ export default function ClientDetail() {
       return data;
     },
     enabled: !!id,
+    refetchOnMount: "always",
   });
+
+  const { data: lastUsedToken, refetch: refetchUsed } = useQuery({
+    queryKey: ["intake-token-used", id],
+    queryFn: async () => {
+      const { data } = await supabase.from("intake_tokens").select("*")
+        .eq("client_id", id!).eq("status", "used")
+        .order("used_at", { ascending: false }).limit(1).maybeSingle();
+      return data;
+    },
+    enabled: !!id,
+    refetchOnMount: "always",
+  });
+
+  const { data: lastExpiredToken, refetch: refetchExpired } = useQuery({
+    queryKey: ["intake-token-expired", id],
+    queryFn: async () => {
+      const { data } = await supabase.from("intake_tokens").select("*")
+        .eq("client_id", id!).eq("status", "expired")
+        .order("created_at", { ascending: false }).limit(1).maybeSingle();
+      return data;
+    },
+    enabled: !!id,
+  });
+
+  // Check if "active" token is actually time-expired
+  const isActiveTokenTimeExpired = activeToken ? new Date(activeToken.expires_at) < new Date() : false;
+  const effectiveActiveToken = activeToken && !isActiveTokenTimeExpired ? activeToken : null;
+  const intakeLinkEffective = effectiveActiveToken ? `${window.location.origin}/intake?t=${effectiveActiveToken.token}` : null;
+
+  const [sendingLink, setSendingLink] = useState(false);
+  const sendLinkToClient = async () => {
+    if (!effectiveActiveToken || !client) return;
+    setSendingLink(true);
+    try {
+      const intakeUrl = `${window.location.origin}/intake?t=${effectiveActiveToken.token}`;
+      let sent = false;
+      if (client.email) {
+        await sendNotification({
+          to: client.email,
+          template: "intake_link",
+          params: { client_name: client.name, intake_url: intakeUrl },
+        });
+        sent = true;
+      }
+      const waNum = (client as any).whatsapp_number || client.phone;
+      if (waNum) {
+        const waNumber = waNum.startsWith("+") ? waNum : `+91${waNum.replace(/\D/g, "")}`;
+        await supabase.functions.invoke("send-whatsapp", {
+          body: {
+            phone_number: waNumber,
+            template_name: "qms_intake_form",
+            parameters: [
+              { name: "client_name", value: client.name },
+              { name: "ref_number", value: "Intake Form" },
+              { name: "link", value: intakeUrl },
+            ],
+          },
+        });
+        sent = true;
+      }
+      toast.success(sent ? "Intake link sent to client!" : "No email or phone on file");
+    } catch (err: any) {
+      toast.error(err.message || "Failed to send");
+    } finally {
+      setSendingLink(false);
+    }
+  };
 
   const { data: enquiries = [] } = useQuery({
     queryKey: ["client-enquiries", id],
@@ -83,11 +153,12 @@ export default function ClientDetail() {
         name: client.name || "", phone: client.phone || "", email: client.email || "",
         company: client.company || "", city: client.city || "", state: client.state || "",
         whatsapp_number: client.whatsapp_number || "", notes: client.notes || "",
+        gst_number: (client as any).gst_number || "",
       });
     }
   }, [client]);
 
-  const intakeLink = activeToken ? `${window.location.origin}/intake?t=${activeToken.token}` : null;
+  const intakeLink = intakeLinkEffective;
 
   const copyLink = () => {
     if (intakeLink) { navigator.clipboard.writeText(intakeLink); setCopied(true); setTimeout(() => setCopied(false), 2000); }
@@ -96,18 +167,21 @@ export default function ClientDetail() {
   const generateToken = async () => {
     setGeneratingLink(true);
     try {
-      if (activeToken) await supabase.from("intake_tokens").update({ status: "expired" }).eq("id", activeToken.id);
-      const arr = new Uint8Array(24);
-      crypto.getRandomValues(arr);
-      const token = btoa(String.fromCharCode(...arr)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "");
       const { data: { user } } = await supabase.auth.getUser();
-      const { error } = await supabase.from("intake_tokens").insert({
-        token, client_id: id!, created_by: user!.id,
-        expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
-      });
-      if (error) throw error;
-      toast.success("Intake link generated");
-      refetchToken();
+      // Bind the intake link to the client's open soil-investigation enquiry so the
+      // submission attaches to the RIGHT enquiry (not a fuzzy most-recent guess).
+      const { data: targetEnq } = await supabase.from("enquiries")
+        .select("id")
+        .eq("client_id", id!)
+        .eq("service_type", "soil_investigation")
+        .in("status", ["new", "intake_pending"])
+        .is("deleted_at", null)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      await createIntakeToken(id!, user!.id, targetEnq?.id ?? undefined);
+      toast.success("New intake form link generated");
+      await Promise.all([refetchToken(), refetchUsed(), refetchExpired()]);
     } catch (err: any) { toast.error(err.message); }
     finally { setGeneratingLink(false); }
   };
@@ -129,6 +203,7 @@ export default function ClientDetail() {
       city: editForm.city.trim(), state: editForm.state?.trim() || null,
       whatsapp_number: editForm.whatsapp_number?.trim() ? normalizePhone(editForm.whatsapp_number) : null,
       notes: editForm.notes?.trim() || null,
+      gst_number: editForm.gst_number?.trim() || null,
     }).eq("id", id!);
     setSaving(false);
     if (error) { toast.error(error.message); }
@@ -277,51 +352,114 @@ export default function ClientDetail() {
             <span style={{ fontWeight: 600, fontSize: "15px", color: "#0A1929", fontFamily: "Sora, sans-serif" }}>Intake Form Link</span>
           </div>
 
+          {/* Priority: an ACTIVE link always wins (so a freshly generated link for a
+              new/parallel enquiry shows immediately, even if an earlier form was filled). */}
           {intakeLink ? (
             <div>
               {/* Link display */}
               <div style={{
                 background: "#F8FAFC", border: "1px solid #E0E7EF", borderRadius: "10px",
                 padding: "10px 14px", fontFamily: "JetBrains Mono, monospace",
-                fontSize: "11px", color: "#546E7A", wordBreak: "break-all", marginTop: "12px",
+                fontSize: "12px", color: "#546E7A", wordBreak: "break-all", marginTop: "12px",
               }}>
                 {intakeLink}
               </div>
               {/* Expiry */}
-              <div style={{ display: "flex", alignItems: "center", gap: "4px", fontSize: "11px", color: "#546E7A", marginTop: "8px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "4px", fontSize: "12px", color: "#546E7A", marginTop: "8px" }}>
                 <Clock style={{ width: "12px", height: "12px" }} />
-                Expires {formatDate(activeToken!.expires_at)}
+                Expires {formatDate(effectiveActiveToken!.expires_at)}
               </div>
               {/* Buttons */}
               <div style={{ display: "flex", gap: "8px", marginTop: "12px", flexWrap: "wrap" }}>
                 <button
                   onClick={copyLink}
-                  style={{ background: "#F0F4F8", color: "#0A1929", border: "1px solid #E0E7EF", borderRadius: "8px", padding: "8px 12px", fontSize: "12px", fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", gap: "5px" }}
+                  style={{ background: "#F0F4F8", color: "#0A1929", border: "1px solid #E0E7EF", borderRadius: "8px", padding: "8px 12px", fontSize: "13px", fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", gap: "5px" }}
                   onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = "#E3EAF2"; }}
                   onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = "#F0F4F8"; }}
                 >
                   {copied ? <><Check className="w-3.5 h-3.5" /> Copied!</> : <><Copy className="w-3.5 h-3.5" /> Copy</>}
                 </button>
                 <button
+                  onClick={sendLinkToClient}
+                  disabled={sendingLink}
+                  style={{ background: "#F0F4F8", color: "#0A1929", border: "1px solid #E0E7EF", borderRadius: "8px", padding: "8px 12px", fontSize: "13px", fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", gap: "5px" }}
+                  onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = "#E3EAF2"; }}
+                  onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = "#F0F4F8"; }}
+                >
+                  {sendingLink ? <><Send className="w-3.5 h-3.5 animate-pulse" /> Sending…</> : <><Send className="w-3.5 h-3.5" /> Send to Client</>}
+                </button>
+                <button
                   onClick={generateToken}
                   disabled={generatingLink}
-                  style={{ background: "#F0F4F8", color: "#0A1929", border: "1px solid #E0E7EF", borderRadius: "8px", padding: "8px 12px", fontSize: "12px", fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", gap: "5px" }}
+                  style={{ background: "#F0F4F8", color: "#0A1929", border: "1px solid #E0E7EF", borderRadius: "8px", padding: "8px 12px", fontSize: "13px", fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", gap: "5px" }}
                   onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = "#E3EAF2"; }}
                   onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = "#F0F4F8"; }}
                 >
                   <RefreshCw className={cn("w-3.5 h-3.5", generatingLink && "animate-spin")} /> Regenerate
                 </button>
                 <button
-                  onClick={() => navigate(`/intake?t=${activeToken!.token}`)}
-                  style={{ background: "linear-gradient(135deg,#1565C0,#2979FF)", color: "white", border: "none", borderRadius: "8px", padding: "8px 12px", fontSize: "12px", fontWeight: 600, cursor: "pointer", boxShadow: "0 4px 12px rgba(21,101,192,0.25)" }}
+                  onClick={() => navigate(`/intake?t=${effectiveActiveToken!.token}`)}
+                  style={{ background: "linear-gradient(135deg,#1565C0,#2979FF)", color: "white", border: "none", borderRadius: "8px", padding: "8px 12px", fontSize: "13px", fontWeight: 600, cursor: "pointer", boxShadow: "0 4px 12px rgba(21,101,192,0.25)" }}
                 >
                   Fill on Behalf
                 </button>
               </div>
             </div>
-          ) : (
+          ) : lastUsedToken ? (
+            /* State 2: Most recent form was submitted (and no active link right now) */
             <div style={{ marginTop: "12px" }}>
-              <p style={{ fontSize: "13px", color: "#546E7A", marginBottom: "12px" }}>No active link. Generate one to share with the client.</p>
+              <div style={{
+                background: "#ECFDF5", border: "1px solid #A7F3D0", borderRadius: "10px",
+                padding: "12px 14px", display: "flex", alignItems: "center", gap: "10px",
+              }}>
+                <CheckCircle2 style={{ width: "18px", height: "18px", color: "#15673A", flexShrink: 0 }} />
+                <div>
+                  <div style={{ fontSize: "13px", fontWeight: 600, color: "#15673A" }}>Intake Form Submitted</div>
+                  <div style={{ fontSize: "12px", color: "#546E7A", marginTop: "2px" }}>
+                    Submitted on {formatDate(lastUsedToken.used_at!)} — this link has been used and closed.
+                  </div>
+                </div>
+              </div>
+              <p style={{ fontSize: "12px", color: "#546E7A", margin: "12px 0 8px" }}>
+                Generate a fresh link to collect intake for a new / parallel enquiry from this client.
+              </p>
+              <button
+                onClick={generateToken}
+                disabled={generatingLink}
+                style={{ background: "linear-gradient(135deg,#1565C0,#2979FF)", color: "white", border: "none", borderRadius: "8px", padding: "9px 16px", fontSize: "13px", fontWeight: 600, cursor: "pointer", boxShadow: "0 4px 12px rgba(21,101,192,0.25)", display: "flex", alignItems: "center", gap: "6px" }}
+              >
+                {generatingLink ? <><RefreshCw className="w-3.5 h-3.5 animate-spin" /> Generating…</> : <><RefreshCw className="w-3.5 h-3.5" /> Generate New Intake Form</>}
+              </button>
+            </div>
+          ) : (lastExpiredToken || isActiveTokenTimeExpired) ? (
+            /* State 3: Link expired (time-expired or status=expired) */
+            <div style={{ marginTop: "12px" }}>
+              <div style={{
+                background: "#FEF2F2", border: "1px solid #FECACA", borderRadius: "10px",
+                padding: "12px 14px", display: "flex", alignItems: "center", gap: "10px",
+              }}>
+                <AlertTriangle style={{ width: "18px", height: "18px", color: "#B91C1C", flexShrink: 0 }} />
+                <div>
+                  <div style={{ fontSize: "13px", fontWeight: 600, color: "#B91C1C" }}>Intake Link Expired</div>
+                  <div style={{ fontSize: "12px", color: "#546E7A", marginTop: "2px" }}>
+                    Client did not fill the form. Link expired on {formatDate((isActiveTokenTimeExpired ? activeToken! : lastExpiredToken!).expires_at)}.
+                  </div>
+                </div>
+              </div>
+              <div style={{ display: "flex", gap: "8px", marginTop: "12px" }}>
+                <button
+                  onClick={generateToken}
+                  disabled={generatingLink}
+                  style={{ background: "linear-gradient(135deg,#1565C0,#2979FF)", color: "white", border: "none", borderRadius: "8px", padding: "9px 16px", fontSize: "13px", fontWeight: 600, cursor: "pointer", boxShadow: "0 4px 12px rgba(21,101,192,0.25)", display: "flex", alignItems: "center", gap: "6px" }}
+                >
+                  {generatingLink ? <><RefreshCw className="w-3.5 h-3.5 animate-spin" /> Generating…</> : <><Send className="w-3.5 h-3.5" /> Generate & Send New Link</>}
+                </button>
+              </div>
+            </div>
+          ) : (
+            /* State 4: No link ever generated */
+            <div style={{ marginTop: "12px" }}>
+              <p style={{ fontSize: "13px", color: "#546E7A", marginBottom: "12px" }}>No intake link generated yet. Generate one to share with the client.</p>
               <button
                 onClick={generateToken}
                 disabled={generatingLink}
@@ -371,6 +509,7 @@ export default function ClientDetail() {
           <div style={{
             display: "flex", justifyContent: "space-between", alignItems: "center",
             padding: "10px 0",
+            borderBottom: (client.lead_source || client.service_type_interest) ? "1px solid #F0F4F8" : "none",
           }}>
             <span style={{ fontSize: "13px", color: "#546E7A" }}>Latest Status</span>
             {mostRecentStatus ? (
@@ -379,6 +518,32 @@ export default function ClientDetail() {
               <span style={{ fontSize: "13px", fontWeight: 600, color: "#0A1929" }}>—</span>
             )}
           </div>
+
+          {/* Lead info */}
+          {(client.lead_source || client.service_type_interest || client.requirement_notes) && (
+            <>
+              <div style={{ marginTop: "12px", marginBottom: "8px" }}>
+                <span style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#94A3B8" }}>Lead Info</span>
+              </div>
+              {[
+                { label: "Lead Source", value: client.lead_source?.replace(/_/g, " ").replace(/\b\w/g, (c: string) => c.toUpperCase()) },
+                { label: "Service Interest", value: client.service_type_interest === "soil_investigation" ? "Soil Investigation" : client.service_type_interest === "consultancy" ? "Consultancy" : null },
+                { label: "Requirement", value: client.requirement_notes },
+              ].filter((r) => r.value).map((row, idx, arr) => (
+                <div
+                  key={row.label}
+                  style={{
+                    display: "flex", justifyContent: "space-between", alignItems: "center",
+                    padding: "8px 0",
+                    borderBottom: idx < arr.length - 1 ? "1px solid #F0F4F8" : "none",
+                  }}
+                >
+                  <span style={{ fontSize: "13px", color: "#546E7A" }}>{row.label}</span>
+                  <span style={{ fontSize: "13px", fontWeight: 500, color: "#0A1929", maxWidth: "60%", textAlign: "right" }}>{row.value}</span>
+                </div>
+              ))}
+            </>
+          )}
         </div>
       </div>
 
@@ -394,7 +559,7 @@ export default function ClientDetail() {
           </h2>
           <span style={{
             background: "#EBF2FF", color: "#1565C0", border: "1px solid #BFDBFE",
-            borderRadius: "20px", padding: "2px 10px", fontSize: "11px", fontWeight: 700,
+            borderRadius: "20px", padding: "2px 10px", fontSize: "12px", fontWeight: 700,
           }}>
             {enquiries.length}
           </span>
@@ -408,12 +573,12 @@ export default function ClientDetail() {
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead>
               <tr style={{ background: "#F8FAFC", borderBottom: "2px solid #E0E7EF" }}>
-                {["Ref #", "Date", "Status", "Bores", "City", "Action"].map((h) => (
+                {["Ref #", "Date", "Type", "Status", "Bores", "City", "Action"].map((h) => (
                   <th
                     key={h}
                     className="text-left"
                     style={{
-                      fontSize: "10px", fontWeight: 600, textTransform: "uppercase",
+                      fontSize: "12px", fontWeight: 600, textTransform: "uppercase",
                       letterSpacing: "0.1em", padding: "12px 16px", color: "#546E7A",
                     }}
                   >
@@ -438,10 +603,17 @@ export default function ClientDetail() {
                     {formatDate(enq.enquiry_date)}
                   </td>
                   <td style={{ padding: "12px 16px" }}>
+                    {(enq as any).service_type === "consultancy" ? (
+                      <span style={{ background: "#EDE7F6", color: "#7B1FA2", fontSize: "12px", fontWeight: 700, padding: "2px 8px", borderRadius: "6px" }}>Consultancy</span>
+                    ) : (
+                      <span style={{ background: "#E3F2FD", color: "#1565C0", fontSize: "12px", fontWeight: 700, padding: "2px 8px", borderRadius: "6px" }}>Soil Investigation</span>
+                    )}
+                  </td>
+                  <td style={{ padding: "12px 16px" }}>
                     <StatusBadge status={enq.status} />
                   </td>
                   <td style={{ padding: "12px 16px", fontSize: "13px", color: "#546E7A" }}>
-                    {enq.num_bores}
+                    {enq.num_bores ?? "—"}
                   </td>
                   <td style={{ padding: "12px 16px", fontSize: "13px", color: "#546E7A" }}>
                     {enq.site_city}
@@ -451,7 +623,7 @@ export default function ClientDetail() {
                       style={{
                         background: viewHover === enq.id ? "#E3EAF2" : "#F0F4F8",
                         color: "#0A1929", border: "1px solid #E0E7EF",
-                        borderRadius: "8px", padding: "5px 14px", fontSize: "12px", fontWeight: 600,
+                        borderRadius: "8px", padding: "5px 14px", fontSize: "13px", fontWeight: 600,
                         cursor: "pointer", transition: "all 150ms",
                       }}
                       onMouseEnter={() => setViewHover(enq.id)}
@@ -490,12 +662,13 @@ export default function ClientDetail() {
               onBlur={() => { if (editForm.phone) setEditForm((p) => ({ ...p, phone: normalizePhone(editForm.phone) })); }} />
             <EditField label="Email" value={editForm.email} onChange={(v) => setEditForm((p) => ({ ...p, email: v }))} type="email" />
             <EditField label="Company Name" value={editForm.company} onChange={(v) => setEditForm((p) => ({ ...p, company: v }))} />
+            <EditField label="GST Number" value={editForm.gst_number} onChange={(v) => setEditForm((p) => ({ ...p, gst_number: v.toUpperCase() }))} placeholder="e.g. 27AABCT1332L1ZD" />
             <EditField label="City" required value={editForm.city} onChange={(v) => setEditForm((p) => ({ ...p, city: v }))} error={editErrors.city} />
             <EditField label="State" value={editForm.state} onChange={(v) => setEditForm((p) => ({ ...p, state: v }))} />
             <EditField label="WhatsApp Number (if different from phone)" value={editForm.whatsapp_number} onChange={(v) => setEditForm((p) => ({ ...p, whatsapp_number: v }))} error={editErrors.whatsapp_number}
               onBlur={() => { if (editForm.whatsapp_number) setEditForm((p) => ({ ...p, whatsapp_number: normalizePhone(editForm.whatsapp_number) })); }} />
             <div>
-              <label className="mb-1.5 block" style={{ fontSize: "11px", fontWeight: 600, color: "#546E7A", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+              <label className="mb-1.5 block" style={{ fontSize: "12px", fontWeight: 600, color: "#546E7A", textTransform: "uppercase", letterSpacing: "0.05em" }}>
                 Notes
               </label>
               <Textarea value={editForm.notes} onChange={(e) => setEditForm((p) => ({ ...p, notes: e.target.value }))} rows={3} style={{ borderColor: "#E0E7EF", borderRadius: "10px" }} />
@@ -526,11 +699,11 @@ function EditField({ label, required, value, onChange, error, type = "text", onB
 }) {
   return (
     <div>
-      <label className="mb-1.5 block" style={{ fontSize: "11px", fontWeight: 600, color: "#546E7A", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+      <label className="mb-1.5 block" style={{ fontSize: "12px", fontWeight: 600, color: "#546E7A", textTransform: "uppercase", letterSpacing: "0.05em" }}>
         {label} {required && <span style={{ color: "#C62828" }}>*</span>}
       </label>
       <Input type={type} value={value || ""} onChange={(e) => onChange(e.target.value)} onBlur={onBlur} style={{ borderColor: "#E0E7EF", borderRadius: "10px", fontSize: "14px" }} />
-      {error && <p className="mt-1 text-xs" style={{ color: "#C62828" }}>{error}</p>}
+      {error && <p className="mt-1 text-[13px]" style={{ color: "#C62828" }}>{error}</p>}
     </div>
   );
 }

@@ -47,8 +47,53 @@ export function CommunicationTab({ enquiryId }: { enquiryId: string }) {
 
   const sendMutation = useMutation({
     mutationFn: async () => {
-      const { data: enq } = await supabase.from("enquiries").select("client_id").eq("id", enquiryId).single();
+      const { data: enq } = await supabase.from("enquiries").select("client_id, ref_number").eq("id", enquiryId).single();
       if (!enq) throw new Error("Enquiry not found");
+      const { data: client } = await supabase.from("clients").select("*").eq("id", enq.client_id).single();
+      if (!client) throw new Error("Client not found");
+
+      let status = "sent";
+      if (channel === "email") {
+        if (!client.email) throw new Error("Client has no email address");
+        if (client.email_bounced) throw new Error("Client email is marked as bounced");
+        const { error: fnErr } = await supabase.functions.invoke("send-email", {
+          body: {
+            to: client.email,
+            subject: subject || `Message regarding ${enq.ref_number}`,
+            html_body: `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;">
+  <div style="background:#0F2A47;padding:24px;border-radius:8px 8px 0 0;">
+    <h1 style="color:white;margin:0;font-size:20px;">Geotechnical Consultants</h1>
+  </div>
+  <div style="background:#fff;border:1px solid #e2e8f0;border-top:none;padding:32px;border-radius:0 0 8px 8px;">
+    <p style="font-size:16px;">Dear ${client.name},</p>
+    <div style="white-space:pre-line;font-size:15px;line-height:1.6;">${body}</div>
+    <p style="margin-top:32px;">Best regards,<br/><strong>The Team</strong><br/>+91 8605811117</p>
+  </div>
+</div>`,
+          },
+        });
+        if (fnErr) { status = "failed"; }
+      } else {
+        if (!client.whatsapp_number) throw new Error("Client has no WhatsApp number");
+        if (client.whatsapp_invalid) throw new Error("Client WhatsApp is marked as invalid");
+        const { data: waData, error: fnErr } = await supabase.functions.invoke("send-whatsapp", {
+          body: {
+            phone_number: client.whatsapp_number,
+            template_name: "qms_custom_message",
+            parameters: [
+              { name: "client_name", value: client.name },
+              { name: "message", value: body },
+              { name: "ref_number", value: enq.ref_number },
+            ],
+          },
+        });
+        if (fnErr) { status = "failed"; }
+        if (waData?.whatsapp_invalid) {
+          await supabase.from("clients").update({ whatsapp_invalid: true }).eq("id", client.id);
+          throw new Error("WhatsApp number is not valid");
+        }
+      }
+
       const { error } = await supabase.from("communication_log").insert({
         enquiry_id: enquiryId,
         client_id: enq.client_id,
@@ -56,13 +101,14 @@ export function CommunicationTab({ enquiryId }: { enquiryId: string }) {
         direction: "outbound",
         subject: channel === "email" ? subject : null,
         body,
-        status: "sent",
+        status,
         sent_by: user?.id ?? null,
       });
       if (error) throw error;
+      if (status === "failed") throw new Error(`${channel === "email" ? "Email" : "WhatsApp"} sending failed, but message was logged.`);
     },
     onSuccess: () => {
-      toast.info("Message logged. Email/WhatsApp sending will be wired up separately.");
+      toast.success(channel === "email" ? "Email sent!" : "WhatsApp message sent!");
       queryClient.invalidateQueries({ queryKey: ["comm-log", enquiryId] });
       setShowCompose(false);
       setSubject(""); setBody("");
@@ -105,7 +151,7 @@ export function CommunicationTab({ enquiryId }: { enquiryId: string }) {
                   </div>
                   <p className="text-sm text-muted-foreground truncate">{log.body.slice(0, 100)}{log.body.length > 100 ? "…" : ""}</p>
                 </div>
-                <span className="text-xs text-muted-foreground flex-shrink-0">{relativeTime(log.created_at)}</span>
+                <span className="text-[13px] text-muted-foreground flex-shrink-0">{relativeTime(log.created_at)}</span>
               </CardContent>
             </Card>
           );

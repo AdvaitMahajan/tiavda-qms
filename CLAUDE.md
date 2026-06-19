@@ -1,10 +1,10 @@
-# Tiavda QMS — Project Brain
+# QMS — Project Brain #npm run dev
 
 ## What We Are Building
-A Quotation Management System (QMS) for Tiavda Enterprises, a geotechnical consultancy firm. This replaces their entire manual workflow — WhatsApp-based enquiries, Excel quotations, verbal mobilisation — with a production-grade web platform.
+A Quotation Management System (QMS) for a geotechnical consultancy firm. This replaces their entire manual workflow — WhatsApp-based enquiries, Excel quotations, verbal mobilisation — with a production-grade web platform.
 
 ## Business Context
-- Client: Tiavda Enterprises (geotechnical consultants, Pune/Bangalore)
+- Product: Geotechnical QMS (consultants, Pune/Bangalore)
 - Built by: Mindmap Digital
 - Every enquiry goes: Intake → Quotation → Follow-up → Confirmation → Payment → Mobilisation → Job Completion
 
@@ -100,13 +100,14 @@ Fonts: Sora (headings), DM Sans (body), JetBrains Mono (ref numbers, codes)
 
 ## Supabase Edge Functions (to be built in Cursor)
 - submit-intake — handles intake form submission atomically (already done via RPC)
-- send-email — calls SendGrid API v3
+- send-email — calls Brevo (formerly Sendinblue) transactional email API v3
 - send-whatsapp — calls WATI BSP API
 - create-drive-folder — creates Google Drive project folder structure
 
 ## Supabase Secrets (already set)
-SENDGRID_API_KEY, WATI_API_TOKEN, WATI_BASE_URL, GOOGLE_SERVICE_ACCOUNT_B64,
-GOOGLE_DRIVE_ROOT_FOLDER_ID, ADMIN_EMAIL, ADMIN_WHATSAPP, APP_URL, COMPANY_STATE
+BREVO_API_KEY, SENDER_EMAIL, SENDER_NAME, WATI_API_TOKEN, WATI_BASE_URL,
+GOOGLE_SERVICE_ACCOUNT_B64, GOOGLE_DRIVE_ROOT_FOLDER_ID,
+ADMIN_EMAIL, ADMIN_WHATSAPP, APP_URL, COMPANY_STATE
 
 ## Important Patterns
 - Always use TanStack Query for data fetching (useQuery, useMutation)

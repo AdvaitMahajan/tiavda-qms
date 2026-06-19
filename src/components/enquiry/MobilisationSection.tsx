@@ -1,5 +1,8 @@
 import { useState, useCallback, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { sendNotification } from "@/lib/notifications";
+import { useAuth } from "@/hooks/useAuth";
+import { AssigneeDropdown } from "@/components/AssigneeDropdown";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -7,12 +10,14 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent } from "@/components/ui/card";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
-import { Loader2, FolderOpen, FolderX, CalendarDays, ExternalLink } from "lucide-react";
+import { Loader2, FolderOpen, FolderX, CalendarDays, ExternalLink, CheckCircle2, Clock, AlertTriangle, ShieldCheck, FileWarning } from "lucide-react";
 import type { Tables } from "@/integrations/supabase/types";
 
 type Mobilisation = Tables<"mobilisation">;
+type ConfirmToken = Tables<"mob_confirmation_tokens">;
 
-export function MobilisationSection({ enquiryId, enquiry }: { enquiryId: string; enquiry?: { id: string; ref_number: string; site_city: string; client_id: string } | null }) {
+export function MobilisationSection({ enquiryId, enquiry, onStatusChange }: { enquiryId: string; enquiry?: { id: string; ref_number: string; site_city: string; client_id: string } | null; onStatusChange?: () => void }) {
+  const { user } = useAuth();
   const [mob, setMob] = useState<Mobilisation | null>(null);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
@@ -20,15 +25,57 @@ export function MobilisationSection({ enquiryId, enquiry }: { enquiryId: string;
 
   const [mobDate, setMobDate] = useState("");
   const [mobTime, setMobTime] = useState("");
+  const [teamLeadId, setTeamLeadId] = useState<string | null>(null);
   const [team, setTeam] = useState("");
   const [equipment, setEquipment] = useState("");
   const [contactName, setContactName] = useState("");
   const [contactPhone, setContactPhone] = useState("");
 
+  const [teamLeadName, setTeamLeadName] = useState<string | null>(null);
+  const [confirmToken, setConfirmToken] = useState<ConfirmToken | null>(null);
+  const [overriding, setOverriding] = useState(false);
+  const [demobConsent, setDemobConsent] = useState<boolean | null>(null);
+  const [acceptingAlt, setAcceptingAlt] = useState(false);
+  const [showRepropose, setShowRepropose] = useState(false);
+  const [reproposeDate, setReproposeDate] = useState("");
+  const [reproposing, setReproposing] = useState(false);
+
   const fetchMob = useCallback(async () => {
     setLoading(true);
+
+    // Surface the client's pre-consent to demobilization/re-mobilization charges
+    // captured at intake (BRD legal/liability field) so the team can act on it.
+    const { data: enqRow } = await supabase.from("enquiries").select("remarks").eq("id", enquiryId).maybeSingle();
+    const remarks = enqRow?.remarks ?? "";
+    const marker = "---EXTENDED_DATA---";
+    const idx = remarks.indexOf(marker);
+    if (idx !== -1) {
+      try {
+        const json = JSON.parse(remarks.slice(idx + marker.length).trim());
+        setDemobConsent(json.demobilization_consent === true);
+      } catch {
+        setDemobConsent(null);
+      }
+    } else {
+      setDemobConsent(null);
+    }
+
     const { data } = await supabase.from("mobilisation").select("*").eq("enquiry_id", enquiryId).maybeSingle();
     setMob(data);
+    if (data?.team_lead_id) {
+      const { data: profile } = await supabase.from("profiles").select("full_name, email").eq("id", data.team_lead_id).single();
+      setTeamLeadName(profile?.full_name || profile?.email?.split("@")[0] || null);
+    }
+    if (data) {
+      const { data: token } = await supabase
+        .from("mob_confirmation_tokens")
+        .select("*")
+        .eq("mobilisation_id", data.id)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      setConfirmToken(token);
+    }
     setLoading(false);
   }, [enquiryId]);
 
@@ -55,6 +102,7 @@ export function MobilisationSection({ enquiryId, enquiry }: { enquiryId: string;
       enquiry_id: enquiryId,
       mobilisation_date: mobDate,
       mobilisation_time: mobTime || null,
+      team_lead_id: teamLeadId,
       team_description: team || null,
       equipment_notes: equipment || null,
       site_contact_name: contactName || null,
@@ -62,24 +110,261 @@ export function MobilisationSection({ enquiryId, enquiry }: { enquiryId: string;
       drive_folder_status: "pending",
     });
     if (error) { toast.error(error.message); setSaving(false); return; }
+
+    if (teamLeadId && enquiry) {
+      const dateStr = new Date(mobDate).toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" });
+      await supabase.from("notifications").insert({
+        user_id: teamLeadId,
+        type: "assignment",
+        title: `Team Lead for ${enquiry.ref_number}`,
+        body: `You have been assigned as team lead for mobilisation on ${dateStr} at ${enquiry.site_city}`,
+        enquiry_id: enquiry.id,
+        link: `/enquiries/${enquiry.id}`,
+      });
+    }
+
+    // Generate confirmation token
+    if (enquiry) {
+      const tokenStr = Array.from(crypto.getRandomValues(new Uint8Array(24)))
+        .map((b) => b.toString(36).padStart(2, "0")).join("").slice(0, 32);
+      const expires = new Date();
+      expires.setDate(expires.getDate() + 7);
+
+      const { data: mobRow } = await supabase
+        .from("mobilisation")
+        .select("id")
+        .eq("enquiry_id", enquiryId)
+        .single();
+
+      if (mobRow) {
+        await supabase.from("mob_confirmation_tokens").insert({
+          mobilisation_id: mobRow.id,
+          enquiry_id: enquiryId,
+          client_id: enquiry.client_id,
+          token: tokenStr,
+          status: "pending",
+          expires_at: expires.toISOString(),
+        } as any);
+      }
+    }
+
+    // Auto-advance enquiry status to mobilization_scheduled (surface failures —
+    // the DB trigger allows approved/payment_received → mobilization_scheduled).
+    const { error: statusErr } = await supabase.from("enquiries").update({
+      status: "mobilization_scheduled" as any,
+      updated_at: new Date().toISOString(),
+    }).eq("id", enquiryId);
+
+    if (statusErr) {
+      toast.error("Mobilisation saved, but the enquiry status could not be advanced: " + statusErr.message);
+    } else {
+      await supabase.from("enquiry_events").insert({
+        enquiry_id: enquiryId,
+        event_type: "status_change",
+        to_status: "mobilization_scheduled" as any,
+        triggered_by: user?.id ?? null,
+        metadata: { trigger: "mobilisation_scheduled" } as any,
+      });
+    }
+
     toast.success("Mobilisation scheduled. Google Drive folder will be created automatically.");
     setShowForm(false);
     setSaving(false);
     fetchMob();
+    onStatusChange?.();
 
-    // Fire-and-forget: create Google Drive folder
+    // Fire-and-forget: create Google Drive folder + notify client
     if (enquiry) {
-      // Fetch client name for folder naming
-      supabase.from("clients").select("name").eq("id", enquiry.client_id).single().then(({ data: clientData }) => {
+      supabase.from("clients").select("*").eq("id", enquiry.client_id).single().then(({ data: clientData }) => {
+        const clientName = clientData?.name ?? "Client";
+
+        // Create Drive folder
         supabase.functions.invoke("create-drive-folder", {
           body: {
             enquiry_id: enquiry.id,
             ref_number: enquiry.ref_number,
-            client_name: clientData?.name ?? "Client",
+            client_name: clientName,
             city: enquiry.site_city,
           },
         }).catch((err: any) => console.error("Drive folder creation failed:", err));
+
+        // Send mobilisation confirmation email
+        if (clientData?.email && !clientData?.email_bounced) {
+          const dateStr = new Date(mobDate).toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" });
+          sendNotification({
+            to: clientData.email,
+            template: "mobilisation_confirmed",
+            params: {
+              client_name: clientName,
+              ref_number: enquiry.ref_number,
+              date: dateStr,
+              time: mobTime || undefined,
+              city: enquiry.site_city,
+              contact_name: contactName || undefined,
+              contact_phone: contactPhone || undefined,
+            },
+          }).then(() => {
+            supabase.from("communication_log").insert({
+              enquiry_id: enquiry.id,
+              client_id: enquiry.client_id,
+              channel: "email" as any,
+              direction: "outbound" as any,
+              subject: `Mobilisation confirmation — ${enquiry.ref_number}`,
+              body: "Mobilisation confirmation email sent",
+              status: "sent",
+            });
+          }).catch(() => {});
+        }
+
+        // Send mobilisation WhatsApp
+        if (clientData?.whatsapp_number && !clientData?.whatsapp_invalid) {
+          const dateStr = new Date(mobDate).toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" });
+          supabase.functions.invoke("send-whatsapp", {
+            body: {
+              phone_number: clientData.whatsapp_number,
+              template_name: "qms_mobilisation_confirmation",
+              parameters: [
+                { name: "client_name", value: clientName },
+                { name: "ref_number", value: enquiry.ref_number },
+                { name: "date", value: dateStr },
+                { name: "city", value: enquiry.site_city },
+              ],
+            },
+          }).then(({ data: waData }) => {
+            if (waData?.whatsapp_invalid) {
+              // Use a scoped RPC so mobilization leads (who cannot write clients) can still flag a bad number.
+              supabase.rpc("flag_contact_channel_invalid", { p_client_id: enquiry.client_id, p_channel: "whatsapp" });
+            } else {
+              supabase.from("communication_log").insert({
+                enquiry_id: enquiry.id,
+                client_id: enquiry.client_id,
+                channel: "whatsapp" as any,
+                direction: "outbound" as any,
+                subject: `WhatsApp: Mobilisation confirmation ${enquiry.ref_number}`,
+                body: "Mobilisation confirmation WhatsApp sent",
+                status: "sent",
+              });
+            }
+          }).catch(() => {});
+        }
       });
+    }
+  };
+
+  // Issue a fresh confirmation token for a (new) date and notify the client.
+  const issueAndSendConfirmation = async (date: string) => {
+    if (!enquiry || !mob) return;
+    // Supersede any outstanding tokens for this mobilisation.
+    await supabase.from("mob_confirmation_tokens")
+      .update({ status: "expired" })
+      .eq("mobilisation_id", mob.id)
+      .in("status", ["pending", "alternate_proposed"]);
+
+    const tokenStr = Array.from(crypto.getRandomValues(new Uint8Array(24)))
+      .map((b) => b.toString(36).padStart(2, "0")).join("").slice(0, 32);
+    const expires = new Date();
+    expires.setDate(expires.getDate() + 7);
+    await supabase.from("mob_confirmation_tokens").insert({
+      mobilisation_id: mob.id,
+      enquiry_id: enquiry.id,
+      client_id: enquiry.client_id,
+      token: tokenStr,
+      status: "pending",
+      expires_at: expires.toISOString(),
+    } as any);
+
+    const { data: clientData } = await supabase.from("clients").select("*").eq("id", enquiry.client_id).single();
+    const dateStr = new Date(date).toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" });
+    const confirmUrl = `${window.location.origin}/confirm-mobilization?t=${tokenStr}`;
+
+    if (clientData?.email && !clientData?.email_bounced) {
+      sendNotification({
+        to: clientData.email,
+        template: "mobilisation_revised",
+        params: {
+          client_name: clientData.name ?? "Client",
+          ref_number: enquiry.ref_number,
+          date: dateStr,
+          city: enquiry.site_city,
+          confirm_url: confirmUrl,
+        },
+      }).then(() => {
+        supabase.from("communication_log").insert({
+          enquiry_id: enquiry.id, client_id: enquiry.client_id,
+          channel: "email" as any, direction: "outbound" as any,
+          subject: `Revised mobilisation date — ${enquiry.ref_number}`,
+          body: "Revised mobilisation confirmation email sent", status: "sent",
+        });
+      }).catch(() => {});
+    }
+
+    if (clientData?.whatsapp_number && !clientData?.whatsapp_invalid) {
+      supabase.functions.invoke("send-whatsapp", {
+        body: {
+          phone_number: clientData.whatsapp_number,
+          template_name: "qms_mobilisation_confirmation",
+          parameters: [
+            { name: "client_name", value: clientData.name ?? "Client" },
+            { name: "ref_number", value: enquiry.ref_number },
+            { name: "date", value: dateStr },
+            { name: "city", value: enquiry.site_city },
+          ],
+        },
+      }).catch(() => {});
+    }
+  };
+
+  // Team Lead accepts the client's proposed alternate date → reschedule + confirm.
+  const handleAcceptAlternate = async () => {
+    if (!mob || !confirmToken?.alternate_date) return;
+    setAcceptingAlt(true);
+    try {
+      await supabase.from("mobilisation").update({
+        mobilisation_date: confirmToken.alternate_date,
+        client_confirmed: true,
+        client_confirmed_at: new Date().toISOString(),
+      }).eq("id", mob.id);
+      await supabase.from("mob_confirmation_tokens").update({
+        status: "confirmed", confirmed_at: new Date().toISOString(),
+      }).eq("id", confirmToken.id);
+      await supabase.from("enquiry_events").insert({
+        enquiry_id: enquiryId,
+        event_type: "mobilisation_confirmed",
+        metadata: { confirmed_by: "team_lead_accepted_alternate", date: confirmToken.alternate_date } as any,
+      });
+      toast.success("Accepted the client's proposed date — mobilisation confirmed.");
+      fetchMob();
+    } catch {
+      toast.error("Failed to accept proposed date");
+    } finally {
+      setAcceptingAlt(false);
+    }
+  };
+
+  // Team Lead proposes a different date → reschedule + re-issue confirmation link.
+  const handleRepropose = async () => {
+    if (!mob || !reproposeDate) return;
+    setReproposing(true);
+    try {
+      await supabase.from("mobilisation").update({
+        mobilisation_date: reproposeDate,
+        client_confirmed: false,
+        client_confirmed_at: null,
+      }).eq("id", mob.id);
+      await issueAndSendConfirmation(reproposeDate);
+      await supabase.from("enquiry_events").insert({
+        enquiry_id: enquiryId,
+        event_type: "mobilisation_rescheduled",
+        metadata: { new_date: reproposeDate, by: "team_lead" } as any,
+      });
+      toast.success("New date sent to client for confirmation.");
+      setShowRepropose(false);
+      setReproposeDate("");
+      fetchMob();
+    } catch {
+      toast.error("Failed to send new date");
+    } finally {
+      setReproposing(false);
     }
   };
 
@@ -98,6 +383,7 @@ export function MobilisationSection({ enquiryId, enquiry }: { enquiryId: string;
             <div className="space-y-4 mt-6">
               <div><Label>Mobilisation Date *</Label><Input type="date" value={mobDate} onChange={(e) => setMobDate(e.target.value)} /></div>
               <div><Label>Time</Label><Input type="time" value={mobTime} onChange={(e) => setMobTime(e.target.value)} /></div>
+              <div><Label>Team Lead</Label><AssigneeDropdown value={teamLeadId} onChange={setTeamLeadId} filterRole="mobilization_lead" /></div>
               <div><Label>Team Description</Label><Textarea value={team} onChange={(e) => setTeam(e.target.value)} /></div>
               <div><Label>Equipment Notes</Label><Textarea value={equipment} onChange={(e) => setEquipment(e.target.value)} /></div>
               <div><Label>Site Contact Name</Label><Input value={contactName} onChange={(e) => setContactName(e.target.value)} /></div>
@@ -121,23 +407,145 @@ export function MobilisationSection({ enquiryId, enquiry }: { enquiryId: string;
         <div className="grid grid-cols-2 gap-2 text-sm">
           <div><span className="text-muted-foreground">Date:</span> <span className="font-medium">{mob.mobilisation_date}</span></div>
           {mob.mobilisation_time && <div><span className="text-muted-foreground">Time:</span> {mob.mobilisation_time}</div>}
+          {teamLeadName && <div className="col-span-2"><span className="text-muted-foreground">Team Lead:</span> <span className="font-medium">{teamLeadName}</span></div>}
           {mob.team_description && <div className="col-span-2"><span className="text-muted-foreground">Team:</span> {mob.team_description}</div>}
           {mob.site_contact_name && <div><span className="text-muted-foreground">Contact:</span> {mob.site_contact_name}</div>}
           {mob.site_contact_phone && <div><span className="text-muted-foreground">Phone:</span> {mob.site_contact_phone}</div>}
         </div>
-        <div className="mt-3">
+
+        {/* Demobilization charges consent (captured at intake) */}
+        {demobConsent === true && (
+          <div className="mt-3 flex items-start gap-2 text-[13px] rounded-lg p-2" style={{ background: "#ECFDF5", border: "1px solid #A7F3D0", color: "#065F46" }}>
+            <ShieldCheck className="h-4 w-4 shrink-0" style={{ color: "#15673A" }} />
+            <span>Client <strong>pre-consented to demobilization / re-mobilization charges</strong> at intake. If the site is not ready or info was incorrect, demob costs are billable to the client.</span>
+          </div>
+        )}
+        {demobConsent === false && (
+          <div className="mt-3 flex items-start gap-2 text-[13px] rounded-lg p-2" style={{ background: "#FEF2F2", border: "1px solid #FECACA", color: "#991B1B" }}>
+            <FileWarning className="h-4 w-4 shrink-0" style={{ color: "#B91C1C" }} />
+            <span>No demobilization-charges consent on record for this enquiry. Confirm liability terms before mobilizing.</span>
+          </div>
+        )}
+        {/* Client Confirmation Status */}
+        <div className="mt-3 space-y-2">
+          <div style={{ borderTop: "1px solid #E0E7EF", paddingTop: "10px" }}>
+            <p className="text-[12px] font-semibold uppercase tracking-wide mb-2" style={{ color: "#546E7A" }}>
+              Client Confirmation
+            </p>
+            {(mob as any).client_confirmed ? (
+              <div className="flex items-center gap-2">
+                <CheckCircle2 className="h-4 w-4" style={{ color: "#15673A" }} />
+                <span className="text-[13px] font-semibold" style={{ color: "#15673A" }}>
+                  Confirmed
+                  {(mob as any).admin_override && " (Admin Override)"}
+                </span>
+              </div>
+            ) : confirmToken?.status === "alternate_proposed" ? (
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <AlertTriangle className="h-4 w-4" style={{ color: "#92400E" }} />
+                  <span className="text-[13px] font-semibold" style={{ color: "#92400E" }}>
+                    Alternate Date Proposed
+                  </span>
+                </div>
+                <div className="text-[13px] p-2 rounded-lg" style={{ background: "#FEF3C7" }}>
+                  <p><strong>Proposed:</strong> {confirmToken.alternate_date ? new Date(confirmToken.alternate_date).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : "—"}</p>
+                  {confirmToken.alternate_notes && <p className="mt-1">{confirmToken.alternate_notes}</p>}
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    onClick={handleAcceptAlternate}
+                    disabled={acceptingAlt || !confirmToken.alternate_date}
+                    className="flex items-center gap-1.5 text-[13px] font-semibold px-3 py-1.5 rounded-lg transition-all disabled:opacity-50"
+                    style={{ background: "linear-gradient(135deg,#15673A,#22C55E)", color: "white" }}
+                  >
+                    <CheckCircle2 className="h-3 w-3" />
+                    {acceptingAlt ? "Accepting…" : "Accept Proposed Date"}
+                  </button>
+                  <button
+                    onClick={() => { setShowRepropose((v) => !v); setReproposeDate(""); }}
+                    className="flex items-center gap-1.5 text-[13px] font-semibold px-3 py-1.5 rounded-lg transition-all"
+                    style={{ background: "#FEF3C7", color: "#92400E", border: "1px solid #FCD34D" }}
+                  >
+                    <CalendarDays className="h-3 w-3" /> Propose Different Date
+                  </button>
+                </div>
+                {showRepropose && (
+                  <div className="flex items-end gap-2 mt-1">
+                    <input
+                      type="date"
+                      value={reproposeDate}
+                      onChange={(e) => setReproposeDate(e.target.value)}
+                      className="text-[13px] px-2 py-1.5 rounded-lg"
+                      style={{ border: "1.5px solid #E0E7EF" }}
+                    />
+                    <button
+                      onClick={handleRepropose}
+                      disabled={reproposing || !reproposeDate}
+                      className="text-[13px] font-semibold px-3 py-1.5 rounded-lg text-white disabled:opacity-50"
+                      style={{ background: "#1565C0" }}
+                    >
+                      {reproposing ? "Sending…" : "Send to Client"}
+                    </button>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="flex items-center gap-2">
+                <Clock className="h-4 w-4" style={{ color: "#546E7A" }} />
+                <span className="text-[13px]" style={{ color: "#546E7A" }}>Awaiting client confirmation</span>
+              </div>
+            )}
+
+            {!(mob as any).client_confirmed && (
+              <button
+                onClick={async () => {
+                  setOverriding(true);
+                  try {
+                    await supabase.from("mobilisation").update({
+                      client_confirmed: true,
+                      client_confirmed_at: new Date().toISOString(),
+                      admin_override: true,
+                      admin_override_by: user?.id,
+                      admin_override_at: new Date().toISOString(),
+                    }).eq("id", mob.id);
+                    if (confirmToken) {
+                      await supabase.from("mob_confirmation_tokens").update({
+                        status: "confirmed",
+                        confirmed_at: new Date().toISOString(),
+                      }).eq("id", confirmToken.id);
+                    }
+                    toast.success("Confirmed on behalf of client");
+                    fetchMob();
+                  } catch {
+                    toast.error("Failed to override");
+                  } finally {
+                    setOverriding(false);
+                  }
+                }}
+                disabled={overriding}
+                className="mt-2 flex items-center gap-1.5 text-[13px] font-semibold px-3 py-1.5 rounded-lg transition-all disabled:opacity-50"
+                style={{ background: "#EBF2FF", color: "#1565C0" }}
+              >
+                <ShieldCheck className="h-3 w-3" />
+                {overriding ? "Confirming…" : "Admin Override: Confirm"}
+              </button>
+            )}
+          </div>
+
+          {/* Drive Folder */}
           {mob.drive_folder_status === "pending" && (
-            <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <span className="flex items-center gap-1.5 text-[13px] text-muted-foreground">
               <Loader2 className="h-3 w-3 animate-spin" /> Creating Drive folder...
             </span>
           )}
           {mob.drive_folder_status === "created" && mob.drive_folder_url && (
-            <a href={mob.drive_folder_url} target="_blank" rel="noreferrer" className="flex items-center gap-1.5 text-xs text-green-600 hover:underline">
+            <a href={mob.drive_folder_url} target="_blank" rel="noreferrer" className="flex items-center gap-1.5 text-[13px] text-green-600 hover:underline">
               <FolderOpen className="h-3 w-3" /> Open Site Folder <ExternalLink className="h-3 w-3" />
             </a>
           )}
           {mob.drive_folder_status === "failed" && (
-            <span className="flex items-center gap-1.5 text-xs text-red-600">
+            <span className="flex items-center gap-1.5 text-[13px] text-red-600">
               <FolderX className="h-3 w-3" /> Drive folder creation failed
             </span>
           )}

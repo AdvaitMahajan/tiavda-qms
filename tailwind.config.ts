@@ -41,7 +41,7 @@ export default {
           DEFAULT: "#2E7FC1",
         },
         // Alias for explicit brand blue usage
-        "tiavda-blue": "#1B5EA0",
+        "brand-blue": "#1B5EA0",
         gold: {
           DEFAULT: "hsl(var(--gold))",
           hex: "#D4930A",

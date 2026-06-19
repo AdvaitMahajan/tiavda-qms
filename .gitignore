@@ -18,6 +18,9 @@ dist-ssr
 
 .claude/
 
+# Supabase CLI local/ephemeral state
+supabase/.temp/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

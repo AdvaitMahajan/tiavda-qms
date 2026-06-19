@@ -6,7 +6,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { relativeTime } from "@/lib/utils";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  Bell, CalendarClock, UserPlus, CheckCircle, FolderX,
+  Bell, CalendarClock, UserPlus, CheckCircle, FolderX, UserCheck,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import type { Tables } from "@/integrations/supabase/types";
@@ -16,16 +16,20 @@ type Notification = Tables<"notifications">;
 const pageTitles: Record<string, string> = {
   "/dashboard": "Dashboard",
   "/enquiries": "Enquiries",
+  "/follow-ups": "Follow-ups",
   "/clients": "Clients",
-  "/rate-matrix": "Rate Matrix",
+  "/accounts": "Accounts",
+  "/quotation-config": "Quotation Config",
   "/settings": "Settings",
 };
 
 const pageBreadcrumbs: Record<string, string[]> = {
   "/dashboard": ["Home", "Dashboard"],
   "/enquiries": ["Home", "Enquiries"],
+  "/follow-ups": ["Home", "Follow-ups"],
   "/clients": ["Home", "Clients"],
-  "/rate-matrix": ["Home", "Rate Matrix"],
+  "/accounts": ["Home", "Accounts"],
+  "/quotation-config": ["Home", "Quotation Config"],
   "/settings": ["Home", "Settings"],
 };
 
@@ -39,6 +43,7 @@ const typeConfig: Record<string, { icon: LucideIcon; bg: string; color: string }
   // legacy key still used in DB
   job_reminder:      { icon: Bell,          bg: "#FEF2F2", color: "#C62828" },
   intake_received:   { icon: UserPlus,      bg: "#EBF2FF", color: "#1565C0" },
+  assignment:        { icon: UserCheck,     bg: "#EDE7F6", color: "#7B1FA2" },
   payment_received:  { icon: CheckCircle,   bg: "#E8F5E9", color: "#00897B" },
   drive_folder_failed: { icon: FolderX,     bg: "#FEF2F2", color: "#C62828" },
 };
@@ -165,7 +170,7 @@ export function TopBar() {
         {breadcrumbs.map((crumb, i) => (
           <span key={i} className="flex items-center gap-1.5">
             {i > 0 && (
-              <span style={{ color: "#E0E7EF", fontSize: "12px" }}>/</span>
+              <span style={{ color: "#E0E7EF", fontSize: "13px" }}>/</span>
             )}
             <span
               style={{
@@ -219,7 +224,7 @@ export function TopBar() {
                   borderRadius: "50%",
                   background: "linear-gradient(135deg, #FF8F00, #FFB300)",
                   color: "white",
-                  fontSize: "9px",
+                  fontSize: "12px",
                   fontWeight: 700,
                   display: "flex",
                   alignItems: "center",
@@ -242,7 +247,7 @@ export function TopBar() {
                 transition={{ duration: 0.15 }}
                 className="absolute right-0 top-full mt-2 z-50"
                 style={{
-                  width: "380px",
+                  width: "min(380px, calc(100vw - 32px))",
                   padding: 0,
                   background: "white",
                   borderRadius: "16px",
@@ -270,7 +275,7 @@ export function TopBar() {
                   <button
                     onClick={handleMarkAllRead}
                     style={{
-                      fontSize: "12px",
+                      fontSize: "13px",
                       color: "rgba(255,255,255,0.6)",
                       background: "transparent",
                       border: "none",
@@ -300,7 +305,7 @@ export function TopBar() {
                       <p style={{ fontSize: "14px", fontWeight: 600, color: "#546E7A", marginTop: "12px" }}>
                         You're all caught up!
                       </p>
-                      <p style={{ fontSize: "12px", color: "#94A3B8", marginTop: "4px" }}>
+                      <p style={{ fontSize: "13px", color: "#94A3B8", marginTop: "4px" }}>
                         No new notifications
                       </p>
                     </div>
@@ -334,7 +339,7 @@ export function TopBar() {
                 >
                   <button
                     style={{
-                      fontSize: "12px",
+                      fontSize: "13px",
                       fontWeight: 500,
                       color: "#1565C0",
                       background: "transparent",
@@ -353,7 +358,7 @@ export function TopBar() {
 
         {/* User avatar */}
         <div
-          className="flex items-center justify-center font-bold text-white text-xs"
+          className="flex items-center justify-center font-bold text-white text-[13px]"
           style={{
             width: "36px",
             height: "36px",
@@ -435,7 +440,7 @@ function NotifItem({
         </div>
         <div
           style={{
-            fontSize: "12px",
+            fontSize: "13px",
             marginTop: "2px",
             color: "#546E7A",
             display: "-webkit-box",
@@ -467,7 +472,7 @@ function NotifItem({
             }}
           />
         )}
-        <div style={{ fontSize: "10px", color: "#94A3B8", marginTop: "4px" }}>
+        <div style={{ fontSize: "12px", color: "#94A3B8", marginTop: "4px" }}>
           {relativeTime(n.created_at)}
         </div>
       </div>

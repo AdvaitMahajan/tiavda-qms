@@ -3,7 +3,10 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { useAuth } from "@/hooks/useAuth";
+import { useRole } from "@/hooks/useRole";
 import { toast } from "sonner";
+import { pdf } from "@react-pdf/renderer";
+import InvoicePDF from "@/components/InvoicePDF";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -12,7 +15,7 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
-import { CreditCard, ExternalLink } from "lucide-react";
+import { CreditCard, ExternalLink, FileText, Loader2 } from "lucide-react";
 import type { Tables } from "@/integrations/supabase/types";
 import { EmptyState } from "@/components/ui/EmptyState";
 
@@ -26,9 +29,10 @@ const PAY_STATUS_COLORS: Record<string, string> = {
   refunded: "bg-red-100 text-red-700",
 };
 
-export function PaymentsTab({ enquiryId }: { enquiryId: string }) {
+export function PaymentsTab({ enquiryId, onStatusChange }: { enquiryId: string; onStatusChange?: () => void }) {
   const queryClient = useQueryClient();
   const { user } = useAuth();
+  const { canEditPayments } = useRole();
   const [showRequest, setShowRequest] = useState(false);
   const [showReceive, setShowReceive] = useState<Payment | null>(null);
 
@@ -40,11 +44,21 @@ export function PaymentsTab({ enquiryId }: { enquiryId: string }) {
     },
   });
 
+  // The enquiry's contract value: the approved quotation if one exists, otherwise
+  // the latest sent/accepted quotation (covers enquiries advanced before a formal
+  // approve). Used as the basis for collection progress and final-payment defaults.
   const { data: approvedTotal } = useQuery({
-    queryKey: ["approved-quote-total", enquiryId],
+    queryKey: ["quote-total", enquiryId],
     queryFn: async () => {
-      const { data } = await supabase.from("quotations").select("total_amount").eq("enquiry_id", enquiryId).eq("status", "approved").limit(1).maybeSingle();
-      return data ? Number(data.total_amount) : 0;
+      const { data: approved } = await supabase.from("quotations")
+        .select("total_amount").eq("enquiry_id", enquiryId).eq("status", "approved")
+        .order("version", { ascending: false }).limit(1).maybeSingle();
+      if (approved) return Number(approved.total_amount);
+      const { data: latest } = await supabase.from("quotations")
+        .select("total_amount").eq("enquiry_id", enquiryId)
+        .in("status", ["accepted", "sent"] as any)
+        .order("version", { ascending: false }).limit(1).maybeSingle();
+      return latest ? Number(latest.total_amount) : 0;
     },
   });
 
@@ -69,12 +83,29 @@ export function PaymentsTab({ enquiryId }: { enquiryId: string }) {
   const { data: appSettings } = useQuery({
     queryKey: ["app-settings-bank"],
     queryFn: async () => {
-      const { data } = await supabase.from("app_settings").select("value").eq("key", "company_bank_details").maybeSingle();
-      return data?.value ?? null;
+      const bankKeys = [
+        "bank_account_name", "bank_name", "bank_account_number",
+        "bank_account_type", "bank_ifsc", "bank_branch", "bank_upi",
+      ];
+      const { data } = await supabase
+        .from("app_settings")
+        .select("key, value")
+        .in("key", bankKeys);
+      if (!data?.length) return null;
+      const m = new Map(data.map((r) => [r.key, r.value]));
+      const lines = [
+        m.get("bank_account_name") && `Account Name: ${m.get("bank_account_name")}`,
+        m.get("bank_name") && `Bank: ${m.get("bank_name")}${m.get("bank_branch") ? `, ${m.get("bank_branch")}` : ""}`,
+        m.get("bank_account_number") && `Account No: ${m.get("bank_account_number")} (${m.get("bank_account_type") || "Current"})`,
+        m.get("bank_ifsc") && `IFSC: ${m.get("bank_ifsc")}`,
+        m.get("bank_upi") && `UPI: ${m.get("bank_upi")}`,
+      ].filter(Boolean);
+      return lines.length > 0 ? lines.join("\n") : null;
     },
   });
 
-  // Request advance form state
+  // Request payment form state
+  const [reqType, setReqType] = useState<"advance" | "final">("advance");
   const [reqAmount, setReqAmount] = useState("");
   const [reqDueDate, setReqDueDate] = useState("");
   const [reqInstructions, setReqInstructions] = useState("");
@@ -82,7 +113,7 @@ export function PaymentsTab({ enquiryId }: { enquiryId: string }) {
   const requestMutation = useMutation({
     mutationFn: async () => {
       const amount = parseFloat(reqAmount);
-      const bankDetails = appSettings ?? "Contact Tiavda Enterprises for bank details";
+      const bankDetails = appSettings ?? "Bank details not configured — please update Settings.";
       const formattedAmount = new Intl.NumberFormat("en-IN", {
         style: "currency", currency: "INR", maximumFractionDigits: 0,
       }).format(amount);
@@ -91,62 +122,68 @@ export function PaymentsTab({ enquiryId }: { enquiryId: string }) {
         : new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" });
       const dueDateIso = reqDueDate || new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
 
-      // Insert payment record
-      const { data: payment, error: insertErr } = await supabase.from("payments").insert({
-        enquiry_id: enquiryId,
-        payment_type: "advance",
-        amount_requested: amount,
-        status: "pending_request" as any,
-      }).select().single();
-      if (insertErr) throw insertErr;
+      // Reuse an existing un-paid request of the SAME type (e.g. the advance auto-created
+      // on "Mark Won") so we don't create a duplicate request/email.
+      const { data: existingReq } = await supabase.from("payments")
+        .select("id")
+        .eq("enquiry_id", enquiryId)
+        .eq("payment_type", reqType)
+        .in("status", ["pending_request", "request_sent"] as any)
+        .limit(1)
+        .maybeSingle();
+
+      let payment: { id: string };
+      if (existingReq) {
+        await supabase.from("payments").update({ amount_requested: amount, due_date: dueDateIso }).eq("id", existingReq.id);
+        payment = existingReq as { id: string };
+      } else {
+        const { data: inserted, error: insertErr } = await supabase.from("payments").insert({
+          enquiry_id: enquiryId,
+          payment_type: reqType,
+          amount_requested: amount,
+          due_date: dueDateIso,
+          status: "pending_request" as any,
+        }).select().single();
+        if (insertErr) throw insertErr;
+        payment = inserted;
+      }
 
       const refNumber = enquiry?.ref_number ?? enquiryId;
       const clientName = client?.name ?? "Client";
-      const subject = `Advance Payment Request — ${refNumber}`;
-      const htmlBody = `<!DOCTYPE html>
-<html>
-<body style="font-family: Arial, sans-serif; color: #1a1a1a; max-width: 600px; margin: 0 auto; padding: 20px;">
-  <div style="background: #0F2A47; padding: 24px; border-radius: 8px 8px 0 0;">
-    <h1 style="color: white; margin: 0; font-size: 20px;">Tiavda Enterprises</h1>
-    <p style="color: rgba(255,255,255,0.7); margin: 4px 0 0; font-size: 14px;">Payment Request</p>
-  </div>
-  <div style="background: #ffffff; border: 1px solid #e2e8f0; border-top: none; padding: 32px; border-radius: 0 0 8px 8px;">
-    <p style="font-size: 16px;">Dear ${clientName},</p>
-    <p>We request an advance payment for your project <span style="font-family: monospace; font-weight: bold;">${refNumber}</span>.</p>
-    <div style="background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 20px; margin: 24px 0;">
-      <p style="margin: 0 0 8px;"><strong>Amount Due:</strong> ${formattedAmount}</p>
-      <p style="margin: 0 0 16px;"><strong>Due Date:</strong> ${dueDate}</p>
-      <p style="margin: 0 0 4px; font-weight: bold;">Bank Details:</p>
-      <p style="margin: 0; white-space: pre-line; font-size: 14px;">${bankDetails}</p>
-    </div>
-    ${reqInstructions ? `<p style="font-size: 14px; color: #64748b;">${reqInstructions}</p>` : ""}
-    <p style="margin-top: 32px;">Best regards,<br/><strong>Tiavda Enterprises</strong><br/>+91 8605811117</p>
-  </div>
-</body>
-</html>`;
+      const typeLabel = reqType === "final" ? "Final" : "Advance";
+      const subject = `${typeLabel} Payment Request — ${refNumber}`;
+
+      let delivered = false;
+      const logComm = (channel: "email" | "whatsapp", ok: boolean, label: string) =>
+        supabase.from("communication_log").insert({
+          enquiry_id: enquiryId, client_id: client?.id ?? null,
+          channel: channel as any, direction: "outbound" as any,
+          subject: label, body: ok ? `${label} sent` : `${label} FAILED to send`,
+          status: ok ? "sent" : "failed", sent_by: user?.id ?? null,
+        });
 
       // Send email
       if (client?.email && !client?.email_bounced) {
-        const { error: emailErr } = await supabase.functions.invoke("send-email", {
-          body: { to: client.email, subject, html_body: htmlBody },
+        const { ok } = await sendNotification({
+          to: client.email,
+          template: "payment_request_detailed",
+          params: {
+            client_name: clientName,
+            ref_number: refNumber,
+            type_label: typeLabel,
+            amount: formattedAmount,
+            due_date: dueDate,
+            bank_details: bankDetails,
+            instructions: reqInstructions || undefined,
+          },
         });
-        if (!emailErr) {
-          await supabase.from("communication_log").insert({
-            enquiry_id: enquiryId,
-            client_id: client.id,
-            channel: "email" as any,
-            direction: "outbound" as any,
-            subject,
-            body: "Payment request email sent",
-            status: "sent",
-            sent_by: user?.id ?? null,
-          });
-        }
+        await logComm("email", ok, subject);
+        if (ok) delivered = true;
       }
 
       // Send WhatsApp
       if (client?.whatsapp_number && !client?.whatsapp_invalid) {
-        const { data: waData } = await supabase.functions.invoke("send-whatsapp", {
+        const { data: waData, error: waErr } = await supabase.functions.invoke("send-whatsapp", {
           body: {
             phone_number: client.whatsapp_number,
             template_name: "qms_payment_request",
@@ -159,36 +196,36 @@ export function PaymentsTab({ enquiryId }: { enquiryId: string }) {
           },
         });
         if (waData?.whatsapp_invalid) {
-          await supabase.from("clients").update({ whatsapp_invalid: true }).eq("id", client.id);
+          await supabase.rpc("flag_contact_channel_invalid", { p_client_id: client.id, p_channel: "whatsapp" });
+          await logComm("whatsapp", false, `WhatsApp: Payment request ${refNumber}`);
+        } else if (waErr) {
+          await logComm("whatsapp", false, `WhatsApp: Payment request ${refNumber}`);
         } else {
-          await supabase.from("communication_log").insert({
-            enquiry_id: enquiryId,
-            client_id: client.id,
-            channel: "whatsapp" as any,
-            direction: "outbound" as any,
-            subject: `WhatsApp: Payment request ${refNumber}`,
-            body: "Payment request WhatsApp sent",
-            status: "sent",
-            sent_by: user?.id ?? null,
-          });
+          await logComm("whatsapp", true, `WhatsApp: Payment request ${refNumber}`);
+          delivered = true;
         }
       }
 
-      // Update payment status to request_sent
-      await supabase.from("payments").update({
-        status: "request_sent" as any,
-        request_sent_at: new Date().toISOString(),
-      }).eq("id", payment.id);
-
-      // Log event
-      await supabase.from("enquiry_events").insert({
-        enquiry_id: enquiryId,
-        event_type: "payment_requested",
-        triggered_by: user?.id ?? null,
-      });
+      // Only mark the request as "sent" if a channel actually delivered.
+      if (delivered) {
+        await supabase.from("payments").update({
+          status: "request_sent" as any,
+          request_sent_at: new Date().toISOString(),
+        }).eq("id", payment.id);
+        await supabase.from("enquiry_events").insert({
+          enquiry_id: enquiryId,
+          event_type: "payment_requested",
+          triggered_by: user?.id ?? null,
+        });
+      }
+      return { delivered };
     },
-    onSuccess: () => {
-      toast.success("Payment request sent to client!");
+    onSuccess: (res) => {
+      if (res?.delivered) {
+        toast.success("Payment request sent to client!");
+      } else {
+        toast.error("Could NOT deliver the payment request (no working email/WhatsApp). Saved as pending — check the client's contact details.");
+      }
       queryClient.invalidateQueries({ queryKey: ["payments", enquiryId] });
       setShowRequest(false);
       setReqAmount(""); setReqDueDate(""); setReqInstructions("");
@@ -223,17 +260,74 @@ export function PaymentsTab({ enquiryId }: { enquiryId: string }) {
         receipt_url,
       }).eq("id", showReceive.id);
       if (error) throw error;
+
+      // Auto-transition enquiry to payment_received if currently approved
+      if (enquiry && enquiry.status === "approved") {
+        await supabase.from("enquiries").update({
+          status: "payment_received" as any,
+          confirmed_date: new Date().toISOString().slice(0, 10),
+        }).eq("id", enquiryId);
+        await supabase.from("enquiry_events").insert({
+          enquiry_id: enquiryId,
+          event_type: "status_change",
+          from_status: "approved",
+          to_status: "payment_received",
+          triggered_by: user?.id ?? null,
+          metadata: { reason: "payment_received_auto_transition" },
+        });
+      }
+
+      // Notify Mobilization Team Lead(s) about payment received
+      const amt = new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(parseFloat(recAmount));
+      const notifPayload = {
+        type: "payment_received",
+        title: `Payment Received — ${enquiry?.ref_number ?? ""}`,
+        body: `${amt} received for ${enquiry?.ref_number ?? "enquiry"}${recMethod ? ` via ${recMethod}` : ""}. Ready for mobilization.`,
+        enquiry_id: enquiryId,
+        link: `/enquiries/${enquiryId}`,
+      };
+
+      // Find mob_lead users via profiles table
+      const { data: mobLeads } = await supabase
+        .from("profiles")
+        .select("id")
+        .eq("role", "mobilization_lead");
+
+      const targetUsers = (mobLeads && mobLeads.length > 0)
+        ? mobLeads.map((p: any) => p.id)
+        : user?.id ? [user.id] : [];
+
+      for (const uid of targetUsers) {
+        await supabase.from("notifications").insert({ ...notifPayload, user_id: uid });
+      }
+
+      // Also notify current user as confirmation
+      if (user?.id && !targetUsers.includes(user.id)) {
+        await supabase.from("notifications").insert({ ...notifPayload, user_id: user.id });
+      }
     },
     onSuccess: () => {
       toast.success("Payment marked as received!");
       queryClient.invalidateQueries({ queryKey: ["payments", enquiryId] });
+      queryClient.invalidateQueries({ queryKey: ["enquiries-list"] });
+      queryClient.invalidateQueries({ queryKey: ["notifications"] });
       setShowReceive(null);
+      onStatusChange?.();
     },
     onError: (e: any) => toast.error(e.message),
   });
 
-  const openRequest = () => {
-    setReqAmount(approvedTotal ? (approvedTotal * 0.5).toString() : "");
+  const openRequest = (type: "advance" | "final" = "advance") => {
+    setReqType(type);
+    // Advance defaults to 50% of the approved quote; final to the remaining balance.
+    const totalReceived = (payments ?? [])
+      .filter((p) => p.status === "received" || p.status === "partial")
+      .reduce((s, p) => s + Number(p.amount_received ?? 0), 0);
+    const def = type === "advance"
+      ? (approvedTotal ? approvedTotal * 0.5 : 0)
+      : Math.max(0, (approvedTotal ?? 0) - totalReceived);
+    setReqAmount(def ? String(Math.round(def)) : "");
+    setReqDueDate(""); setReqInstructions("");
     setShowRequest(true);
   };
 
@@ -244,16 +338,147 @@ export function PaymentsTab({ enquiryId }: { enquiryId: string }) {
     setShowReceive(p);
   };
 
+  const [generatingInvoice, setGeneratingInvoice] = useState<string | null>(null);
+
+  const handleGenerateInvoice = async (p: Payment) => {
+    if (!enquiry || !client) {
+      toast.error("Missing enquiry or client details");
+      return;
+    }
+    setGeneratingInvoice(p.id);
+    try {
+      const bankKeys = [
+        "bank_account_name", "bank_name", "bank_account_number",
+        "bank_account_type", "bank_ifsc", "bank_branch", "bank_upi",
+        "company_gst", "gst_rate", "company_state",
+      ];
+      const { data: settingsData } = await supabase
+        .from("app_settings")
+        .select("key, value")
+        .in("key", bankKeys);
+      const sm = new Map(settingsData?.map((r) => [r.key, r.value]) ?? []);
+
+      const bankObj = {
+        account_name: sm.get("bank_account_name") ?? undefined,
+        bank_name: sm.get("bank_name") ?? undefined,
+        branch: sm.get("bank_branch") ?? undefined,
+        account_number: sm.get("bank_account_number") ?? undefined,
+        account_type: sm.get("bank_account_type") ?? undefined,
+        ifsc: sm.get("bank_ifsc") ?? undefined,
+        upi: sm.get("bank_upi") ?? undefined,
+      };
+      const hasBankDetails = Object.values(bankObj).some(Boolean);
+
+      const amount = Number(p.amount_received) > 0 ? Number(p.amount_received) : Number(p.amount_requested);
+      const gstRate = parseFloat(sm.get("gst_rate") ?? "0") || 0;
+      const baseAmount = +(amount / (1 + gstRate / 100)).toFixed(2);
+      const gstAmount = +(amount - baseAmount).toFixed(2);
+
+      const companyState = (sm.get("company_state") ?? "").trim().toLowerCase();
+      const clientCity = (client.city ?? "").trim().toLowerCase();
+      const isSameState = companyState !== "" && companyState === clientCity;
+      const gstType = isSameState ? "cgst_sgst" as const : "igst" as const;
+
+      const invDate = p.received_at ? new Date(p.received_at).toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10);
+      const invNum = `TIV-INV-${invDate.slice(0, 4)}-${p.id.slice(0, 6).toUpperCase()}`;
+
+      const blob = await pdf(
+        <InvoicePDF
+          invoiceNumber={invNum}
+          invoiceDate={invDate}
+          refNumber={enquiry.ref_number ?? ""}
+          client={{
+            name: client.name,
+            company: (client as any).company ?? null,
+            phone: client.phone ?? "",
+            email: client.email ?? null,
+            city: client.city ?? "",
+            gst_number: (client as any).gst_number ?? null,
+          }}
+          payments={[{
+            description: `${p.payment_type === "advance" ? "Advance" : "Final"} payment for ${enquiry.ref_number}`,
+            amount: baseAmount,
+          }]}
+          subtotal={baseAmount}
+          gstRate={gstRate}
+          gstType={gstType}
+          gstAmount={gstAmount}
+          totalAmount={amount}
+          bankDetails={hasBankDetails ? bankObj : null}
+          companyGst={sm.get("company_gst") ?? undefined}
+        />
+      ).toBlob();
+
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${invNum}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      toast.success("Invoice PDF downloaded");
+    } catch (err: any) {
+      console.error("Invoice generation error:", err);
+      toast.error("Failed to generate invoice");
+    } finally {
+      setGeneratingInvoice(null);
+    }
+  };
+
   if (isLoading) return <div className="space-y-3">{[1,2].map(i => <div key={i} className="h-20 bg-muted/30 animate-pulse rounded-lg" />)}</div>;
+
+  // Per-enquiry collection progress against the approved quotation total.
+  const totalReceived = (payments ?? [])
+    .filter((p) => p.status === "received" || p.status === "partial")
+    .reduce((s, p) => s + Number(p.amount_received ?? 0), 0);
+  const expectedTotal = approvedTotal ?? 0;
+  const collectedPct = expectedTotal > 0 ? Math.min(100, Math.round((totalReceived / expectedTotal) * 100)) : (totalReceived > 0 ? 100 : 0);
+  const outstandingForEnquiry = Math.max(0, expectedTotal - totalReceived);
 
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h2 className="font-sora text-lg font-semibold text-foreground">Payments</h2>
-        <Button onClick={openRequest} className="bg-gold text-white hover:bg-gold/90">
-          Request Advance Payment
-        </Button>
+        {canEditPayments && (
+          <div className="flex gap-2">
+            <Button onClick={() => openRequest("advance")} className="bg-gold text-white hover:bg-gold/90">
+              Request Advance
+            </Button>
+            <Button onClick={() => openRequest("final")} variant="outline">
+              Request Final
+            </Button>
+          </div>
+        )}
       </div>
+
+      {/* Per-enquiry collection progress */}
+      {(expectedTotal > 0 || totalReceived > 0) && (
+        <Card>
+          <CardContent className="p-5">
+            <div className="flex items-end justify-between mb-2">
+              <div>
+                <div className="text-[13px] font-semibold" style={{ color: "#546E7A" }}>Collected for this enquiry</div>
+                <div className="font-sora text-xl font-bold" style={{ color: "#0A1929" }}>
+                  {formatCurrency(totalReceived)}
+                  {expectedTotal > 0 && <span className="text-[13px] font-medium" style={{ color: "#94A3B8" }}> of {formatCurrency(expectedTotal)}</span>}
+                </div>
+              </div>
+              <div className="text-right">
+                <div className="font-sora text-lg font-bold" style={{ color: collectedPct >= 100 ? "#15673A" : "#1565C0" }}>{collectedPct}%</div>
+                {outstandingForEnquiry > 0 && <div className="text-[12px]" style={{ color: "#92400E" }}>{formatCurrency(outstandingForEnquiry)} outstanding</div>}
+              </div>
+            </div>
+            <div style={{ height: "10px", borderRadius: "999px", background: "#EEF2F7", overflow: "hidden" }}>
+              <div style={{ width: `${collectedPct}%`, height: "100%", borderRadius: "999px", transition: "width 300ms",
+                background: collectedPct >= 100 ? "linear-gradient(90deg,#15803D,#22C55E)" : "linear-gradient(90deg,#1565C0,#2979FF)" }} />
+            </div>
+            {expectedTotal === 0 && (
+              <p className="text-[12px] mt-2" style={{ color: "#94A3B8" }}>No approved quotation yet — progress is shown against received payments only.</p>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {!payments?.length ? (
         <EmptyState icon={CreditCard} title="No payment requested yet." />
@@ -266,9 +491,22 @@ export function PaymentsTab({ enquiryId }: { enquiryId: string }) {
                   <Badge className="capitalize">{p.payment_type}</Badge>
                   <Badge className={PAY_STATUS_COLORS[p.status] ?? ""}>{p.status.replace("_", " ")}</Badge>
                 </div>
-                {(p.status === "pending_request" || p.status === "request_sent") && (
-                  <Button variant="outline" size="sm" onClick={() => openReceive(p)}>Mark Received</Button>
-                )}
+                <div className="flex items-center gap-2">
+                  {p.status === "received" && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleGenerateInvoice(p)}
+                      disabled={generatingInvoice === p.id}
+                    >
+                      {generatingInvoice === p.id ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <FileText className="h-3 w-3 mr-1" />}
+                      Invoice
+                    </Button>
+                  )}
+                  {canEditPayments && (p.status === "pending_request" || p.status === "request_sent") && (
+                    <Button variant="outline" size="sm" onClick={() => openReceive(p)}>Mark Received</Button>
+                  )}
+                </div>
               </div>
               <div className="grid grid-cols-2 gap-2 text-sm">
                 <div><span className="text-muted-foreground">Requested:</span> <span className="font-medium">{formatCurrency(Number(p.amount_requested))}</span></div>
@@ -278,7 +516,7 @@ export function PaymentsTab({ enquiryId }: { enquiryId: string }) {
                 {p.request_sent_at && <div><span className="text-muted-foreground">Sent:</span> {formatDate(p.request_sent_at)}</div>}
                 {p.received_at && <div><span className="text-muted-foreground">Received:</span> {formatDate(p.received_at)}</div>}
                 {p.payment_method && <div><span className="text-muted-foreground">Method:</span> {p.payment_method}</div>}
-                {p.transaction_ref && <div><span className="text-muted-foreground">Ref:</span> <span className="font-mono text-xs">{p.transaction_ref}</span></div>}
+                {p.transaction_ref && <div><span className="text-muted-foreground">Ref:</span> <span className="font-mono text-[13px]">{p.transaction_ref}</span></div>}
               </div>
               {p.receipt_url && (
                 <a href={p.receipt_url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 mt-2 text-sm text-blue-600 hover:underline">
@@ -290,11 +528,29 @@ export function PaymentsTab({ enquiryId }: { enquiryId: string }) {
         ))
       )}
 
-      {/* Request Advance Sheet */}
+      {/* Request Payment Sheet */}
       <Sheet open={showRequest} onOpenChange={setShowRequest}>
         <SheetContent>
-          <SheetHeader><SheetTitle>Request Advance Payment</SheetTitle></SheetHeader>
+          <SheetHeader><SheetTitle>Request {reqType === "final" ? "Final" : "Advance"} Payment</SheetTitle></SheetHeader>
           <div className="space-y-4 mt-6">
+            <div>
+              <Label>Payment Type</Label>
+              <div className="flex gap-2 mt-1.5">
+                {(["advance", "final"] as const).map((t) => (
+                  <button
+                    key={t}
+                    type="button"
+                    onClick={() => setReqType(t)}
+                    className="flex-1 py-2 rounded-lg text-sm font-semibold capitalize transition-all"
+                    style={reqType === t
+                      ? { background: "#EBF2FF", color: "#1565C0", border: "1.5px solid #BFDBFE" }
+                      : { background: "#F0F4F8", color: "#546E7A", border: "1.5px solid #E0E7EF" }}
+                  >
+                    {t}
+                  </button>
+                ))}
+              </div>
+            </div>
             <div>
               <Label>Amount ₹</Label>
               <Input type="number" value={reqAmount} onChange={(e) => setReqAmount(e.target.value)} min={1} />

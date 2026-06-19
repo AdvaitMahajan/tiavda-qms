@@ -71,12 +71,30 @@
     @apply border-border;
   }
 
+  html {
+    /* Nudge the base up from 16px so all rem-based (Tailwind) text + spacing
+       reads a touch larger and more comfortable across the whole app. */
+    font-size: 16.5px;
+  }
+
   body {
     @apply bg-background text-foreground font-sans;
+    font-size: 15px;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
   }
 
   h1, h2, h3, h4 {
     font-family: 'Sora', sans-serif;
+    line-height: 1.2;
+    letter-spacing: -0.01em;
+  }
+
+  /* Comfortable default control sizing where components don't override it. */
+  input, textarea, select, button {
+    font-size: inherit;
   }
 }
 

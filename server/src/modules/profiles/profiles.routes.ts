@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { and, asc, eq, type SQL } from 'drizzle-orm';
 import { db } from '../../db';
-import { profiles } from '../../db/schema';
+import { profiles, organizations } from '../../db/schema';
 import { authenticate, getAuth } from '../../middleware/auth';
 import { requireEditor } from '../../middleware/roles';
 import { isSuperAdmin } from '../../middleware/roles';
@@ -40,6 +40,23 @@ profilesRouter.get(
       .where(conds.length ? and(...conds) : undefined)
       .orderBy(asc(profiles.full_name));
     res.json(rows);
+  }),
+);
+
+// Current user's profile + organization + platform-admin flag (powers useAuth,
+// the top-bar org name, and Admin Console gating). Must precede '/:id'.
+profilesRouter.get(
+  '/me',
+  asyncHandler(async (req, res) => {
+    const auth = getAuth(req);
+    const rows = await db.select().from(profiles).where(eq(profiles.id, auth.userId)).limit(1);
+    const profile = rows[0] ?? null;
+    let organization: typeof organizations.$inferSelect | null = null;
+    if (profile?.org_id) {
+      const orgs = await db.select().from(organizations).where(eq(organizations.id, profile.org_id)).limit(1);
+      organization = orgs[0] ?? null;
+    }
+    res.json({ profile, organization, is_platform_admin: auth.isPlatformAdmin });
   }),
 );
 

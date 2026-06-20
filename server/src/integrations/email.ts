@@ -1,5 +1,6 @@
-import { env } from '../env';
+import { currentOrgId } from '../db';
 import { supabaseAdmin } from '../lib/supabase';
+import { resolveEmailCreds } from '../lib/org-integrations';
 import { renderEmail, type TemplateKey, type TemplateParams } from './email-templates';
 
 export interface SendEmailInput {
@@ -11,6 +12,8 @@ export interface SendEmailInput {
   attachment_path?: string; // storage path in a private bucket
   attachment_bucket?: string; // default quotation-pdfs
   attachment_url?: string; // directly fetchable url (back-compat)
+  /** Org whose provisioned Brevo creds to use; defaults to the request's org. */
+  orgId?: string | null;
 }
 
 export interface SendEmailResult {
@@ -33,9 +36,10 @@ export async function sendEmail(input: SendEmailInput): Promise<SendEmailResult>
   }
   if (!html_body) return { success: false, error: 'Nothing to send: provide a template or html_body' };
 
-  if (!env.BREVO_API_KEY) return { success: false, error: 'BREVO_API_KEY not set' };
-  const senderEmail = env.SENDER_EMAIL || 'noreply@globalgeotechnical.com';
-  const senderName = env.SENDER_NAME || 'Global Geotechnical Consultancy';
+  const creds = await resolveEmailCreds(input.orgId ?? currentOrgId());
+  if (!creds.api_key) return { success: false, error: 'Email is not configured for this organization' };
+  const senderEmail = creds.sender_email;
+  const senderName = creds.sender_name;
 
   let attachment: Array<{ content: string; name: string }> | undefined;
   if (attachment_path) {
@@ -61,7 +65,7 @@ export async function sendEmail(input: SendEmailInput): Promise<SendEmailResult>
 
   const res = await fetch('https://api.brevo.com/v3/smtp/email', {
     method: 'POST',
-    headers: { 'api-key': env.BREVO_API_KEY, 'Content-Type': 'application/json', Accept: 'application/json' },
+    headers: { 'api-key': creds.api_key, 'Content-Type': 'application/json', Accept: 'application/json' },
     body: JSON.stringify(payload),
   });
 

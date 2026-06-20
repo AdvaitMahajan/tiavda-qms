@@ -461,8 +461,8 @@ function CompleteDialog({
       const ext = file.name.split(".").pop()?.toLowerCase() ?? "jpg";
       const path = `${enquiryId}/${visit.id}/${crypto.randomUUID()}.${ext}`;
       try {
-        await uploadToStorage("site-visit-photos", path, file, { contentType: file.type });
-        paths.push(path);
+        const stored = await uploadToStorage("site-visit-photos", path, file, { contentType: file.type });
+        paths.push(stored);
       } catch {
         toast.error(`Failed to upload ${file.name}`);
       }

@@ -4,13 +4,23 @@ import { apiClient } from "@/lib/apiClient";
 import type { User, Session } from "@supabase/supabase-js";
 import type { Tables } from "@/integrations/supabase/types";
 
-type Profile = Tables<"profiles">;
+type Profile = Tables<"profiles"> & { org_id?: string | null; is_platform_admin?: boolean };
+
+export interface Organization {
+  id: string;
+  name: string;
+  slug: string | null;
+  status: string;
+  plan: string | null;
+}
 
 interface AuthContextType {
   user: User | null;
   session: Session | null;
   loading: boolean;
   profile: Profile | null;
+  organization: Organization | null;
+  isPlatformAdmin: boolean;
   profileLoading: boolean;
   refetchProfile: () => void;
   signOut: () => Promise<void>;
@@ -21,6 +31,8 @@ const AuthContext = createContext<AuthContextType>({
   session: null,
   loading: true,
   profile: null,
+  organization: null,
+  isPlatformAdmin: false,
   profileLoading: true,
   refetchProfile: () => {},
   signOut: async () => {},
@@ -31,15 +43,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
   const [profile, setProfile] = useState<Profile | null>(null);
+  const [organization, setOrganization] = useState<Organization | null>(null);
+  const [isPlatformAdmin, setIsPlatformAdmin] = useState(false);
   const [profileLoading, setProfileLoading] = useState(true);
 
-  const fetchProfile = useCallback(async (uid: string) => {
+  const fetchProfile = useCallback(async (_uid: string) => {
     setProfileLoading(true);
     try {
-      const data = await apiClient.get<Profile>(`/profiles/${uid}`);
-      setProfile(data);
+      const me = await apiClient.get<{
+        profile: Profile | null;
+        organization: Organization | null;
+        is_platform_admin: boolean;
+      }>("/profiles/me");
+      setProfile(me.profile);
+      setOrganization(me.organization);
+      setIsPlatformAdmin(me.is_platform_admin);
     } catch {
       setProfile(null);
+      setOrganization(null);
+      setIsPlatformAdmin(false);
     } finally {
       setProfileLoading(false);
     }
@@ -81,10 +103,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const signOut = async () => {
     await supabase.auth.signOut();
     setProfile(null);
+    setOrganization(null);
+    setIsPlatformAdmin(false);
   };
 
   return (
-    <AuthContext.Provider value={{ user, session, loading, profile, profileLoading, refetchProfile, signOut }}>
+    <AuthContext.Provider
+      value={{ user, session, loading, profile, organization, isPlatformAdmin, profileLoading, refetchProfile, signOut }}
+    >
       {children}
     </AuthContext.Provider>
   );

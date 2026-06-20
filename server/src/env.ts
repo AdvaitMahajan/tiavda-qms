@@ -24,6 +24,11 @@ const schema = z.object({
 
   CRON_SECRET: z.string().optional(),
 
+  // Master key for AES-GCM encryption of per-org integration secrets at rest.
+  // Optional so the API boots without it; provisioning/sending integrations that
+  // rely on encrypted org keys will error clearly if it is missing.
+  ENCRYPTION_KEY: z.string().optional(),
+
   // Integrations — optional so the API boots without them; the relevant routes
   // return a clear error if a required secret is missing at call time.
   BREVO_API_KEY: z.string().optional(),

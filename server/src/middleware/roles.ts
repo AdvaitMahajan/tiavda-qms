@@ -39,3 +39,10 @@ export const requireSuperAdmin: RequestHandler = (req, _res, next) => {
   if (!isSuperAdmin(req.auth.role)) return next(forbidden('Requires super admin'));
   next();
 };
+
+/** Platform owner gate — for the cross-org /admin/* console routes. */
+export const requirePlatformAdmin: RequestHandler = (req, _res, next) => {
+  if (!req.auth) return next(unauthorized());
+  if (!req.auth.isPlatformAdmin) return next(forbidden('Requires platform admin'));
+  next();
+};

@@ -1,9 +1,12 @@
-import { env } from '../env';
+import { currentOrgId } from '../db';
+import { resolveWhatsAppCreds } from '../lib/org-integrations';
 
 export interface SendWhatsAppInput {
   phone_number: string;
   template_name: string;
   parameters?: Array<{ name: string; value: string }>;
+  /** Org whose provisioned WATI creds to use; defaults to the request's org. */
+  orgId?: string | null;
 }
 
 export interface SendWhatsAppResult {
@@ -16,12 +19,13 @@ export interface SendWhatsAppResult {
 // Faithful port of the send-whatsapp edge function (WATI BSP API).
 export async function sendWhatsApp(input: SendWhatsAppInput): Promise<SendWhatsAppResult> {
   const { phone_number, template_name, parameters } = input;
-  if (!env.WATI_API_TOKEN || !env.WATI_BASE_URL) return { error: 'WATI credentials not set' };
+  const creds = await resolveWhatsAppCreds(input.orgId ?? currentOrgId());
+  if (!creds.api_token || !creds.base_url) return { error: 'WhatsApp is not configured for this organization' };
 
   const normalised = phone_number.replace(/^\+/, '');
-  const res = await fetch(`${env.WATI_BASE_URL}/api/v1/sendTemplateMessage`, {
+  const res = await fetch(`${creds.base_url}/api/v1/sendTemplateMessage`, {
     method: 'POST',
-    headers: { Authorization: `Bearer ${env.WATI_API_TOKEN}`, 'Content-Type': 'application/json' },
+    headers: { Authorization: `Bearer ${creds.api_token}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({ whatsappNumber: normalised, template_name, broadcast_name: template_name, parameters }),
   });
 

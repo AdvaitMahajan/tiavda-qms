@@ -21,6 +21,7 @@ import { teamRouter } from '../modules/team/team.routes';
 import { cronRouter } from '../modules/cron/cron.routes';
 import { publicRouter } from '../modules/public/public.routes';
 import { intakeTokensRouter } from '../modules/intake-tokens/intake-tokens.routes';
+import { adminRouter } from '../modules/admin/admin.routes';
 
 /**
  * Root API router. Domain routers are mounted here as they are implemented.
@@ -50,6 +51,7 @@ apiRouter.use('/integrations', integrationsRouter);
 apiRouter.use('/storage', storageRouter);
 apiRouter.use('/team', teamRouter);
 apiRouter.use('/cron', cronRouter);
+apiRouter.use('/admin', adminRouter);
 apiRouter.use('/public', publicRouter);
 //   apiRouter.use('/quotations', quotationsRouter);
 //   apiRouter.use('/payments', paymentsRouter);

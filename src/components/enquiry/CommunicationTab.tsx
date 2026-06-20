@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
+import { apiClient } from "@/lib/apiClient";
 import { useAuth } from "@/hooks/useAuth";
 import { relativeTime } from "@/lib/utils";
 import { toast } from "sonner";
@@ -37,27 +37,26 @@ export function CommunicationTab({ enquiryId }: { enquiryId: string }) {
   const { data: logs, isLoading } = useQuery({
     queryKey: ["comm-log", enquiryId],
     queryFn: async () => {
-      // First get enquiry to get client_id
-      const { data: enq } = await supabase.from("enquiries").select("client_id").eq("id", enquiryId).single();
+      const enq = await apiClient.get<{ client_id: string }>(`/enquiries/${enquiryId}`).catch(() => null);
       if (!enq) return [];
-      const { data } = await supabase.from("communication_log").select("*").eq("enquiry_id", enquiryId).order("created_at", { ascending: false });
-      return (data ?? []).map((d) => ({ ...d, _client_id: enq.client_id }));
+      const data = await apiClient.get<CommLog[]>("/communications", { enquiry_id: enquiryId });
+      return data.map((d) => ({ ...d, _client_id: enq.client_id }));
     },
   });
 
   const sendMutation = useMutation({
     mutationFn: async () => {
-      const { data: enq } = await supabase.from("enquiries").select("client_id, ref_number").eq("id", enquiryId).single();
+      const enq = await apiClient.get<Tables<"enquiries">>(`/enquiries/${enquiryId}`).catch(() => null);
       if (!enq) throw new Error("Enquiry not found");
-      const { data: client } = await supabase.from("clients").select("*").eq("id", enq.client_id).single();
+      const client = await apiClient.get<Tables<"clients">>(`/clients/${enq.client_id}`).catch(() => null);
       if (!client) throw new Error("Client not found");
 
       let status = "sent";
       if (channel === "email") {
         if (!client.email) throw new Error("Client has no email address");
         if (client.email_bounced) throw new Error("Client email is marked as bounced");
-        const { error: fnErr } = await supabase.functions.invoke("send-email", {
-          body: {
+        try {
+          await apiClient.post("/integrations/email", {
             to: client.email,
             subject: subject || `Message regarding ${enq.ref_number}`,
             html_body: `<div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;">
@@ -70,14 +69,16 @@ export function CommunicationTab({ enquiryId }: { enquiryId: string }) {
     <p style="margin-top:32px;">Best regards,<br/><strong>The Team</strong><br/>+91 8605811117</p>
   </div>
 </div>`,
-          },
-        });
-        if (fnErr) { status = "failed"; }
+          });
+        } catch {
+          status = "failed";
+        }
       } else {
         if (!client.whatsapp_number) throw new Error("Client has no WhatsApp number");
         if (client.whatsapp_invalid) throw new Error("Client WhatsApp is marked as invalid");
-        const { data: waData, error: fnErr } = await supabase.functions.invoke("send-whatsapp", {
-          body: {
+        let waData: { error?: string; whatsapp_invalid?: boolean } = {};
+        try {
+          waData = await apiClient.post<{ error?: string; whatsapp_invalid?: boolean }>("/integrations/whatsapp", {
             phone_number: client.whatsapp_number,
             template_name: "qms_custom_message",
             parameters: [
@@ -85,16 +86,18 @@ export function CommunicationTab({ enquiryId }: { enquiryId: string }) {
               { name: "message", value: body },
               { name: "ref_number", value: enq.ref_number },
             ],
-          },
-        });
-        if (fnErr) { status = "failed"; }
+          });
+        } catch (e) {
+          waData = { error: (e as Error).message };
+        }
+        if (waData?.error) { status = "failed"; }
         if (waData?.whatsapp_invalid) {
-          await supabase.from("clients").update({ whatsapp_invalid: true }).eq("id", client.id);
+          await apiClient.patch(`/clients/${client.id}`, { whatsapp_invalid: true });
           throw new Error("WhatsApp number is not valid");
         }
       }
 
-      const { error } = await supabase.from("communication_log").insert({
+      await apiClient.post("/communications", {
         enquiry_id: enquiryId,
         client_id: enq.client_id,
         channel,
@@ -104,7 +107,6 @@ export function CommunicationTab({ enquiryId }: { enquiryId: string }) {
         status,
         sent_by: user?.id ?? null,
       });
-      if (error) throw error;
       if (status === "failed") throw new Error(`${channel === "email" ? "Email" : "WhatsApp"} sending failed, but message was logged.`);
     },
     onSuccess: () => {

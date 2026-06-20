@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
+import { apiClient } from "@/lib/apiClient";
+import { uploadToStorage, getSignedUrl } from "@/lib/storage";
 import { useAuth } from "@/hooks/useAuth";
 import { formatCurrency } from "@/lib/utils";
 import { toast } from "sonner";
@@ -42,13 +43,10 @@ export function JobCompletionTab({ enquiryId }: { enquiryId: string }) {
 
   const fetchData = useCallback(async () => {
     setLoading(true);
-    let { data: jc } = await supabase.from("job_completion").select("*").eq("enquiry_id", enquiryId).maybeSingle();
-    if (!jc) {
-      const { data: newJc } = await supabase.from("job_completion").insert({ enquiry_id: enquiryId }).select().single();
-      jc = newJc;
-    }
+    let jc = await apiClient.get<JobCompletion | null>("/job-completion", { enquiry_id: enquiryId });
+    if (!jc) jc = await apiClient.post<JobCompletion>("/job-completion", { enquiry_id: enquiryId });
     setJob(jc);
-    const { data: rem } = await supabase.from("job_reminders").select("*").eq("enquiry_id", enquiryId).order("reminder_type").order("days_before", { ascending: false });
+    const rem = await apiClient.get<JobReminder[]>("/job-completion/reminders", { enquiry_id: enquiryId });
     setReminders(rem ?? []);
     setLoading(false);
   }, [enquiryId]);
@@ -57,7 +55,7 @@ export function JobCompletionTab({ enquiryId }: { enquiryId: string }) {
 
   const updateField = async (field: string, value: any) => {
     if (!job) return;
-    await supabase.from("job_completion").update({ [field]: value } as any).eq("id", job.id);
+    await apiClient.patch(`/job-completion/${job.id}`, { [field]: value });
     setJob((prev) => prev ? { ...prev, [field]: value } : prev);
   };
 
@@ -66,7 +64,7 @@ export function JobCompletionTab({ enquiryId }: { enquiryId: string }) {
     await updateField(stage.dateField, newDate || null);
 
     // Delete unsent reminders for this type
-    await supabase.from("job_reminders").delete().eq("job_id", job.id).eq("reminder_type", stage.reminderType).eq("sent", false);
+    await apiClient.del("/job-completion/reminders", { job_id: job.id, reminder_type: stage.reminderType });
 
     if (newDate) {
       const today = new Date().toISOString().slice(0, 10);
@@ -75,7 +73,7 @@ export function JobCompletionTab({ enquiryId }: { enquiryId: string }) {
         target.setDate(target.getDate() - daysBefore);
         const scheduledFor = target.toISOString().slice(0, 10);
         if (scheduledFor >= today) {
-          await supabase.from("job_reminders").insert({
+          await apiClient.post("/job-completion/reminders", {
             job_id: job.id,
             enquiry_id: enquiryId,
             reminder_type: stage.reminderType,
@@ -103,33 +101,29 @@ export function JobCompletionTab({ enquiryId }: { enquiryId: string }) {
     }
 
     const today = new Date().toISOString().slice(0, 10);
-    await supabase.from("job_completion").update({
+    await apiClient.patch(`/job-completion/${job.id}`, {
       [stage.doneField]: true,
       [stage.actualField]: today,
-    } as any).eq("id", job.id);
+    });
 
-    await supabase.from("enquiry_events").insert({
-      enquiry_id: enquiryId,
+    await apiClient.post(`/enquiries/${enquiryId}/events`, {
       event_type: "job_stage_completed",
-      metadata: { stage: stage.key } as any,
-      triggered_by: user?.id ?? null,
+      metadata: { stage: stage.key },
     });
 
     // Check if all 3 done
     const updatedJob = { ...job, [stage.doneField]: true, [stage.actualField]: today };
     if (updatedJob.site_done && updatedJob.report_done && updatedJob.final_bill_done) {
-      const { error: completeErr } = await supabase.from("enquiries").update({ status: "completed" as any }).eq("id", enquiryId);
-      if (completeErr) {
-        toast.error("All stages done, but the enquiry could not be marked completed: " + completeErr.message);
-      } else {
-        await supabase.from("enquiry_events").insert({
-          enquiry_id: enquiryId,
+      try {
+        await apiClient.patch(`/enquiries/${enquiryId}`, { status: "completed" });
+        await apiClient.post(`/enquiries/${enquiryId}/events`, {
           event_type: "status_change",
-          to_status: "completed" as any,
-          triggered_by: user?.id ?? null,
-          metadata: { trigger: "job_completed" } as any,
+          to_status: "completed",
+          metadata: { trigger: "job_completed" },
         });
         toast.success("All stages complete! Enquiry marked as completed. 🎉");
+      } catch (e) {
+        toast.error("All stages done, but the enquiry could not be marked completed: " + (e as Error).message);
       }
     } else {
       toast.success(`${stage.title} marked as done!`);
@@ -140,11 +134,14 @@ export function JobCompletionTab({ enquiryId }: { enquiryId: string }) {
   const handleReportUpload = async (file: File) => {
     if (!job) return;
     const path = `${enquiryId}/${file.name}`;
-    const { error } = await supabase.storage.from("reports").upload(path, file, { upsert: true });
-    if (error) { toast.error("Upload failed"); return; }
-    const { data: urlData } = await supabase.storage.from("reports").createSignedUrl(path, 86400 * 30);
-    await updateField("report_file_url", urlData?.signedUrl ?? null);
-    toast.success("Report uploaded!");
+    try {
+      await uploadToStorage("reports", path, file, { upsert: true });
+      const signedUrl = await getSignedUrl("reports", path, 86400 * 30);
+      await updateField("report_file_url", signedUrl);
+      toast.success("Report uploaded!");
+    } catch {
+      toast.error("Upload failed");
+    }
   };
 
   if (loading) return <div className="flex justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>;

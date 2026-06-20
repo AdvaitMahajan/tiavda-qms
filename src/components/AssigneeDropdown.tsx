@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
+import { apiClient } from "@/lib/apiClient";
+import type { Tables } from "@/integrations/supabase/types";
 import { ROLE_LABELS, ROLE_COLORS, type UserRole } from "@/lib/permissions";
 
 interface Props {
@@ -12,16 +13,8 @@ interface Props {
 export function AssigneeDropdown({ value, onChange, filterRole, disabled }: Props) {
   const { data: profiles = [] } = useQuery({
     queryKey: ["active-profiles", filterRole],
-    queryFn: async () => {
-      let q = supabase
-        .from("profiles")
-        .select("id, full_name, email, role")
-        .eq("is_active", true)
-        .order("full_name");
-      if (filterRole) q = q.eq("role", filterRole);
-      const { data } = await q;
-      return data ?? [];
-    },
+    queryFn: () =>
+      apiClient.get<Tables<"profiles">[]>("/profiles", { is_active: true, role: filterRole }),
   });
 
   return (

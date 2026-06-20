@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
+import { apiClient } from "@/lib/apiClient";
 import { relativeTime } from "@/lib/utils";
 import {
   FileText, Send, CalendarClock, CheckCircle, XCircle,
@@ -39,14 +39,7 @@ function formatStatusLabel(s: string | null): string {
 export function ActivityTimeline({ enquiryId }: { enquiryId: string }) {
   const { data: events = [], isLoading } = useQuery({
     queryKey: ["enquiry-events", enquiryId],
-    queryFn: async () => {
-      const { data } = await supabase
-        .from("enquiry_events")
-        .select("*")
-        .eq("enquiry_id", enquiryId)
-        .order("created_at", { ascending: false });
-      return (data ?? []) as EnquiryEvent[];
-    },
+    queryFn: () => apiClient.get<EnquiryEvent[]>(`/enquiries/${enquiryId}/events`),
   });
 
   if (isLoading) {

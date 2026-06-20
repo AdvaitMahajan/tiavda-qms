@@ -1,9 +1,8 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
+import { apiClient } from "@/lib/apiClient";
 import { formatCurrency, relativeTime } from "@/lib/utils";
-import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -87,45 +86,25 @@ export interface EnquiryRow {
   service_type: string;
 }
 
+type EnquiryListItem = Tables<"enquiries"> & {
+  client?: { id: string; name: string; phone: string } | null;
+  quote_total?: number | null;
+};
+
 function useEnquiries() {
   return useQuery({
     queryKey: ["enquiries-list"],
     queryFn: async (): Promise<EnquiryRow[]> => {
-      const { data: enquiries, error: eErr } = await supabase
-        .from("enquiries")
-        .select("id, ref_number, client_id, site_city, status, next_follow_up, created_at, enquiry_date, num_bores, structure_type, expected_depth_m, soil_type_hint, service_type")
-        .is("deleted_at", null)
-        .order("created_at", { ascending: false });
-
-      if (eErr) throw eErr;
-      if (!enquiries?.length) return [];
-
-      const clientIds = [...new Set(enquiries.map((e) => e.client_id))];
-      const { data: clients } = await supabase
-        .from("clients")
-        .select("id, name, phone")
-        .in("id", clientIds);
-
-      const clientMap = new Map(clients?.map((c) => [c.id, c]) ?? []);
-
-      const { data: quotes } = await supabase
-        .from("quotations")
-        .select("enquiry_id, total_amount")
-        .eq("status", "approved")
-        .in("enquiry_id", enquiries.map((e) => e.id));
-
-      const quoteMap = new Map(quotes?.map((q) => [q.enquiry_id, q.total_amount]) ?? []);
-
-      return enquiries.map((e) => {
-        const client = clientMap.get(e.client_id);
-        return {
-          ...e,
-          client_name: client?.name ?? "Unknown",
-          phone: client?.phone ?? "",
-          quote_amount: quoteMap.get(e.id) ?? null,
-        } as EnquiryRow;
-      });
+      const enquiries = await apiClient.get<EnquiryListItem[]>("/enquiries", { embed: "client,quote" });
+      return enquiries.map((e) => ({
+        ...e,
+        client_name: e.client?.name ?? "Unknown",
+        phone: e.client?.phone ?? "",
+        quote_amount: e.quote_total ?? null,
+      })) as unknown as EnquiryRow[];
     },
+    refetchInterval: 20_000, // replaces the realtime subscription
+    refetchOnWindowFocus: true,
   });
 }
 
@@ -197,17 +176,6 @@ export default function Enquiries() {
     }
     return result;
   }, [rows, search, statusFilter]);
-
-  const queryClient = useQueryClient();
-  useEffect(() => {
-    const channel = supabase
-      .channel("enquiries-realtime")
-      .on("postgres_changes", { event: "*", schema: "public", table: "enquiries" }, () => {
-        queryClient.invalidateQueries({ queryKey: ["enquiries-list"] });
-      })
-      .subscribe();
-    return () => { supabase.removeChannel(channel); };
-  }, [queryClient]);
 
   const totalCount = rows?.length ?? 0;
   const pipelineCounts = useMemo(() => {
@@ -484,14 +452,10 @@ function StatusFilterPopover({ selected, onChange }: { selected: LeadStatus[]; o
 
 function EnquiryListView({ rows, isLoading, onRowClick }: { rows: EnquiryRow[]; isLoading: boolean; onRowClick: (id: string) => void }) {
   const queryClient = useQueryClient();
-  const { user } = useAuth();
 
   const handleStatusChange = async (row: EnquiryRow, toStatus: LeadStatus) => {
     try {
-      const updates: Record<string, unknown> = {
-        status: toStatus,
-        updated_at: new Date().toISOString(),
-      };
+      const updates: Record<string, unknown> = { status: toStatus };
       if (toStatus === "lost") {
         updates.lost_date = new Date().toISOString().slice(0, 10);
       }
@@ -504,21 +468,17 @@ function EnquiryListView({ rows, isLoading, onRowClick }: { rows: EnquiryRow[]; 
         updates.lost_reason = null;
       }
 
-      const { error } = await supabase.from("enquiries").update(updates).eq("id", row.id);
-      if (error) throw error;
-
-      await supabase.from("enquiry_events").insert({
-        enquiry_id: row.id,
+      await apiClient.patch(`/enquiries/${row.id}`, updates);
+      await apiClient.post(`/enquiries/${row.id}/events`, {
         event_type: "status_change",
         from_status: row.status,
         to_status: toStatus,
-        triggered_by: user?.id ?? null,
       });
 
       queryClient.invalidateQueries({ queryKey: ["enquiries-list"] });
       toast.success(`${row.ref_number} → ${STATUS_LABELS[toStatus]}`);
-    } catch (err: any) {
-      toast.error(err.message || "Failed to update status");
+    } catch (err) {
+      toast.error((err as Error).message || "Failed to update status");
     }
   };
   if (isLoading) {

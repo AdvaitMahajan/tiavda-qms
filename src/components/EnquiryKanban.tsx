@@ -1,9 +1,9 @@
 import { useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQueryClient, useMutation } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
+import { apiClient } from "@/lib/apiClient";
+import type { Tables } from "@/integrations/supabase/types";
 import { sendNotification } from "@/lib/notifications";
-import { useAuth } from "@/hooks/useAuth";
 import { formatCurrency } from "@/lib/utils";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -52,7 +52,6 @@ interface Props {
 export function EnquiryKanban({ rows, isLoading, showClosed }: Props) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const { user } = useAuth();
   const [activeCard, setActiveCard] = useState<EnquiryRow | null>(null);
   const [overColumn, setOverColumn] = useState<LeadStatus | null>(null);
   const [lostModal, setLostModal] = useState<{ row: EnquiryRow; toStatus: LeadStatus } | null>(null);
@@ -69,21 +68,16 @@ export function EnquiryKanban({ rows, isLoading, showClosed }: Props) {
       // quotation (approved/sent/accepted) — no advancing the pipeline off a draft.
       let wonQuote: { id: string; total_amount: number } | null = null;
       if (toStatus === "approved") {
-        const { data: fq } = await supabase.from("quotations")
-          .select("id, total_amount")
-          .eq("enquiry_id", id)
-          .in("status", ["approved", "sent", "accepted"] as any)
-          .order("version", { ascending: false })
-          .limit(1)
-          .maybeSingle();
+        const quotes = await apiClient.get<Array<{ id: string; total_amount: number; status: string }>>(
+          "/quotations",
+          { enquiry_id: id },
+        );
+        const fq = quotes.find((q) => ["approved", "sent", "accepted"].includes(q.status));
         if (!fq) throw new Error("Approve and send a quotation to the client before marking this enquiry as Won.");
-        wonQuote = fq as { id: string; total_amount: number };
+        wonQuote = { id: fq.id, total_amount: fq.total_amount };
       }
 
-      const updates: Record<string, unknown> = {
-        status: toStatus,
-        updated_at: new Date().toISOString(),
-      };
+      const updates: Record<string, unknown> = { status: toStatus };
       if (toStatus === "lost") {
         updates.lost_reason = reason;
         updates.lost_date = new Date().toISOString().slice(0, 10);
@@ -100,30 +94,26 @@ export function EnquiryKanban({ rows, isLoading, showClosed }: Props) {
         updates.lost_reason = null;
       }
 
-      const { error } = await supabase.from("enquiries").update(updates).eq("id", id);
-      if (error) throw error;
+      await apiClient.patch(`/enquiries/${id}`, updates);
 
       const eventType = (fromStatus === "lost" || fromStatus === "inactive") && toStatus === "follow_up"
         ? "reactivated"
         : "status_change";
-
-      await supabase.from("enquiry_events").insert({
-        enquiry_id: id,
+      await apiClient.post(`/enquiries/${id}/events`, {
         event_type: eventType,
         from_status: fromStatus,
         to_status: toStatus,
-        triggered_by: user?.id ?? null,
         metadata: reason ? { reason } : null,
       });
 
       if (toStatus === "approved" && wonQuote) {
         // Mark the winning quotation accepted so the quote status mirrors the deal.
-        await supabase.from("quotations").update({ status: "accepted" as any }).eq("id", wonQuote.id);
+        await apiClient.patch(`/quotations/${wonQuote.id}`, { status: "accepted" });
 
         // Auto-create the advance when the winning quote has a real total.
         if (Number(wonQuote.total_amount) > 0) {
           const advanceAmount = Math.round(Number(wonQuote.total_amount) * 0.5 * 100) / 100;
-          await supabase.from("payments").insert({
+          await apiClient.post("/payments", {
             enquiry_id: id,
             quotation_id: wonQuote.id,
             payment_type: "advance",
@@ -132,73 +122,54 @@ export function EnquiryKanban({ rows, isLoading, showClosed }: Props) {
           });
 
           // Auto-send advance payment request to client
-          const { data: enqData } = await supabase
-            .from("enquiries")
-            .select("ref_number, client_id, clients(name, email, email_bounced, whatsapp_number, whatsapp_invalid)")
-            .eq("id", id)
-            .single();
+          const enq = await apiClient.get<Tables<"enquiries">>(`/enquiries/${id}`);
+          const client = await apiClient.get<Tables<"clients">>(`/clients/${enq.client_id}`);
+          const ref = enq.ref_number;
+          const amt = new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(advanceAmount);
 
-          if (enqData) {
-            const client = (enqData as any).clients;
-            const ref = enqData.ref_number;
-            const amt = new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(advanceAmount);
+          if (client?.email && !client.email_bounced) {
+            void sendNotification({
+              to: client.email,
+              template: "payment_request",
+              params: { client_name: client.name, ref_number: ref, amount: amt },
+            });
+            await apiClient.post("/communications", {
+              enquiry_id: id,
+              client_id: enq.client_id,
+              channel: "email",
+              direction: "outbound",
+              subject: `Advance Payment Request — ${ref}`,
+              body: `Advance payment of ${amt} requested automatically on Won status`,
+              status: "sent",
+            });
+          }
 
-            // Send email
-            if (client?.email && !client.email_bounced) {
-              sendNotification({
-                to: client.email,
-                template: "payment_request",
-                params: { client_name: client.name, ref_number: ref, amount: amt },
-              });
-
-              await supabase.from("communication_log").insert({
-                enquiry_id: id,
-                client_id: enqData.client_id,
-                channel: "email",
-                direction: "outbound",
-                subject: `Advance Payment Request — ${ref}`,
-                body: `Advance payment of ${amt} requested automatically on Won status`,
-                status: "sent",
-              });
-            }
-
-            // Send WhatsApp
-            if (client?.whatsapp_number && !client.whatsapp_invalid) {
-              supabase.functions.invoke("send-whatsapp", {
-                body: {
-                  phone_number: client.whatsapp_number,
-                  template_name: "qms_payment_request",
-                  parameters: [
-                    { name: "client_name", value: client.name },
-                    { name: "ref_number", value: ref },
-                    { name: "amount", value: amt },
-                  ],
-                },
-              }).catch(() => {});
-
-              await supabase.from("communication_log").insert({
-                enquiry_id: id,
-                client_id: enqData.client_id,
-                channel: "whatsapp",
-                direction: "outbound",
-                subject: `Advance Payment Request — ${ref}`,
-                body: `Advance payment of ${amt} requested via WhatsApp`,
-                status: "sent",
-              });
-            }
+          if (client?.whatsapp_number && !client.whatsapp_invalid) {
+            void apiClient
+              .post("/integrations/whatsapp", {
+                phone_number: client.whatsapp_number,
+                template_name: "qms_payment_request",
+                parameters: [
+                  { name: "client_name", value: client.name },
+                  { name: "ref_number", value: ref },
+                  { name: "amount", value: amt },
+                ],
+              })
+              .catch(() => {});
+            await apiClient.post("/communications", {
+              enquiry_id: id,
+              client_id: enq.client_id,
+              channel: "whatsapp",
+              direction: "outbound",
+              subject: `Advance Payment Request — ${ref}`,
+              body: `Advance payment of ${amt} requested via WhatsApp`,
+              status: "sent",
+            });
           }
         }
 
-        const { data: existing } = await supabase
-          .from("job_completion")
-          .select("id")
-          .eq("enquiry_id", id)
-          .limit(1)
-          .maybeSingle();
-
-        if (!existing) {
-          await supabase.from("job_completion").insert({ enquiry_id: id });
-        }
+        // get-or-create the job completion tracker (idempotent server-side)
+        await apiClient.post("/job-completion", { enquiry_id: id });
       }
 
       if (shouldCancelFollowUps(toStatus)) {

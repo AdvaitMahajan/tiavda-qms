@@ -10,9 +10,11 @@
  * in shape to what the frontend already gets from Supabase (snake_case keys,
  * JSONB values untouched) — so no case conversion is needed and nothing breaks.
  *
- * Tenancy seam: when multi-tenancy is switched on, an `org_id` column is added
- * to every business table and the repositories scope by it. Today there is no
- * org_id in the DB, so the schema matches the single-tenant reality exactly.
+ * Tenancy (Phase 2): every business table carries a NOT NULL `org_id`. The API
+ * runs each authenticated request with `app.current_org_id` set on a dedicated
+ * pooled connection, and Postgres RLS (org_isolation policies, FORCE) filters by
+ * it — so reads/updates/deletes are scoped by the DB itself; inserts must stamp
+ * org_id (NOT NULL enforces this at the type level here).
  */
 import { sql } from 'drizzle-orm';
 import {
@@ -106,6 +108,9 @@ export const user_role = pgEnum('user_role', ['super_admin', 'admin', 'mobilizat
 // ─── profiles ──────────────────────────────────────────────────────────────
 export const profiles = pgTable('profiles', {
   id: uuid('id').primaryKey(),
+  // Nullable: a pure platform admin may belong to no business org.
+  org_id: uuid('org_id'),
+  is_platform_admin: boolean('is_platform_admin').notNull().default(false),
   email: text('email').notNull(),
   full_name: text('full_name'),
   phone: text('phone'),
@@ -119,6 +124,7 @@ export const profiles = pgTable('profiles', {
 // ─── clients ─────────────────────────────────────────────────────────────────
 export const clients = pgTable('clients', {
   id: uuid('id').primaryKey().defaultRandom(),
+  org_id: uuid('org_id').notNull(),
   name: text('name').notNull(),
   company: text('company'),
   phone: text('phone').notNull(),
@@ -142,6 +148,7 @@ export const clients = pgTable('clients', {
 // ─── intake_tokens ───────────────────────────────────────────────────────────
 export const intake_tokens = pgTable('intake_tokens', {
   id: uuid('id').primaryKey().defaultRandom(),
+  org_id: uuid('org_id').notNull(),
   token: text('token').notNull().unique(),
   client_id: uuid('client_id'),
   enquiry_id: uuid('enquiry_id'),
@@ -155,6 +162,7 @@ export const intake_tokens = pgTable('intake_tokens', {
 // ─── intake_submissions ──────────────────────────────────────────────────────
 export const intake_submissions = pgTable('intake_submissions', {
   id: uuid('id').primaryKey().defaultRandom(),
+  org_id: uuid('org_id').notNull(),
   token_id: uuid('token_id').notNull(),
   client_id: uuid('client_id'),
   site_address: text('site_address').notNull(),
@@ -180,6 +188,7 @@ export const enquiries = pgTable('enquiries', {
   // Trigger-generated (generate_ref_number). default('') marks it optional for
   // inserts so Drizzle omits it and the BEFORE-INSERT trigger fills it.
   ref_number: text('ref_number').notNull().unique().default(''),
+  org_id: uuid('org_id').notNull(),
   client_id: uuid('client_id').notNull(),
   submission_id: uuid('submission_id'),
   assigned_to: uuid('assigned_to'),
@@ -235,6 +244,7 @@ export const enquiries = pgTable('enquiries', {
 // ─── quotations ──────────────────────────────────────────────────────────────
 export const quotations = pgTable('quotations', {
   id: uuid('id').primaryKey().defaultRandom(),
+  org_id: uuid('org_id').notNull(),
   enquiry_id: uuid('enquiry_id').notNull(),
   variant: text('variant').notNull(),
   variant_label: text('variant_label'),
@@ -276,6 +286,7 @@ export const quotations = pgTable('quotations', {
 // ─── communication_log ───────────────────────────────────────────────────────
 export const communication_log = pgTable('communication_log', {
   id: uuid('id').primaryKey().defaultRandom(),
+  org_id: uuid('org_id').notNull(),
   enquiry_id: uuid('enquiry_id').notNull(),
   client_id: uuid('client_id').notNull(),
   channel: comm_channel('channel').notNull(),
@@ -294,6 +305,7 @@ export const communication_log = pgTable('communication_log', {
 // ─── follow_ups ──────────────────────────────────────────────────────────────
 export const follow_ups = pgTable('follow_ups', {
   id: uuid('id').primaryKey().defaultRandom(),
+  org_id: uuid('org_id').notNull(),
   enquiry_id: uuid('enquiry_id').notNull(),
   assigned_to: uuid('assigned_to'),
   scheduled_date: date('scheduled_date').notNull(),
@@ -313,6 +325,7 @@ export const follow_ups = pgTable('follow_ups', {
 // ─── payments ────────────────────────────────────────────────────────────────
 export const payments = pgTable('payments', {
   id: uuid('id').primaryKey().defaultRandom(),
+  org_id: uuid('org_id').notNull(),
   enquiry_id: uuid('enquiry_id').notNull(),
   quotation_id: uuid('quotation_id'),
   payment_type: text('payment_type').notNull(),
@@ -333,6 +346,7 @@ export const payments = pgTable('payments', {
 // ─── mobilisation ────────────────────────────────────────────────────────────
 export const mobilisation = pgTable('mobilisation', {
   id: uuid('id').primaryKey().defaultRandom(),
+  org_id: uuid('org_id').notNull(),
   enquiry_id: uuid('enquiry_id').notNull().unique(),
   team_lead_id: uuid('team_lead_id'),
   team_description: text('team_description'),
@@ -359,6 +373,7 @@ export const mobilisation = pgTable('mobilisation', {
 // ─── mob_confirmation_tokens ─────────────────────────────────────────────────
 export const mob_confirmation_tokens = pgTable('mob_confirmation_tokens', {
   id: uuid('id').primaryKey().defaultRandom(),
+  org_id: uuid('org_id').notNull(),
   mobilisation_id: uuid('mobilisation_id').notNull(),
   enquiry_id: uuid('enquiry_id').notNull(),
   client_id: uuid('client_id'),
@@ -374,6 +389,7 @@ export const mob_confirmation_tokens = pgTable('mob_confirmation_tokens', {
 // ─── job_completion ──────────────────────────────────────────────────────────
 export const job_completion = pgTable('job_completion', {
   id: uuid('id').primaryKey().defaultRandom(),
+  org_id: uuid('org_id').notNull(),
   enquiry_id: uuid('enquiry_id').notNull().unique(),
   mobilisation_id: uuid('mobilisation_id'),
   site_completion_date: date('site_completion_date'),
@@ -398,6 +414,7 @@ export const job_completion = pgTable('job_completion', {
 // ─── job_reminders ───────────────────────────────────────────────────────────
 export const job_reminders = pgTable('job_reminders', {
   id: uuid('id').primaryKey().defaultRandom(),
+  org_id: uuid('org_id').notNull(),
   job_id: uuid('job_id').notNull(),
   enquiry_id: uuid('enquiry_id').notNull(),
   reminder_type: text('reminder_type').notNull(),
@@ -413,6 +430,7 @@ export const job_reminders = pgTable('job_reminders', {
 // ─── notifications ───────────────────────────────────────────────────────────
 export const notifications = pgTable('notifications', {
   id: uuid('id').primaryKey().defaultRandom(),
+  org_id: uuid('org_id').notNull(),
   user_id: uuid('user_id').notNull(),
   enquiry_id: uuid('enquiry_id'),
   type: text('type').notNull(),
@@ -426,6 +444,7 @@ export const notifications = pgTable('notifications', {
 // ─── enquiry_events ──────────────────────────────────────────────────────────
 export const enquiry_events = pgTable('enquiry_events', {
   id: uuid('id').primaryKey().defaultRandom(),
+  org_id: uuid('org_id').notNull(),
   enquiry_id: uuid('enquiry_id').notNull(),
   event_type: text('event_type').notNull(),
   from_status: lead_status('from_status'),
@@ -437,7 +456,9 @@ export const enquiry_events = pgTable('enquiry_events', {
 
 // ─── app_settings ────────────────────────────────────────────────────────────
 export const app_settings = pgTable('app_settings', {
-  key: text('key').primaryKey(),
+  // PK is composite (org_id, key) in the DB; Drizzle just needs to know the cols.
+  org_id: uuid('org_id').notNull(),
+  key: text('key').notNull(),
   value: text('value').notNull(),
   updated_at: timestamp('updated_at', { withTimezone: true, mode: 'string' }).defaultNow(),
 });
@@ -445,6 +466,7 @@ export const app_settings = pgTable('app_settings', {
 // ─── rate_matrix ─────────────────────────────────────────────────────────────
 export const rate_matrix = pgTable('rate_matrix', {
   id: uuid('id').primaryKey().defaultRandom(),
+  org_id: uuid('org_id').notNull(),
   city: text('city').notNull(),
   state: text('state'),
   structure_type: structure_type('structure_type').notNull(),
@@ -466,6 +488,7 @@ export const rate_matrix = pgTable('rate_matrix', {
 // ─── site_visits ─────────────────────────────────────────────────────────────
 export const site_visits = pgTable('site_visits', {
   id: uuid('id').primaryKey().defaultRandom(),
+  org_id: uuid('org_id').notNull(),
   enquiry_id: uuid('enquiry_id').notNull(),
   visit_date: date('visit_date').notNull(),
   geologist_id: uuid('geologist_id'),
@@ -483,6 +506,30 @@ export const site_visits = pgTable('site_visits', {
   token: text('token').notNull().unique().default(''),
   notification_sent: boolean('notification_sent').notNull().default(false),
   notification_sent_at: timestamp('notification_sent_at', { withTimezone: true, mode: 'string' }),
+  created_at: timestamp('created_at', { withTimezone: true, mode: 'string' }).notNull().defaultNow(),
+  updated_at: timestamp('updated_at', { withTimezone: true, mode: 'string' }).notNull().defaultNow(),
+});
+
+// ─── organizations (tenants) ─────────────────────────────────────────────────
+export const organizations = pgTable('organizations', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  name: text('name').notNull(),
+  slug: text('slug').unique(),
+  status: text('status').notNull().default('active'), // active | suspended
+  plan: text('plan'),
+  created_at: timestamp('created_at', { withTimezone: true, mode: 'string' }).notNull().defaultNow(),
+  updated_at: timestamp('updated_at', { withTimezone: true, mode: 'string' }).notNull().defaultNow(),
+});
+
+// ─── org_integrations (per-org provider credentials, encrypted) ──────────────
+export const org_integrations = pgTable('org_integrations', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  org_id: uuid('org_id').notNull(),
+  provider: text('provider').notNull(), // 'email' | 'whatsapp' | 'drive'
+  config: jsonb('config').notNull().default(sql`'{}'::jsonb`),
+  secret_ciphertext: text('secret_ciphertext'),
+  is_active: boolean('is_active').notNull().default(true),
+  updated_by: uuid('updated_by'),
   created_at: timestamp('created_at', { withTimezone: true, mode: 'string' }).notNull().defaultNow(),
   updated_at: timestamp('updated_at', { withTimezone: true, mode: 'string' }).notNull().defaultNow(),
 });

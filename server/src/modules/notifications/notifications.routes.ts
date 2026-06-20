@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { and, desc, eq, sql } from 'drizzle-orm';
-import { db } from '../../db';
+import { db, requireOrgId } from '../../db';
 import { notifications } from '../../db/schema';
 import { authenticate, getAuth } from '../../middleware/auth';
 import { requireNotViewer } from '../../middleware/roles';
@@ -78,7 +78,7 @@ notificationsRouter.post(
   requireNotViewer,
   asyncHandler(async (req, res) => {
     const body = createSchema.parse(req.body);
-    const rows = await db.insert(notifications).values(body).returning();
+    const rows = await db.insert(notifications).values({ ...body, org_id: requireOrgId() }).returning();
     res.status(201).json(rows[0]);
   }),
 );

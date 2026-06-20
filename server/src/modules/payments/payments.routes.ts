@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { desc, eq } from 'drizzle-orm';
-import { db } from '../../db';
+import { db, requireOrgId } from '../../db';
 import { payments } from '../../db/schema';
 import { authenticate } from '../../middleware/auth';
 import { requireEditor } from '../../middleware/roles';
@@ -56,7 +56,7 @@ paymentsRouter.post(
   requireEditor,
   asyncHandler(async (req, res) => {
     const body = createSchema.parse(req.body);
-    const rows = await db.insert(payments).values(body).returning();
+    const rows = await db.insert(payments).values({ ...body, org_id: requireOrgId() }).returning();
     res.status(201).json(rows[0]);
   }),
 );

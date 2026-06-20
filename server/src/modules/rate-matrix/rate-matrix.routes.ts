@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { asc, eq } from 'drizzle-orm';
-import { db } from '../../db';
+import { db, requireOrgId } from '../../db';
 import { rate_matrix } from '../../db/schema';
 import { authenticate, getAuth } from '../../middleware/auth';
 import { requireEditor } from '../../middleware/roles';
@@ -48,7 +48,7 @@ rateMatrixRouter.post(
     const body = createSchema.parse(req.body);
     const rows = await db
       .insert(rate_matrix)
-      .values({ ...body, created_by: auth.userId })
+      .values({ ...body, created_by: auth.userId, org_id: requireOrgId() })
       .returning();
     res.status(201).json(rows[0]);
   }),

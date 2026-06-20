@@ -18,7 +18,7 @@ dashboardRouter.get(
     const t = today();
     const [
       newEnq, sentQuotes, followToday, pendingPay, activeJobs, totalEnq, wonEnq, intakePending,
-      pipeline, book,
+      pipeline, book, orderBook, pendingQuotes,
     ] = await Promise.all([
       db.select({ c: COUNT }).from(enquiries).where(and(eq(enquiries.status, 'new'), isNull(enquiries.deleted_at))),
       db.select({ c: COUNT }).from(enquiries).where(and(eq(enquiries.status, 'sent'), isNull(enquiries.deleted_at))),
@@ -34,6 +34,8 @@ dashboardRouter.get(
         .from(quotations)
         .innerJoin(enquiries, eq(quotations.enquiry_id, enquiries.id))
         .where(and(eq(quotations.status, 'approved'), notInArray(enquiries.status, ['lost', 'inactive', 'completed']), isNull(enquiries.deleted_at))),
+      db.select({ c: COUNT }).from(enquiries).where(and(inArray(enquiries.status, ['approved', 'payment_received', 'mobilization_scheduled', 'job_active']), isNull(enquiries.deleted_at))),
+      db.select({ c: COUNT }).from(enquiries).where(and(inArray(enquiries.status, ['sent', 'follow_up', 'negotiation']), isNull(enquiries.deleted_at))),
     ]);
 
     res.json({
@@ -47,6 +49,8 @@ dashboardRouter.get(
       intake_pending: intakePending[0]?.c ?? 0,
       pipeline_value: pipeline[0]?.s ?? 0,
       quotation_book_value: book[0]?.s ?? 0,
+      order_book: orderBook[0]?.c ?? 0,
+      pending_quotes: pendingQuotes[0]?.c ?? 0,
     });
   }),
 );

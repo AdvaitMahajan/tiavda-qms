@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
+import { apiClient } from "@/lib/apiClient";
 import { useAuth } from "@/hooks/useAuth";
 import { relativeTime } from "@/lib/utils";
 import { motion, AnimatePresence } from "framer-motion";
@@ -79,51 +79,32 @@ export function TopBar() {
     queryKey: ["notif-count"],
     queryFn: async () => {
       if (!user) return 0;
-      const { count } = await supabase
-        .from("notifications")
-        .select("id", { count: "exact", head: true })
-        .eq("user_id", user.id)
-        .eq("read", false);
+      const { count } = await apiClient.get<{ count: number }>("/notifications/unread-count");
       return count ?? 0;
     },
     enabled: !!user,
+    refetchInterval: 10_000,
+    refetchOnWindowFocus: true,
   });
 
   // ── Notifications list (only when dropdown open) ──
   const { data: notifications = [], refetch: refetchNotifs } = useQuery({
     queryKey: ["notif-list"],
-    queryFn: async () => {
-      if (!user) return [];
-      const { data } = await supabase
-        .from("notifications")
-        .select("*")
-        .eq("user_id", user.id)
-        .order("created_at", { ascending: false })
-        .limit(20);
-      return data ?? [];
-    },
+    queryFn: () => apiClient.get<Notification[]>("/notifications", { limit: 20 }),
     enabled: !!user && open,
   });
 
-  // ── Realtime subscription ──
+  // ── Bounce the bell when the polled unread count increases ──
+  const prevCountRef = useRef(0);
   useEffect(() => {
-    if (!user) return;
-    const channel = supabase
-      .channel("notifications-bell")
-      .on("postgres_changes", {
-        event: "INSERT",
-        schema: "public",
-        table: "notifications",
-        filter: `user_id=eq.${user.id}`,
-      }, () => {
-        queryClient.invalidateQueries({ queryKey: ["notif-count"] });
-        if (open) refetchNotifs();
-        setBellBounce(true);
-        setTimeout(() => setBellBounce(false), 600);
-      })
-      .subscribe();
-    return () => { supabase.removeChannel(channel); };
-  }, [user, queryClient, open, refetchNotifs]);
+    if (unreadCount > prevCountRef.current) {
+      setBellBounce(true);
+      const t = setTimeout(() => setBellBounce(false), 600);
+      prevCountRef.current = unreadCount;
+      return () => clearTimeout(t);
+    }
+    prevCountRef.current = unreadCount;
+  }, [unreadCount]);
 
   // ── Click outside to close ──
   useEffect(() => {
@@ -139,18 +120,14 @@ export function TopBar() {
 
   const handleMarkAllRead = async () => {
     if (!user) return;
-    await supabase
-      .from("notifications")
-      .update({ read: true })
-      .eq("user_id", user.id)
-      .eq("read", false);
+    await apiClient.patch("/notifications/read-all");
     queryClient.invalidateQueries({ queryKey: ["notif-count"] });
     refetchNotifs();
   };
 
   const handleClickNotif = async (notif: Notification) => {
     if (!notif.read) {
-      await supabase.from("notifications").update({ read: true }).eq("id", notif.id);
+      await apiClient.patch(`/notifications/${notif.id}/read`);
       queryClient.invalidateQueries({ queryKey: ["notif-count"] });
     }
     setOpen(false);

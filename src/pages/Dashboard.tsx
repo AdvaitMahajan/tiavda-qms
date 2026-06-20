@@ -1,8 +1,8 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 import { AddLeadDialog } from "@/components/AddLeadDialog";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
+import { useQuery } from "@tanstack/react-query";
+import { apiClient } from "@/lib/apiClient";
 import { formatCurrency, relativeTime } from "@/lib/utils";
 import { Skeleton } from "@/components/ui/skeleton";
 import { SkeletonCard } from "@/components/ui/SkeletonLoader";
@@ -153,28 +153,22 @@ function useStatCards() {
   return useQuery({
     queryKey: ["dashboard-stats"],
     queryFn: async () => {
-      const today = new Date().toISOString().slice(0, 10);
-      const [r1, r2, r3, r4, r5, rTotal, rWon, rPipeline, rOrderBook, rPendingQuotes, rQuotationBook, rIntakePending] = await Promise.all([
-        supabase.from("enquiries").select("id", { count: "exact", head: true }).eq("status", "new").is("deleted_at", null),
-        supabase.from("enquiries").select("id", { count: "exact", head: true }).eq("status", "sent").is("deleted_at", null),
-        supabase.from("follow_ups").select("id", { count: "exact", head: true }).eq("scheduled_date", today).eq("outcome", "pending"),
-        supabase.from("payments").select("id", { count: "exact", head: true }).eq("status", "request_sent"),
-        supabase.from("enquiries").select("id", { count: "exact", head: true }).in("status", ["job_active", "mobilization_scheduled"]).is("deleted_at", null),
-        supabase.from("enquiries").select("id", { count: "exact", head: true }).is("deleted_at", null),
-        supabase.from("enquiries").select("id", { count: "exact", head: true }).in("status", ["approved", "payment_received", "mobilization_scheduled", "job_active", "confirmed", "completed"]).is("deleted_at", null),
-        supabase.from("quotations").select("total_amount").eq("status", "approved"),
-        supabase.from("enquiries").select("id", { count: "exact", head: true }).in("status", ["approved", "payment_received", "mobilization_scheduled", "job_active"]).is("deleted_at", null),
-        supabase.from("enquiries").select("id", { count: "exact", head: true }).in("status", ["sent", "follow_up", "negotiation"]).is("deleted_at", null),
-        supabase.from("quotations").select("total_amount, enquiry_id, enquiries!inner(status)").eq("status", "approved").not("enquiries.status", "in", "(lost,inactive,completed)"),
-        supabase.from("enquiries").select("id", { count: "exact", head: true }).eq("status", "intake_pending").is("deleted_at", null),
-      ]);
-      const total = rTotal.count ?? 0;
-      const won = rWon.count ?? 0;
+      const d = await apiClient.get<{
+        new_enquiries: number; sent_quotes: number; followups_today: number;
+        pending_payments: number; active_jobs: number; total_enquiries: number;
+        won_enquiries: number; intake_pending: number; pipeline_value: number;
+        quotation_book_value: number; order_book: number; pending_quotes: number;
+      }>("/dashboard/stats");
+      const total = d.total_enquiries;
+      const won = d.won_enquiries;
       const conversionRate = total > 0 ? Math.round((won / total) * 100) : 0;
-      const pipelineValue = (rPipeline.data ?? []).reduce((sum, q) => sum + Number(q.total_amount), 0);
-      const quotationBookValue = (rQuotationBook.data ?? []).reduce((sum, q) => sum + Number(q.total_amount), 0);
-      return [r1.count ?? 0, r2.count ?? 0, r3.count ?? 0, r4.count ?? 0, r5.count ?? 0, conversionRate, Math.round(pipelineValue), rOrderBook.count ?? 0, rPendingQuotes.count ?? 0, Math.round(quotationBookValue), rIntakePending.count ?? 0];
+      return [
+        d.new_enquiries, d.sent_quotes, d.followups_today, d.pending_payments, d.active_jobs,
+        conversionRate, Math.round(d.pipeline_value), d.order_book, d.pending_quotes,
+        Math.round(d.quotation_book_value), d.intake_pending,
+      ];
     },
+    refetchInterval: 20_000,
   });
 }
 
@@ -196,11 +190,12 @@ function usePipelineCounts() {
   return useQuery({
     queryKey: ["dashboard-pipeline"],
     queryFn: async () => {
-      const { data } = await supabase.from("enquiries").select("status").is("deleted_at", null);
+      const rows = await apiClient.get<Array<{ status: string; count: number }>>("/dashboard/pipeline");
       const counts: Record<string, number> = {};
-      data?.forEach((r) => { counts[r.status] = (counts[r.status] ?? 0) + 1; });
+      rows.forEach((r) => { counts[r.status] = r.count; });
       return ALL_STATUSES.map((s) => ({ status: s, count: counts[s] ?? 0 }));
     },
+    refetchInterval: 20_000,
   });
 }
 
@@ -213,24 +208,17 @@ function useTodaysActions() {
   return useQuery({
     queryKey: ["dashboard-actions"],
     queryFn: async () => {
-      const today = new Date().toISOString().slice(0, 10);
-      const { data: followUps } = await supabase
-        .from("follow_ups").select("id, scheduled_date, notes, enquiry_id")
-        .lte("scheduled_date", today).eq("outcome", "pending")
-        .order("scheduled_date", { ascending: true }).limit(10);
-      if (!followUps?.length) return [];
-      const enquiryIds = [...new Set(followUps.map((f) => f.enquiry_id))];
-      const { data: enquiries } = await supabase.from("enquiries").select("id, ref_number, site_city, client_id").in("id", enquiryIds);
-      const clientIds = [...new Set(enquiries?.map((e) => e.client_id) ?? [])];
-      const { data: clients } = await supabase.from("clients").select("id, name").in("id", clientIds);
-      const enqMap = new Map(enquiries?.map((e) => [e.id, e]) ?? []);
-      const cliMap = new Map(clients?.map((c) => [c.id, c]) ?? []);
-      return followUps.map((f): ActionItem => {
-        const enq = enqMap.get(f.enquiry_id);
-        const cli = enq ? cliMap.get(enq.client_id) : null;
-        return { id: f.id, enquiry_id: f.enquiry_id, ref_number: enq?.ref_number ?? "", client_name: cli?.name ?? "Unknown", site_city: enq?.site_city ?? "", scheduled_date: f.scheduled_date, notes: f.notes };
-      });
+      const rows = await apiClient.get<Array<{
+        id: string; enquiry_id: string; ref_number: string | null; site_city: string | null;
+        client_name: string | null; scheduled_date: string; notes: string | null;
+      }>>("/dashboard/actions");
+      return rows.map((f): ActionItem => ({
+        id: f.id, enquiry_id: f.enquiry_id, ref_number: f.ref_number ?? "",
+        client_name: f.client_name ?? "Unknown", site_city: f.site_city ?? "",
+        scheduled_date: f.scheduled_date, notes: f.notes,
+      }));
     },
+    refetchInterval: 20_000,
   });
 }
 
@@ -243,28 +231,17 @@ function useJobReminders() {
   return useQuery({
     queryKey: ["dashboard-reminders"],
     queryFn: async () => {
-      const today = new Date().toISOString().slice(0, 10);
-      const futureDate = new Date(); futureDate.setDate(futureDate.getDate() + 7);
-      const future = futureDate.toISOString().slice(0, 10);
-      const { data: reminders } = await supabase.from("job_reminders")
-        .select("id, reminder_type, days_before, scheduled_for, target_date, enquiry_id, job_id")
-        .gte("scheduled_for", today).lte("scheduled_for", future).eq("sent", false)
-        .order("scheduled_for", { ascending: true }).limit(8);
-      if (!reminders?.length) return [];
-      const enquiryIds = [...new Set(reminders.map((r) => r.enquiry_id))];
-      const { data: enquiries } = await supabase.from("enquiries").select("id, ref_number, client_id").in("id", enquiryIds);
-      const clientIds = [...new Set(enquiries?.map((e) => e.client_id) ?? [])];
-      const { data: clients } = await supabase.from("clients").select("id, name").in("id", clientIds);
-      const enqMap = new Map(enquiries?.map((e) => [e.id, e]) ?? []);
-      const cliMap = new Map(clients?.map((c) => [c.id, c]) ?? []);
-      return reminders.map((r): ReminderItem => {
-        const enq = enqMap.get(r.enquiry_id);
-        const cli = enq ? cliMap.get(enq.client_id) : null;
+      const rows = await apiClient.get<Array<{
+        id: string; enquiry_id: string; ref_number: string | null; client_name: string | null;
+        reminder_type: string; days_before: number; scheduled_for: string;
+      }>>("/dashboard/reminders");
+      return rows.map((r): ReminderItem => {
         const t = new Date(); t.setHours(0, 0, 0, 0);
         const diffDays = Math.max(0, Math.round((new Date(r.scheduled_for).getTime() - t.getTime()) / 86400000));
-        return { id: r.id, enquiry_id: r.enquiry_id, ref_number: enq?.ref_number ?? "", client_name: cli?.name ?? "Unknown", reminder_type: r.reminder_type, days_before: diffDays, scheduled_for: r.scheduled_for };
+        return { id: r.id, enquiry_id: r.enquiry_id, ref_number: r.ref_number ?? "", client_name: r.client_name ?? "Unknown", reminder_type: r.reminder_type, days_before: diffDays, scheduled_for: r.scheduled_for };
       });
     },
+    refetchInterval: 20_000,
   });
 }
 
@@ -278,20 +255,17 @@ function useActivityFeed() {
   return useQuery({
     queryKey: ["dashboard-activity"],
     queryFn: async () => {
-      const { data: events } = await supabase.from("enquiry_events").select("id, event_type, from_status, to_status, created_at, enquiry_id").order("created_at", { ascending: false }).limit(15);
-      if (!events?.length) return [];
-      const enquiryIds = [...new Set(events.map((e) => e.enquiry_id))];
-      const { data: enquiries } = await supabase.from("enquiries").select("id, ref_number, client_id").in("id", enquiryIds);
-      const clientIds = [...new Set(enquiries?.map((e) => e.client_id) ?? [])];
-      const { data: clients } = await supabase.from("clients").select("id, name").in("id", clientIds);
-      const enqMap = new Map(enquiries?.map((e) => [e.id, e]) ?? []);
-      const cliMap = new Map(clients?.map((c) => [c.id, c]) ?? []);
-      return events.map((ev): ActivityItem => {
-        const enq = enqMap.get(ev.enquiry_id);
-        const cli = enq ? cliMap.get(enq.client_id) : null;
-        return { id: ev.id, event_type: ev.event_type, from_status: ev.from_status, to_status: ev.to_status, created_at: ev.created_at, ref_number: enq?.ref_number ?? "", enquiry_id: ev.enquiry_id, client_name: cli?.name ?? "Unknown" };
-      });
+      const rows = await apiClient.get<Array<{
+        id: string; event_type: string; from_status: string | null; to_status: string | null;
+        created_at: string; enquiry_id: string; ref_number: string | null; client_name: string | null;
+      }>>("/dashboard/activity");
+      return rows.map((ev): ActivityItem => ({
+        id: ev.id, event_type: ev.event_type, from_status: ev.from_status, to_status: ev.to_status,
+        created_at: ev.created_at, ref_number: ev.ref_number ?? "", enquiry_id: ev.enquiry_id,
+        client_name: ev.client_name ?? "Unknown",
+      }));
     },
+    refetchInterval: 20_000,
   });
 }
 
@@ -323,7 +297,6 @@ function getEventColor(ev: ActivityItem): string {
 
 export default function Dashboard() {
   const navigate = useNavigate();
-  const queryClient = useQueryClient();
   const stats = useStatCards();
   const pipeline = usePipelineCounts();
   const actions = useTodaysActions();
@@ -335,19 +308,6 @@ export default function Dashboard() {
   const formattedDate = new Date().toLocaleDateString("en-GB", {
     weekday: "long", day: "numeric", month: "long", year: "numeric",
   });
-
-  useEffect(() => {
-    const channel = supabase
-      .channel("dashboard-events")
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: "enquiry_events" }, () => {
-        queryClient.invalidateQueries({ queryKey: ["dashboard-activity"] });
-        queryClient.invalidateQueries({ queryKey: ["dashboard-stats"] });
-        queryClient.invalidateQueries({ queryKey: ["dashboard-pipeline"] });
-      })
-      .subscribe();
-    return () => { supabase.removeChannel(channel); };
-  }, [queryClient]);
-
 
   const cardStyle = {
     background: "#FFFFFF",

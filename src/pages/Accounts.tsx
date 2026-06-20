@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
+import { apiClient } from "@/lib/apiClient";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import {
   Wallet, TrendingUp, AlertTriangle, Clock, CheckCircle2, IndianRupee, Search, Download,
@@ -57,11 +57,8 @@ export default function Accounts() {
   const { data: rows = [], isLoading } = useQuery({
     queryKey: ["accounts-payments"],
     queryFn: async () => {
-      const { data } = await supabase
-        .from("payments")
-        .select("id, payment_type, amount_requested, amount_received, status, payment_method, transaction_ref, due_date, request_sent_at, received_at, created_at, enquiries(ref_number, site_city, deleted_at, clients(name, company))")
-        .order("created_at", { ascending: false });
-      return ((data ?? []) as any[]).filter((r) => !r.enquiries?.deleted_at) as Row[];
+      const data = await apiClient.get<any[]>("/accounts/payments");
+      return data.filter((r) => !r.enquiries?.deleted_at) as Row[];
     },
   });
 

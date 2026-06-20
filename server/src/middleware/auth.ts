@@ -67,19 +67,22 @@ export async function authenticate(req: Request, res: Response, next: NextFuncti
     const release = (): void => {
       if (released) return;
       released = true;
-      client.query('RESET ALL').catch(() => undefined).finally(() => client.release());
+      // RESET ROLE returns to postgres; RESET ALL clears the tenant GUCs.
+      client.query('RESET ROLE; RESET ALL').catch(() => undefined).finally(() => client.release());
     };
     res.on('finish', release);
     res.on('close', release);
 
     try {
-      await client.query('RESET ALL');
+      await client.query('RESET ROLE; RESET ALL');
       if (req.auth.orgId) {
         await client.query("select set_config('app.current_org_id', $1, false)", [req.auth.orgId]);
       }
       if (req.auth.isPlatformAdmin) {
         await client.query("select set_config('app.platform_admin', 'true', false)");
       }
+      // Become the NOBYPASSRLS role so org_isolation policies are enforced.
+      await client.query('SET ROLE app_tenant');
     } catch (e) {
       release();
       throw e;

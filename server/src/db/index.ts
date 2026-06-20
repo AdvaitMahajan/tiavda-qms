@@ -77,16 +77,17 @@ export async function runWithTenant<T>(
 ): Promise<T> {
   const client = await pool.connect();
   try {
-    await client.query('RESET ALL');
+    await client.query('RESET ROLE; RESET ALL');
     if (ctx.orgId) await client.query("select set_config('app.current_org_id', $1, false)", [ctx.orgId]);
     if (ctx.isPlatformAdmin) await client.query("select set_config('app.platform_admin', 'true', false)");
+    await client.query('SET ROLE app_tenant');
     const boundDb = drizzle(client, { schema });
     return await tenantStore.run(
       { orgId: ctx.orgId, isPlatformAdmin: !!ctx.isPlatformAdmin, userId: ctx.userId ?? '', db: boundDb },
       fn,
     );
   } finally {
-    try { await client.query('RESET ALL'); } catch { /* ignore */ }
+    try { await client.query('RESET ROLE; RESET ALL'); } catch { /* ignore */ }
     client.release();
   }
 }

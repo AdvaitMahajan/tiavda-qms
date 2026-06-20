@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
+import { apiClient } from "@/lib/apiClient";
 import { useAuth } from "@/hooks/useAuth";
 import { useRole } from "@/hooks/useRole";
 import { toast } from "sonner";
@@ -29,14 +29,7 @@ export function TeamManagement() {
 
   const { data: members = [], isLoading } = useQuery({
     queryKey: ["team-members"],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("profiles")
-        .select("*")
-        .order("created_at", { ascending: true });
-      if (error) throw error;
-      return data;
-    },
+    queryFn: () => apiClient.get<any[]>("/team"),
   });
 
   const handleInvite = async () => {
@@ -50,15 +43,12 @@ export function TeamManagement() {
     }
     setInviting(true);
     try {
-      const { error } = await supabase.functions.invoke("invite-user", {
-        body: {
-          email: inviteForm.email.trim(),
-          full_name: inviteForm.full_name.trim(),
-          password: inviteForm.password.trim(),
-          role: inviteForm.role,
-        },
+      await apiClient.post("/team/users", {
+        email: inviteForm.email.trim(),
+        full_name: inviteForm.full_name.trim(),
+        password: inviteForm.password.trim(),
+        role: inviteForm.role,
       });
-      if (error) throw error;
       toast.success(`Account created for ${inviteForm.email}`);
       setInviteOpen(false);
       setInviteForm({ email: "", full_name: "", password: "", role: "viewer" });
@@ -75,14 +65,12 @@ export function TeamManagement() {
       toast.error("You cannot change your own role");
       return;
     }
-    const { error } = await supabase
-      .from("profiles")
-      .update({ role: newRole, updated_at: new Date().toISOString() })
-      .eq("id", profileId);
-    if (error) toast.error(error.message);
-    else {
+    try {
+      await apiClient.patch(`/profiles/${profileId}`, { role: newRole });
       toast.success("Role updated");
       queryClient.invalidateQueries({ queryKey: ["team-members"] });
+    } catch (e) {
+      toast.error((e as Error).message);
     }
   };
 
@@ -91,14 +79,12 @@ export function TeamManagement() {
       toast.error("You cannot deactivate yourself");
       return;
     }
-    const { error } = await supabase
-      .from("profiles")
-      .update({ is_active: !currentlyActive, updated_at: new Date().toISOString() })
-      .eq("id", profileId);
-    if (error) toast.error(error.message);
-    else {
+    try {
+      await apiClient.patch(`/profiles/${profileId}`, { is_active: !currentlyActive });
       toast.success(currentlyActive ? "User deactivated" : "User reactivated");
       queryClient.invalidateQueries({ queryKey: ["team-members"] });
+    } catch (e) {
+      toast.error((e as Error).message);
     }
   };
 
@@ -109,14 +95,9 @@ export function TeamManagement() {
     }
     setResetting(true);
     try {
-      const { error } = await supabase.functions.invoke("invite-user", {
-        body: {
-          action: "reset_password",
-          user_id: resetTarget.id,
-          password: resetPassword.trim(),
-        },
+      await apiClient.post(`/team/users/${resetTarget.id}/reset-password`, {
+        password: resetPassword.trim(),
       });
-      if (error) throw error;
       toast.success(`Password reset for ${resetTarget.email}`);
       setResetOpen(false);
       setResetTarget(null);

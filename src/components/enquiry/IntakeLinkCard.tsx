@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
+import { apiClient } from "@/lib/apiClient";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
 import { formatDate } from "@/lib/utils";
@@ -22,14 +22,9 @@ export function IntakeLinkCard({ enquiryId, clientId, refNumber }: { enquiryId: 
   const [busy, setBusy] = useState(false);
   const [sending, setSending] = useState(false);
 
-  const tokenQuery = (status: string, orderCol: string) => ({
+  const tokenQuery = (status: string, _orderCol: string) => ({
     queryKey: [`enq-intake-${status}`, enquiryId],
-    queryFn: async () => {
-      const { data } = await supabase.from("intake_tokens").select("*")
-        .eq("enquiry_id", enquiryId).eq("status", status)
-        .order(orderCol, { ascending: false }).limit(1).maybeSingle();
-      return data;
-    },
+    queryFn: () => apiClient.get<any | null>("/intake-tokens", { enquiry_id: enquiryId, status }),
     enabled: !!enquiryId,
     refetchOnMount: "always" as const,
   });

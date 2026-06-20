@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { supabase } from "@/integrations/supabase/client";
+import { apiClient } from "@/lib/apiClient";
 import { useAuth } from "@/hooks/useAuth";
 import { useSettings } from "@/hooks/useSettings";
 import {
@@ -358,16 +358,18 @@ IFSC: ${s.bank_ifsc || "—"}${s.bank_upi ? `\nUPI: ${s.bank_upi}` : ""}`}
                     if (!email) { (await import("sonner")).toast.error("Set Admin Email first"); return; }
                     const { toast } = await import("sonner");
                     toast.loading("Sending test email…", { id: "test-email" });
-                    const { error } = await supabase.functions.invoke("send-email", {
-                      body: {
+                    try {
+                      await apiClient.post("/integrations/email", {
                         to: email,
                         subject: "QMS — Test Email",
                         html_body: '<div style="font-family:Arial,sans-serif;padding:32px;text-align:center;"><h2 style="color:#0F2A47;">Email is working!</h2><p style="color:#546E7A;">This is a test email from QMS.</p></div>',
-                      },
-                    });
-                    toast.dismiss("test-email");
-                    if (error) toast.error("Test email failed: " + error.message);
-                    else toast.success(`Test email sent to ${email}`);
+                      });
+                      toast.dismiss("test-email");
+                      toast.success(`Test email sent to ${email}`);
+                    } catch (e) {
+                      toast.dismiss("test-email");
+                      toast.error("Test email failed: " + (e as Error).message);
+                    }
                   }}
                 />
                 <TestButton
@@ -377,13 +379,17 @@ IFSC: ${s.bank_ifsc || "—"}${s.bank_upi ? `\nUPI: ${s.bank_upi}` : ""}`}
                     if (!phone) { (await import("sonner")).toast.error("Set Admin WhatsApp first"); return; }
                     const { toast } = await import("sonner");
                     toast.loading("Sending test WhatsApp…", { id: "test-wa" });
-                    const { data, error } = await supabase.functions.invoke("send-whatsapp", {
-                      body: { phone_number: phone, template_name: "qms_test_message", parameters: [{ name: "1", value: "QMS" }] },
-                    });
-                    toast.dismiss("test-wa");
-                    if (error) toast.error("Test WhatsApp failed: " + error.message);
-                    else if (data?.whatsapp_invalid) toast.error("WhatsApp number is invalid");
-                    else toast.success(`Test WhatsApp sent to ${phone}`);
+                    try {
+                      const data = await apiClient.post<{ whatsapp_invalid?: boolean }>("/integrations/whatsapp", {
+                        phone_number: phone, template_name: "qms_test_message", parameters: [{ name: "1", value: "QMS" }],
+                      });
+                      toast.dismiss("test-wa");
+                      if (data?.whatsapp_invalid) toast.error("WhatsApp number is invalid");
+                      else toast.success(`Test WhatsApp sent to ${phone}`);
+                    } catch (e) {
+                      toast.dismiss("test-wa");
+                      toast.error("Test WhatsApp failed: " + (e as Error).message);
+                    }
                   }}
                 />
               </div>

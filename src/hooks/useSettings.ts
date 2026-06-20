@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { supabase } from "@/integrations/supabase/client";
+import { apiClient } from "@/lib/apiClient";
 import { toast } from "sonner";
 
 type SettingsMap = Record<string, string>;
@@ -26,12 +26,9 @@ export function useSettings(
 
   useEffect(() => {
     (async () => {
-      const { data } = await supabase
-        .from("app_settings")
-        .select("key,value")
-        .in("key", allFetchKeys);
+      const data = await apiClient.get<{ key: string; value: string }[]>("/settings", { keys: allFetchKeys.join(",") });
       const map: SettingsMap = { ...defaults };
-      data?.forEach((row) => { map[row.key] = row.value ?? ""; });
+      data.forEach((row) => { map[row.key] = row.value ?? ""; });
       setSettings(map);
       setPristine({ ...map });
       setLoading(false);
@@ -44,33 +41,25 @@ export function useSettings(
 
   const saveAll = async () => {
     setSaving(true);
-    for (const key of keys) {
-      const { error } = await supabase
-        .from("app_settings")
-        .upsert(
-          { key, value: settings[key] ?? "", updated_at: new Date().toISOString() },
-          { onConflict: "key" }
-        );
-      if (error) {
-        toast.error(`Failed to save ${key}: ${error.message}`);
-        setSaving(false);
-        return;
-      }
+    try {
+      const entries = keys.reduce<SettingsMap>((acc, k) => { acc[k] = settings[k] ?? ""; return acc; }, {});
+      await apiClient.patch("/settings", { entries });
+      setPristine({ ...settings });
+      toast.success("Settings saved successfully");
+    } catch (e) {
+      toast.error(`Failed to save settings: ${(e as Error).message}`);
+    } finally {
+      setSaving(false);
     }
-    setPristine({ ...settings });
-    toast.success("Settings saved successfully");
-    setSaving(false);
   };
 
   const saveOne = async (key: string, value: string) => {
     setSettings((prev) => ({ ...prev, [key]: value }));
-    const { error } = await supabase
-      .from("app_settings")
-      .upsert(
-        { key, value, updated_at: new Date().toISOString() },
-        { onConflict: "key" }
-      );
-    if (error) toast.error(`Failed to update: ${error.message}`);
+    try {
+      await apiClient.patch("/settings", { entries: { [key]: value } });
+    } catch (e) {
+      toast.error(`Failed to update: ${(e as Error).message}`);
+    }
   };
 
   return { settings, set, loading, saving, hasChanges, saveAll, saveOne };

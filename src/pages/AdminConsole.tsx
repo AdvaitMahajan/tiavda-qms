@@ -64,7 +64,7 @@ export default function AdminConsole() {
             Manage client organizations, their first admin, and their integration keys. (Metadata only — client business data is not visible here.)
           </p>
         </div>
-        <Button onClick={() => setShowCreate(true)} className="bg-blue text-white hover:bg-blue/90">
+        <Button onClick={() => setShowCreate(true)} className="text-white hover:opacity-90" style={{ background: "#1565C0" }}>
           <Plus className="mr-1 h-4 w-4" /> New Organization
         </Button>
       </div>

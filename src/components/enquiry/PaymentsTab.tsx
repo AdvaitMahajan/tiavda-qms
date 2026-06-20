@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
+import { apiClient } from "@/lib/apiClient";
+import { uploadToStorage, getSignedUrl } from "@/lib/storage";
+import { sendNotification } from "@/lib/notifications";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { useAuth } from "@/hooks/useAuth";
 import { useRole } from "@/hooks/useRole";
@@ -38,10 +40,7 @@ export function PaymentsTab({ enquiryId, onStatusChange }: { enquiryId: string; 
 
   const { data: payments, isLoading } = useQuery({
     queryKey: ["payments", enquiryId],
-    queryFn: async () => {
-      const { data } = await supabase.from("payments").select("*").eq("enquiry_id", enquiryId).order("created_at", { ascending: false });
-      return data ?? [];
-    },
+    queryFn: () => apiClient.get<Payment[]>("/payments", { enquiry_id: enquiryId }),
   });
 
   // The enquiry's contract value: the approved quotation if one exists, otherwise
@@ -50,33 +49,22 @@ export function PaymentsTab({ enquiryId, onStatusChange }: { enquiryId: string; 
   const { data: approvedTotal } = useQuery({
     queryKey: ["quote-total", enquiryId],
     queryFn: async () => {
-      const { data: approved } = await supabase.from("quotations")
-        .select("total_amount").eq("enquiry_id", enquiryId).eq("status", "approved")
-        .order("version", { ascending: false }).limit(1).maybeSingle();
+      const quotes = await apiClient.get<Array<{ total_amount: number; status: string }>>("/quotations", { enquiry_id: enquiryId });
+      const approved = quotes.find((q) => q.status === "approved");
       if (approved) return Number(approved.total_amount);
-      const { data: latest } = await supabase.from("quotations")
-        .select("total_amount").eq("enquiry_id", enquiryId)
-        .in("status", ["accepted", "sent"] as any)
-        .order("version", { ascending: false }).limit(1).maybeSingle();
+      const latest = quotes.find((q) => ["accepted", "sent"].includes(q.status));
       return latest ? Number(latest.total_amount) : 0;
     },
   });
 
   const { data: enquiry } = useQuery({
     queryKey: ["enquiry-for-payments", enquiryId],
-    queryFn: async () => {
-      const { data } = await supabase.from("enquiries").select("ref_number, client_id, status").eq("id", enquiryId).single();
-      return data;
-    },
+    queryFn: () => apiClient.get<Tables<"enquiries">>(`/enquiries/${enquiryId}`),
   });
 
   const { data: client } = useQuery({
     queryKey: ["client-for-payments", enquiry?.client_id],
-    queryFn: async () => {
-      if (!enquiry?.client_id) return null;
-      const { data } = await supabase.from("clients").select("*").eq("id", enquiry.client_id).single();
-      return data;
-    },
+    queryFn: () => apiClient.get<Tables<"clients">>(`/clients/${enquiry!.client_id}`),
     enabled: !!enquiry?.client_id,
   });
 
@@ -87,10 +75,7 @@ export function PaymentsTab({ enquiryId, onStatusChange }: { enquiryId: string; 
         "bank_account_name", "bank_name", "bank_account_number",
         "bank_account_type", "bank_ifsc", "bank_branch", "bank_upi",
       ];
-      const { data } = await supabase
-        .from("app_settings")
-        .select("key, value")
-        .in("key", bankKeys);
+      const data = await apiClient.get<{ key: string; value: string }[]>("/settings", { keys: bankKeys.join(",") });
       if (!data?.length) return null;
       const m = new Map(data.map((r) => [r.key, r.value]));
       const lines = [
@@ -124,28 +109,23 @@ export function PaymentsTab({ enquiryId, onStatusChange }: { enquiryId: string; 
 
       // Reuse an existing un-paid request of the SAME type (e.g. the advance auto-created
       // on "Mark Won") so we don't create a duplicate request/email.
-      const { data: existingReq } = await supabase.from("payments")
-        .select("id")
-        .eq("enquiry_id", enquiryId)
-        .eq("payment_type", reqType)
-        .in("status", ["pending_request", "request_sent"] as any)
-        .limit(1)
-        .maybeSingle();
+      const allPayments = await apiClient.get<Array<{ id: string; payment_type: string; status: string }>>("/payments", { enquiry_id: enquiryId });
+      const existingReq = allPayments.find(
+        (p) => p.payment_type === reqType && (p.status === "pending_request" || p.status === "request_sent"),
+      );
 
       let payment: { id: string };
       if (existingReq) {
-        await supabase.from("payments").update({ amount_requested: amount, due_date: dueDateIso }).eq("id", existingReq.id);
-        payment = existingReq as { id: string };
+        await apiClient.patch(`/payments/${existingReq.id}`, { amount_requested: amount, due_date: dueDateIso });
+        payment = { id: existingReq.id };
       } else {
-        const { data: inserted, error: insertErr } = await supabase.from("payments").insert({
+        payment = await apiClient.post<{ id: string }>("/payments", {
           enquiry_id: enquiryId,
           payment_type: reqType,
           amount_requested: amount,
           due_date: dueDateIso,
-          status: "pending_request" as any,
-        }).select().single();
-        if (insertErr) throw insertErr;
-        payment = inserted;
+          status: "pending_request",
+        });
       }
 
       const refNumber = enquiry?.ref_number ?? enquiryId;
@@ -155,9 +135,9 @@ export function PaymentsTab({ enquiryId, onStatusChange }: { enquiryId: string; 
 
       let delivered = false;
       const logComm = (channel: "email" | "whatsapp", ok: boolean, label: string) =>
-        supabase.from("communication_log").insert({
-          enquiry_id: enquiryId, client_id: client?.id ?? null,
-          channel: channel as any, direction: "outbound" as any,
+        apiClient.post("/communications", {
+          enquiry_id: enquiryId, client_id: client?.id,
+          channel, direction: "outbound",
           subject: label, body: ok ? `${label} sent` : `${label} FAILED to send`,
           status: ok ? "sent" : "failed", sent_by: user?.id ?? null,
         });
@@ -183,8 +163,9 @@ export function PaymentsTab({ enquiryId, onStatusChange }: { enquiryId: string; 
 
       // Send WhatsApp
       if (client?.whatsapp_number && !client?.whatsapp_invalid) {
-        const { data: waData, error: waErr } = await supabase.functions.invoke("send-whatsapp", {
-          body: {
+        let waData: { error?: string; whatsapp_invalid?: boolean } = {};
+        try {
+          waData = await apiClient.post<{ error?: string; whatsapp_invalid?: boolean }>("/integrations/whatsapp", {
             phone_number: client.whatsapp_number,
             template_name: "qms_payment_request",
             parameters: [
@@ -193,12 +174,14 @@ export function PaymentsTab({ enquiryId, onStatusChange }: { enquiryId: string; 
               { name: "bank_details", value: bankDetails.slice(0, 100) },
               { name: "due_date", value: dueDate },
             ],
-          },
-        });
+          });
+        } catch (e) {
+          waData = { error: (e as Error).message };
+        }
         if (waData?.whatsapp_invalid) {
-          await supabase.rpc("flag_contact_channel_invalid", { p_client_id: client.id, p_channel: "whatsapp" });
+          await apiClient.post(`/clients/${client.id}/flag-channel`, { channel: "whatsapp" });
           await logComm("whatsapp", false, `WhatsApp: Payment request ${refNumber}`);
-        } else if (waErr) {
+        } else if (waData?.error) {
           await logComm("whatsapp", false, `WhatsApp: Payment request ${refNumber}`);
         } else {
           await logComm("whatsapp", true, `WhatsApp: Payment request ${refNumber}`);
@@ -208,14 +191,12 @@ export function PaymentsTab({ enquiryId, onStatusChange }: { enquiryId: string; 
 
       // Only mark the request as "sent" if a channel actually delivered.
       if (delivered) {
-        await supabase.from("payments").update({
-          status: "request_sent" as any,
+        await apiClient.patch(`/payments/${payment.id}`, {
+          status: "request_sent",
           request_sent_at: new Date().toISOString(),
-        }).eq("id", payment.id);
-        await supabase.from("enquiry_events").insert({
-          enquiry_id: enquiryId,
+        });
+        await apiClient.post(`/enquiries/${enquiryId}/events`, {
           event_type: "payment_requested",
-          triggered_by: user?.id ?? null,
         });
       }
       return { delivered };
@@ -246,33 +227,28 @@ export function PaymentsTab({ enquiryId, onStatusChange }: { enquiryId: string; 
       let receipt_url: string | null = null;
       if (recFile) {
         const path = `${enquiryId}/${recFile.name}`;
-        const { error: upErr } = await supabase.storage.from("receipts").upload(path, recFile, { upsert: true });
-        if (upErr) throw upErr;
-        const { data: urlData } = await supabase.storage.from("receipts").createSignedUrl(path, 86400 * 30);
-        receipt_url = urlData?.signedUrl ?? null;
+        await uploadToStorage("receipts", path, recFile, { upsert: true });
+        receipt_url = await getSignedUrl("receipts", path, 86400 * 30);
       }
-      const { error } = await supabase.from("payments").update({
-        status: "received" as any,
+      await apiClient.patch(`/payments/${showReceive.id}`, {
+        status: "received",
         amount_received: parseFloat(recAmount),
         payment_method: recMethod || null,
         transaction_ref: recRef || null,
         received_at: new Date(recDate).toISOString(),
         receipt_url,
-      }).eq("id", showReceive.id);
-      if (error) throw error;
+      });
 
       // Auto-transition enquiry to payment_received if currently approved
       if (enquiry && enquiry.status === "approved") {
-        await supabase.from("enquiries").update({
-          status: "payment_received" as any,
+        await apiClient.patch(`/enquiries/${enquiryId}`, {
+          status: "payment_received",
           confirmed_date: new Date().toISOString().slice(0, 10),
-        }).eq("id", enquiryId);
-        await supabase.from("enquiry_events").insert({
-          enquiry_id: enquiryId,
+        });
+        await apiClient.post(`/enquiries/${enquiryId}/events`, {
           event_type: "status_change",
           from_status: "approved",
           to_status: "payment_received",
-          triggered_by: user?.id ?? null,
           metadata: { reason: "payment_received_auto_transition" },
         });
       }
@@ -288,22 +264,18 @@ export function PaymentsTab({ enquiryId, onStatusChange }: { enquiryId: string; 
       };
 
       // Find mob_lead users via profiles table
-      const { data: mobLeads } = await supabase
-        .from("profiles")
-        .select("id")
-        .eq("role", "mobilization_lead");
-
-      const targetUsers = (mobLeads && mobLeads.length > 0)
-        ? mobLeads.map((p: any) => p.id)
+      const mobLeads = await apiClient.get<Array<{ id: string }>>("/profiles", { role: "mobilization_lead" });
+      const targetUsers = mobLeads.length > 0
+        ? mobLeads.map((p) => p.id)
         : user?.id ? [user.id] : [];
 
       for (const uid of targetUsers) {
-        await supabase.from("notifications").insert({ ...notifPayload, user_id: uid });
+        await apiClient.post("/notifications", { ...notifPayload, user_id: uid });
       }
 
       // Also notify current user as confirmation
       if (user?.id && !targetUsers.includes(user.id)) {
-        await supabase.from("notifications").insert({ ...notifPayload, user_id: user.id });
+        await apiClient.post("/notifications", { ...notifPayload, user_id: user.id });
       }
     },
     onSuccess: () => {
@@ -352,11 +324,8 @@ export function PaymentsTab({ enquiryId, onStatusChange }: { enquiryId: string; 
         "bank_account_type", "bank_ifsc", "bank_branch", "bank_upi",
         "company_gst", "gst_rate", "company_state",
       ];
-      const { data: settingsData } = await supabase
-        .from("app_settings")
-        .select("key, value")
-        .in("key", bankKeys);
-      const sm = new Map(settingsData?.map((r) => [r.key, r.value]) ?? []);
+      const settingsData = await apiClient.get<{ key: string; value: string }[]>("/settings", { keys: bankKeys.join(",") });
+      const sm = new Map(settingsData.map((r) => [r.key, r.value]));
 
       const bankObj = {
         account_name: sm.get("bank_account_name") ?? undefined,

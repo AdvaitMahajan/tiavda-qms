@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
+import { apiClient } from "@/lib/apiClient";
+import type { Tables } from "@/integrations/supabase/types";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -37,57 +38,38 @@ function useMobilisationData() {
     queryFn: async (): Promise<MobRow[]> => {
       const statuses = ["approved", "payment_received", "mobilization_scheduled", "job_active"];
 
-      const { data: enquiries, error } = await supabase
-        .from("enquiries")
-        .select("id, ref_number, status, site_city, client_id, confirmed_date, service_type")
-        .in("status", statuses)
-        .is("deleted_at", null)
-        .order("confirmed_date", { ascending: false });
+      const enquiries = await apiClient.get<
+        Array<Tables<"enquiries"> & { client?: { id: string; name: string; phone: string } | null; quote_total?: number | null }>
+      >("/enquiries", { embed: "client,quote" });
+      const filtered = enquiries
+        .filter((e) => statuses.includes(e.status))
+        .sort((a, b) => (b.confirmed_date ?? "").localeCompare(a.confirmed_date ?? ""));
+      if (!filtered.length) return [];
 
-      if (error) throw error;
-      if (!enquiries?.length) return [];
+      const mobs = await apiClient.get<
+        Array<{ enquiry_id: string; mobilisation_date: string | null; mobilisation_time: string | null; team_lead_id: string | null }>
+      >("/mobilisation", { enquiry_ids: filtered.map((e) => e.id).join(",") });
+      const mobMap = new Map(mobs.map((m) => [m.enquiry_id, m]));
 
-      const clientIds = [...new Set(enquiries.map((e) => e.client_id))];
-      const { data: clients } = await supabase
-        .from("clients")
-        .select("id, name, phone")
-        .in("id", clientIds);
-      const clientMap = new Map(clients?.map((c) => [c.id, c]) ?? []);
-
-      const { data: quotes } = await supabase
-        .from("quotations")
-        .select("enquiry_id, total_amount")
-        .in("status", ["approved", "sent"])
-        .in("enquiry_id", enquiries.map((e) => e.id));
-      const quoteMap = new Map(quotes?.map((q) => [q.enquiry_id, q.total_amount]) ?? []);
-
-      const { data: mobs } = await supabase
-        .from("mobilisation")
-        .select("enquiry_id, mobilisation_date, mobilisation_time, team_lead_id")
-        .in("enquiry_id", enquiries.map((e) => e.id));
-      const mobMap = new Map(mobs?.map((m) => [m.enquiry_id, m]) ?? []);
-
-      const teamLeadIds = [...new Set(mobs?.map((m) => m.team_lead_id).filter(Boolean) ?? [])];
+      const teamLeadIds = [...new Set(mobs.map((m) => m.team_lead_id).filter(Boolean))] as string[];
       let teamMap = new Map<string, string>();
       if (teamLeadIds.length > 0) {
-        const { data: profiles } = await supabase
-          .from("profiles")
-          .select("id, full_name")
-          .in("id", teamLeadIds);
-        teamMap = new Map(profiles?.map((p) => [p.id, p.full_name ?? "Unknown"]) ?? []);
+        const profiles = await apiClient.get<Array<{ id: string; full_name: string | null }>>("/profiles");
+        teamMap = new Map(
+          profiles.filter((p) => teamLeadIds.includes(p.id)).map((p) => [p.id, p.full_name ?? "Unknown"]),
+        );
       }
 
-      return enquiries.map((e) => {
-        const client = clientMap.get(e.client_id);
+      return filtered.map((e) => {
         const mob = mobMap.get(e.id);
         return {
           id: e.id,
           ref_number: e.ref_number,
           status: e.status,
           site_city: e.site_city,
-          client_name: client?.name ?? "Unknown",
-          client_phone: client?.phone ?? "",
-          quote_amount: quoteMap.get(e.id) ?? null,
+          client_name: e.client?.name ?? "Unknown",
+          client_phone: e.client?.phone ?? "",
+          quote_amount: e.quote_total ?? null,
           confirmed_date: e.confirmed_date,
           mob_date: mob?.mobilisation_date ?? null,
           mob_time: mob?.mobilisation_time ?? null,
@@ -96,6 +78,7 @@ function useMobilisationData() {
         };
       });
     },
+    refetchInterval: 20_000,
   });
 }
 

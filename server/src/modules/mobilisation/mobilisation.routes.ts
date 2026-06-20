@@ -149,3 +149,26 @@ mobilisationRouter.post(
     res.status(201).json(result);
   }),
 );
+
+// Update a confirmation token (team-lead accepting an alternate date, or admin
+// override confirming on the client's behalf).
+const tokenUpdateSchema = z.object({
+  status: z.string().optional(),
+  confirmed_at: z.string().nullable().optional(),
+  alternate_date: z.string().nullable().optional(),
+  alternate_notes: z.string().nullable().optional(),
+});
+mobilisationRouter.patch(
+  '/confirmation-token/:tokenId',
+  requireNotViewer,
+  asyncHandler(async (req, res) => {
+    const body = tokenUpdateSchema.parse(req.body);
+    const rows = await db
+      .update(mob_confirmation_tokens)
+      .set(body)
+      .where(eq(mob_confirmation_tokens.id, getParam(req, 'tokenId')))
+      .returning();
+    if (!rows[0]) throw notFound('Confirmation token not found');
+    res.json(rows[0]);
+  }),
+);

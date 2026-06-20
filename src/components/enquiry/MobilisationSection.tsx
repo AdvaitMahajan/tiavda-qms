@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect } from "react";
-import { supabase } from "@/integrations/supabase/client";
+import { apiClient } from "@/lib/apiClient";
 import { sendNotification } from "@/lib/notifications";
 import { useAuth } from "@/hooks/useAuth";
 import { AssigneeDropdown } from "@/components/AssigneeDropdown";
@@ -45,7 +45,7 @@ export function MobilisationSection({ enquiryId, enquiry, onStatusChange }: { en
 
     // Surface the client's pre-consent to demobilization/re-mobilization charges
     // captured at intake (BRD legal/liability field) so the team can act on it.
-    const { data: enqRow } = await supabase.from("enquiries").select("remarks").eq("id", enquiryId).maybeSingle();
+    const enqRow = await apiClient.get<{ remarks: string | null }>(`/enquiries/${enquiryId}`).catch(() => null);
     const remarks = enqRow?.remarks ?? "";
     const marker = "---EXTENDED_DATA---";
     const idx = remarks.indexOf(marker);
@@ -60,20 +60,14 @@ export function MobilisationSection({ enquiryId, enquiry, onStatusChange }: { en
       setDemobConsent(null);
     }
 
-    const { data } = await supabase.from("mobilisation").select("*").eq("enquiry_id", enquiryId).maybeSingle();
+    const data = await apiClient.get<Mobilisation | null>("/mobilisation", { enquiry_id: enquiryId });
     setMob(data);
     if (data?.team_lead_id) {
-      const { data: profile } = await supabase.from("profiles").select("full_name, email").eq("id", data.team_lead_id).single();
+      const profile = await apiClient.get<{ full_name: string | null; email: string | null }>(`/profiles/${data.team_lead_id}`).catch(() => null);
       setTeamLeadName(profile?.full_name || profile?.email?.split("@")[0] || null);
     }
     if (data) {
-      const { data: token } = await supabase
-        .from("mob_confirmation_tokens")
-        .select("*")
-        .eq("mobilisation_id", data.id)
-        .order("created_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
+      const token = await apiClient.get<ConfirmToken | null>(`/mobilisation/${data.id}/confirmation-token`);
       setConfirmToken(token);
     }
     setLoading(false);
@@ -81,39 +75,36 @@ export function MobilisationSection({ enquiryId, enquiry, onStatusChange }: { en
 
   useEffect(() => { fetchMob(); }, [fetchMob]);
 
-  // Realtime subscription for drive folder status updates
+  // Poll for drive-folder status / confirmation updates (replaces realtime).
   useEffect(() => {
     if (!enquiryId) return;
-    const channel = supabase
-      .channel("mobilisation-" + enquiryId)
-      .on(
-        "postgres_changes",
-        { event: "UPDATE", schema: "public", table: "mobilisation", filter: `enquiry_id=eq.${enquiryId}` },
-        (payload) => { setMob(payload.new as Mobilisation); }
-      )
-      .subscribe();
-    return () => { supabase.removeChannel(channel); };
-  }, [enquiryId]);
+    const interval = setInterval(() => { fetchMob(); }, 10_000);
+    return () => clearInterval(interval);
+  }, [enquiryId, fetchMob]);
 
   const handleSave = async () => {
     if (!mobDate) { toast.error("Mobilisation date is required"); return; }
     setSaving(true);
-    const { error } = await supabase.from("mobilisation").insert({
-      enquiry_id: enquiryId,
-      mobilisation_date: mobDate,
-      mobilisation_time: mobTime || null,
-      team_lead_id: teamLeadId,
-      team_description: team || null,
-      equipment_notes: equipment || null,
-      site_contact_name: contactName || null,
-      site_contact_phone: contactPhone || null,
-      drive_folder_status: "pending",
-    });
-    if (error) { toast.error(error.message); setSaving(false); return; }
+    let mobRow: Mobilisation;
+    try {
+      mobRow = await apiClient.post<Mobilisation>("/mobilisation", {
+        enquiry_id: enquiryId,
+        mobilisation_date: mobDate,
+        mobilisation_time: mobTime || null,
+        team_lead_id: teamLeadId,
+        team_description: team || null,
+        equipment_notes: equipment || null,
+        site_contact_name: contactName || null,
+        site_contact_phone: contactPhone || null,
+        drive_folder_status: "pending",
+      });
+    } catch (e) {
+      toast.error((e as Error).message); setSaving(false); return;
+    }
 
     if (teamLeadId && enquiry) {
       const dateStr = new Date(mobDate).toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" });
-      await supabase.from("notifications").insert({
+      await apiClient.post("/notifications", {
         user_id: teamLeadId,
         type: "assignment",
         title: `Team Lead for ${enquiry.ref_number}`,
@@ -123,48 +114,25 @@ export function MobilisationSection({ enquiryId, enquiry, onStatusChange }: { en
       });
     }
 
-    // Generate confirmation token
+    // Generate confirmation token (server supersedes any prior pending tokens).
     if (enquiry) {
-      const tokenStr = Array.from(crypto.getRandomValues(new Uint8Array(24)))
-        .map((b) => b.toString(36).padStart(2, "0")).join("").slice(0, 32);
-      const expires = new Date();
-      expires.setDate(expires.getDate() + 7);
-
-      const { data: mobRow } = await supabase
-        .from("mobilisation")
-        .select("id")
-        .eq("enquiry_id", enquiryId)
-        .single();
-
-      if (mobRow) {
-        await supabase.from("mob_confirmation_tokens").insert({
-          mobilisation_id: mobRow.id,
-          enquiry_id: enquiryId,
-          client_id: enquiry.client_id,
-          token: tokenStr,
-          status: "pending",
-          expires_at: expires.toISOString(),
-        } as any);
-      }
+      await apiClient.post(`/mobilisation/${mobRow.id}/confirmation-token`, {
+        enquiry_id: enquiryId,
+        client_id: enquiry.client_id,
+      }).catch(() => {});
     }
 
     // Auto-advance enquiry status to mobilization_scheduled (surface failures —
     // the DB trigger allows approved/payment_received → mobilization_scheduled).
-    const { error: statusErr } = await supabase.from("enquiries").update({
-      status: "mobilization_scheduled" as any,
-      updated_at: new Date().toISOString(),
-    }).eq("id", enquiryId);
-
-    if (statusErr) {
-      toast.error("Mobilisation saved, but the enquiry status could not be advanced: " + statusErr.message);
-    } else {
-      await supabase.from("enquiry_events").insert({
-        enquiry_id: enquiryId,
+    try {
+      await apiClient.patch(`/enquiries/${enquiryId}`, { status: "mobilization_scheduled" });
+      await apiClient.post(`/enquiries/${enquiryId}/events`, {
         event_type: "status_change",
-        to_status: "mobilization_scheduled" as any,
-        triggered_by: user?.id ?? null,
-        metadata: { trigger: "mobilisation_scheduled" } as any,
+        to_status: "mobilization_scheduled",
+        metadata: { trigger: "mobilisation_scheduled" },
       });
+    } catch (e) {
+      toast.error("Mobilisation saved, but the enquiry status could not be advanced: " + (e as Error).message);
     }
 
     toast.success("Mobilisation scheduled. Google Drive folder will be created automatically.");
@@ -175,18 +143,16 @@ export function MobilisationSection({ enquiryId, enquiry, onStatusChange }: { en
 
     // Fire-and-forget: create Google Drive folder + notify client
     if (enquiry) {
-      supabase.from("clients").select("*").eq("id", enquiry.client_id).single().then(({ data: clientData }) => {
+      apiClient.get<Tables<"clients">>(`/clients/${enquiry.client_id}`).then((clientData) => {
         const clientName = clientData?.name ?? "Client";
 
-        // Create Drive folder
-        supabase.functions.invoke("create-drive-folder", {
-          body: {
-            enquiry_id: enquiry.id,
-            ref_number: enquiry.ref_number,
-            client_name: clientName,
-            city: enquiry.site_city,
-          },
-        }).catch((err: any) => console.error("Drive folder creation failed:", err));
+        // Create Drive folder (API updates mobilisation.drive_folder_status server-side)
+        apiClient.post("/integrations/drive-folder", {
+          enquiry_id: enquiry.id,
+          ref_number: enquiry.ref_number,
+          client_name: clientName,
+          city: enquiry.site_city,
+        }).catch((err) => console.error("Drive folder creation failed:", err));
 
         // Send mobilisation confirmation email
         if (clientData?.email && !clientData?.email_bounced) {
@@ -204,11 +170,11 @@ export function MobilisationSection({ enquiryId, enquiry, onStatusChange }: { en
               contact_phone: contactPhone || undefined,
             },
           }).then(() => {
-            supabase.from("communication_log").insert({
+            apiClient.post("/communications", {
               enquiry_id: enquiry.id,
               client_id: enquiry.client_id,
-              channel: "email" as any,
-              direction: "outbound" as any,
+              channel: "email",
+              direction: "outbound",
               subject: `Mobilisation confirmation — ${enquiry.ref_number}`,
               body: "Mobilisation confirmation email sent",
               status: "sent",
@@ -219,27 +185,25 @@ export function MobilisationSection({ enquiryId, enquiry, onStatusChange }: { en
         // Send mobilisation WhatsApp
         if (clientData?.whatsapp_number && !clientData?.whatsapp_invalid) {
           const dateStr = new Date(mobDate).toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" });
-          supabase.functions.invoke("send-whatsapp", {
-            body: {
-              phone_number: clientData.whatsapp_number,
-              template_name: "qms_mobilisation_confirmation",
-              parameters: [
-                { name: "client_name", value: clientName },
-                { name: "ref_number", value: enquiry.ref_number },
-                { name: "date", value: dateStr },
-                { name: "city", value: enquiry.site_city },
-              ],
-            },
-          }).then(({ data: waData }) => {
+          apiClient.post<{ whatsapp_invalid?: boolean }>("/integrations/whatsapp", {
+            phone_number: clientData.whatsapp_number,
+            template_name: "qms_mobilisation_confirmation",
+            parameters: [
+              { name: "client_name", value: clientName },
+              { name: "ref_number", value: enquiry.ref_number },
+              { name: "date", value: dateStr },
+              { name: "city", value: enquiry.site_city },
+            ],
+          }).then((waData) => {
             if (waData?.whatsapp_invalid) {
-              // Use a scoped RPC so mobilization leads (who cannot write clients) can still flag a bad number.
-              supabase.rpc("flag_contact_channel_invalid", { p_client_id: enquiry.client_id, p_channel: "whatsapp" });
+              // Scoped flag-channel so mobilization leads (who cannot write clients) can still flag a bad number.
+              apiClient.post(`/clients/${enquiry.client_id}/flag-channel`, { channel: "whatsapp" });
             } else {
-              supabase.from("communication_log").insert({
+              apiClient.post("/communications", {
                 enquiry_id: enquiry.id,
                 client_id: enquiry.client_id,
-                channel: "whatsapp" as any,
-                direction: "outbound" as any,
+                channel: "whatsapp",
+                direction: "outbound",
                 subject: `WhatsApp: Mobilisation confirmation ${enquiry.ref_number}`,
                 body: "Mobilisation confirmation WhatsApp sent",
                 status: "sent",
@@ -247,33 +211,21 @@ export function MobilisationSection({ enquiryId, enquiry, onStatusChange }: { en
             }
           }).catch(() => {});
         }
-      });
+      }).catch(() => {});
     }
   };
 
   // Issue a fresh confirmation token for a (new) date and notify the client.
   const issueAndSendConfirmation = async (date: string) => {
     if (!enquiry || !mob) return;
-    // Supersede any outstanding tokens for this mobilisation.
-    await supabase.from("mob_confirmation_tokens")
-      .update({ status: "expired" })
-      .eq("mobilisation_id", mob.id)
-      .in("status", ["pending", "alternate_proposed"]);
-
-    const tokenStr = Array.from(crypto.getRandomValues(new Uint8Array(24)))
-      .map((b) => b.toString(36).padStart(2, "0")).join("").slice(0, 32);
-    const expires = new Date();
-    expires.setDate(expires.getDate() + 7);
-    await supabase.from("mob_confirmation_tokens").insert({
-      mobilisation_id: mob.id,
+    // Issue a fresh token (server supersedes prior pending/alternate tokens).
+    const newToken = await apiClient.post<ConfirmToken>(`/mobilisation/${mob.id}/confirmation-token`, {
       enquiry_id: enquiry.id,
       client_id: enquiry.client_id,
-      token: tokenStr,
-      status: "pending",
-      expires_at: expires.toISOString(),
-    } as any);
+    });
+    const tokenStr = newToken.token;
 
-    const { data: clientData } = await supabase.from("clients").select("*").eq("id", enquiry.client_id).single();
+    const clientData = await apiClient.get<Tables<"clients">>(`/clients/${enquiry.client_id}`).catch(() => null);
     const dateStr = new Date(date).toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" });
     const confirmUrl = `${window.location.origin}/confirm-mobilization?t=${tokenStr}`;
 
@@ -289,9 +241,9 @@ export function MobilisationSection({ enquiryId, enquiry, onStatusChange }: { en
           confirm_url: confirmUrl,
         },
       }).then(() => {
-        supabase.from("communication_log").insert({
+        apiClient.post("/communications", {
           enquiry_id: enquiry.id, client_id: enquiry.client_id,
-          channel: "email" as any, direction: "outbound" as any,
+          channel: "email", direction: "outbound",
           subject: `Revised mobilisation date — ${enquiry.ref_number}`,
           body: "Revised mobilisation confirmation email sent", status: "sent",
         });
@@ -299,17 +251,15 @@ export function MobilisationSection({ enquiryId, enquiry, onStatusChange }: { en
     }
 
     if (clientData?.whatsapp_number && !clientData?.whatsapp_invalid) {
-      supabase.functions.invoke("send-whatsapp", {
-        body: {
-          phone_number: clientData.whatsapp_number,
-          template_name: "qms_mobilisation_confirmation",
-          parameters: [
-            { name: "client_name", value: clientData.name ?? "Client" },
-            { name: "ref_number", value: enquiry.ref_number },
-            { name: "date", value: dateStr },
-            { name: "city", value: enquiry.site_city },
-          ],
-        },
+      apiClient.post("/integrations/whatsapp", {
+        phone_number: clientData.whatsapp_number,
+        template_name: "qms_mobilisation_confirmation",
+        parameters: [
+          { name: "client_name", value: clientData.name ?? "Client" },
+          { name: "ref_number", value: enquiry.ref_number },
+          { name: "date", value: dateStr },
+          { name: "city", value: enquiry.site_city },
+        ],
       }).catch(() => {});
     }
   };
@@ -319,18 +269,17 @@ export function MobilisationSection({ enquiryId, enquiry, onStatusChange }: { en
     if (!mob || !confirmToken?.alternate_date) return;
     setAcceptingAlt(true);
     try {
-      await supabase.from("mobilisation").update({
+      await apiClient.patch(`/mobilisation/${mob.id}`, {
         mobilisation_date: confirmToken.alternate_date,
         client_confirmed: true,
         client_confirmed_at: new Date().toISOString(),
-      }).eq("id", mob.id);
-      await supabase.from("mob_confirmation_tokens").update({
+      });
+      await apiClient.patch(`/mobilisation/confirmation-token/${confirmToken.id}`, {
         status: "confirmed", confirmed_at: new Date().toISOString(),
-      }).eq("id", confirmToken.id);
-      await supabase.from("enquiry_events").insert({
-        enquiry_id: enquiryId,
+      });
+      await apiClient.post(`/enquiries/${enquiryId}/events`, {
         event_type: "mobilisation_confirmed",
-        metadata: { confirmed_by: "team_lead_accepted_alternate", date: confirmToken.alternate_date } as any,
+        metadata: { confirmed_by: "team_lead_accepted_alternate", date: confirmToken.alternate_date },
       });
       toast.success("Accepted the client's proposed date — mobilisation confirmed.");
       fetchMob();
@@ -346,16 +295,15 @@ export function MobilisationSection({ enquiryId, enquiry, onStatusChange }: { en
     if (!mob || !reproposeDate) return;
     setReproposing(true);
     try {
-      await supabase.from("mobilisation").update({
+      await apiClient.patch(`/mobilisation/${mob.id}`, {
         mobilisation_date: reproposeDate,
         client_confirmed: false,
         client_confirmed_at: null,
-      }).eq("id", mob.id);
+      });
       await issueAndSendConfirmation(reproposeDate);
-      await supabase.from("enquiry_events").insert({
-        enquiry_id: enquiryId,
+      await apiClient.post(`/enquiries/${enquiryId}/events`, {
         event_type: "mobilisation_rescheduled",
-        metadata: { new_date: reproposeDate, by: "team_lead" } as any,
+        metadata: { new_date: reproposeDate, by: "team_lead" },
       });
       toast.success("New date sent to client for confirmation.");
       setShowRepropose(false);
@@ -502,18 +450,18 @@ export function MobilisationSection({ enquiryId, enquiry, onStatusChange }: { en
                 onClick={async () => {
                   setOverriding(true);
                   try {
-                    await supabase.from("mobilisation").update({
+                    await apiClient.patch(`/mobilisation/${mob.id}`, {
                       client_confirmed: true,
                       client_confirmed_at: new Date().toISOString(),
                       admin_override: true,
                       admin_override_by: user?.id,
                       admin_override_at: new Date().toISOString(),
-                    }).eq("id", mob.id);
+                    });
                     if (confirmToken) {
-                      await supabase.from("mob_confirmation_tokens").update({
+                      await apiClient.patch(`/mobilisation/confirmation-token/${confirmToken.id}`, {
                         status: "confirmed",
                         confirmed_at: new Date().toISOString(),
-                      }).eq("id", confirmToken.id);
+                      });
                     }
                     toast.success("Confirmed on behalf of client");
                     fetchMob();

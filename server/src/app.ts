@@ -4,7 +4,7 @@ import cors from 'cors';
 import compression from 'compression';
 import rateLimit from 'express-rate-limit';
 import { pinoHttp } from 'pino-http';
-import { env } from './env';
+import { env, isProd } from './env';
 import { logger } from './lib/logger';
 import { apiRouter } from './routes';
 import { errorHandler, notFoundHandler } from './middleware/error';
@@ -18,11 +18,16 @@ export function createApp() {
 
   app.use(helmet());
 
-  const origins =
-    env.CORS_ORIGINS === '*' ? true : env.CORS_ORIGINS.split(',').map((o) => o.trim());
+  const allowList = env.CORS_ORIGINS === '*' ? true : env.CORS_ORIGINS.split(',').map((o) => o.trim());
   app.use(
     cors({
-      origin: origins,
+      origin(origin, cb) {
+        // Non-browser clients (no Origin) or wildcard allowlist: allow.
+        if (!origin || allowList === true) return cb(null, true);
+        // In development allow any localhost port (Vite may use 5173/8080/8081…).
+        if (!isProd && /^http:\/\/localhost(:\d+)?$/.test(origin)) return cb(null, true);
+        return cb(null, Array.isArray(allowList) && allowList.includes(origin));
+      },
       credentials: true,
       methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],
       allowedHeaders: ['Authorization', 'Content-Type', 'X-Cron-Secret'],

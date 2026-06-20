@@ -1,6 +1,7 @@
 import { useState, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
+import { apiClient } from "@/lib/apiClient";
+import { uploadToStorage, getPublicStorageUrl } from "@/lib/storage";
 import { useAuth } from "@/hooks/useAuth";
 import { AssigneeDropdown } from "@/components/AssigneeDropdown";
 import { toast } from "sonner";
@@ -56,14 +57,7 @@ export function SiteVisitSection({ enquiryId, readOnly = false }: Props) {
 
   const { data: visits = [], isLoading } = useQuery({
     queryKey: ["site-visits", enquiryId],
-    queryFn: async () => {
-      const { data } = await supabase
-        .from("site_visits")
-        .select("*")
-        .eq("enquiry_id", enquiryId)
-        .order("visit_date", { ascending: false });
-      return (data ?? []) as SiteVisit[];
-    },
+    queryFn: () => apiClient.get<SiteVisit[]>("/site-visits", { enquiry_id: enquiryId }),
   });
 
   const hasNotFeasible = visits.some((v) => v.feasibility === "not_feasible" && v.status === "completed");
@@ -272,10 +266,10 @@ function VisitCard({
               </p>
               <div className="grid grid-cols-4 gap-2">
                 {((visit as any).photos as string[]).map((path, i) => {
-                  const { data } = supabase.storage.from("site-visit-photos").getPublicUrl(path);
+                  const publicUrl = getPublicStorageUrl("site-visit-photos", path);
                   return (
-                    <a key={i} href={data.publicUrl} target="_blank" rel="noopener noreferrer" className="block rounded-lg overflow-hidden" style={{ aspectRatio: "1", border: "1.5px solid #E0E7EF" }}>
-                      <img src={data.publicUrl} alt={`Site photo ${i + 1}`} className="w-full h-full object-cover hover:scale-105 transition-transform" />
+                    <a key={i} href={publicUrl} target="_blank" rel="noopener noreferrer" className="block rounded-lg overflow-hidden" style={{ aspectRatio: "1", border: "1.5px solid #E0E7EF" }}>
+                      <img src={publicUrl} alt={`Site photo ${i + 1}`} className="w-full h-full object-cover hover:scale-105 transition-transform" />
                     </a>
                   );
                 })}
@@ -316,19 +310,16 @@ function ScheduleDialog({
     if (!date) { toast.error("Visit date is required"); return; }
     setSaving(true);
     try {
-      const { error } = await supabase.from("site_visits").insert({
+      await apiClient.post("/site-visits", {
         enquiry_id: enquiryId,
         visit_date: date,
         geologist_id: geologist,
         status: "scheduled",
         observations: notes ? { notes } : null,
       });
-      if (error) throw error;
 
-      await supabase.from("enquiry_events").insert({
-        enquiry_id: enquiryId,
+      await apiClient.post(`/enquiries/${enquiryId}/events`, {
         event_type: "site_visit_scheduled",
-        triggered_by: userId,
         metadata: { visit_date: date },
       });
 
@@ -469,14 +460,12 @@ function CompleteDialog({
     for (const file of photos) {
       const ext = file.name.split(".").pop()?.toLowerCase() ?? "jpg";
       const path = `${enquiryId}/${visit.id}/${crypto.randomUUID()}.${ext}`;
-      const { error } = await supabase.storage
-        .from("site-visit-photos")
-        .upload(path, file, { contentType: file.type });
-      if (error) {
+      try {
+        await uploadToStorage("site-visit-photos", path, file, { contentType: file.type });
+        paths.push(path);
+      } catch {
         toast.error(`Failed to upload ${file.name}`);
-        continue;
       }
-      paths.push(path);
     }
     setUploadingPhotos(false);
     return paths;
@@ -495,29 +484,22 @@ function CompleteDialog({
       const existingPhotos = ((visit as any).photos ?? []) as string[];
       const allPhotos = [...existingPhotos, ...uploadedPaths];
 
-      const { error } = await supabase
-        .from("site_visits")
-        .update({
-          status: "completed",
-          feasibility,
-          water_confirmed: waterConfirmed,
-          access_confirmed: accessConfirmed,
-          security_confirmed: securityConfirmed,
-          fencing_confirmed: fencingConfirmed,
-          observations: { notes: observationNotes },
-          recommendations,
-          cost_factors: selectedCostFactors,
-          photos: allPhotos,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", visit.id);
-      if (error) throw error;
+      await apiClient.patch(`/site-visits/${visit.id}`, {
+        status: "completed",
+        feasibility,
+        water_confirmed: waterConfirmed,
+        access_confirmed: accessConfirmed,
+        security_confirmed: securityConfirmed,
+        fencing_confirmed: fencingConfirmed,
+        observations: { notes: observationNotes },
+        recommendations,
+        cost_factors: selectedCostFactors,
+        photos: allPhotos,
+      });
 
-      await supabase.from("enquiry_events").insert({
-        enquiry_id: enquiryId,
+      await apiClient.post(`/enquiries/${enquiryId}/events`, {
         event_type: "site_visit_completed",
-        triggered_by: userId,
-        metadata: { feasibility, visit_id: visit.id } as any,
+        metadata: { feasibility, visit_id: visit.id },
       });
 
       toast.success("Site visit completed");

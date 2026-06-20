@@ -45,6 +45,13 @@ export async function getSignedUrl(
   return signed_url;
 }
 
+/** Deterministic public URL for an object in a PUBLIC bucket (no signing needed).
+ * Used for site-visit photos which live in a public bucket. */
+export function getPublicStorageUrl(bucket: StorageBucket, path: string): string {
+  const base = (import.meta.env.VITE_SUPABASE_URL as string).replace(/\/$/, "");
+  return `${base}/storage/v1/object/public/${bucket}/${encodeURI(path)}`;
+}
+
 /** Download a private object as a Blob (via a short-lived signed URL). */
 export async function downloadFromStorage(bucket: StorageBucket, path: string): Promise<Blob> {
   const url = await getSignedUrl(bucket, path, 120);

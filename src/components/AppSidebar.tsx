@@ -1,5 +1,5 @@
 import { Link, useLocation } from "react-router-dom";
-import { LayoutDashboard, FileText, Users, CalendarClock, Settings, LogOut, ClipboardList, Truck, Wallet } from "lucide-react";
+import { LayoutDashboard, FileText, Users, CalendarClock, Settings, LogOut, ClipboardList, Truck, Wallet, Building2 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useRole } from "@/hooks/useRole";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -13,13 +13,18 @@ const navItems = [
   { path: "/accounts", label: "Accounts", icon: Wallet },
   { path: "/quotation-config", label: "Quotation Config", icon: ClipboardList, adminOnly: true },
   { path: "/settings", label: "Settings", icon: Settings, adminOnly: true },
+  { path: "/admin", label: "Admin Console", icon: Building2, platformOnly: true },
 ];
 
 export function AppSidebar() {
   const { pathname } = useLocation();
-  const { user, signOut, profileLoading } = useAuth();
+  const { user, signOut, profileLoading, organization, isPlatformAdmin } = useAuth();
   const { isAdmin } = useRole();
-  const visibleItems = navItems.filter((item) => !item.adminOnly || profileLoading || isAdmin);
+  const visibleItems = navItems.filter(
+    (item) =>
+      (!item.adminOnly || profileLoading || isAdmin) &&
+      (!item.platformOnly || isPlatformAdmin),
+  );
 
   return (
     <aside
@@ -35,11 +40,11 @@ export function AppSidebar() {
           GG
         </div>
         <div className="hidden lg:block min-w-0">
-          <span className="block font-bold text-white text-sm leading-tight" style={{ fontFamily: "Sora, sans-serif" }}>
-            Global Geo
+          <span className="block font-bold text-white text-sm leading-tight truncate" style={{ fontFamily: "Sora, sans-serif" }}>
+            {organization?.name ?? "Global Geo"}
           </span>
           <span className="block text-[12px]" style={{ color: "rgba(255,255,255,0.45)" }}>
-            Consultancy
+            {isPlatformAdmin ? "Platform Admin" : "Consultancy"}
           </span>
         </div>
       </div>

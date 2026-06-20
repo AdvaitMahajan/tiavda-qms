@@ -1,4 +1,4 @@
-import { db } from '../db';
+import { db, requireOrgId } from '../db';
 import { enquiry_events } from '../db/schema';
 
 type EnquiryEventInsert = typeof enquiry_events.$inferInsert;
@@ -9,8 +9,8 @@ type EnquiryEventInsert = typeof enquiry_events.$inferInsert;
  * Accepts an optional transaction so it participates in atomic operations.
  */
 export async function logEnquiryEvent(
-  values: EnquiryEventInsert,
+  values: Omit<EnquiryEventInsert, 'org_id'>,
   tx: Pick<typeof db, 'insert'> = db,
 ): Promise<void> {
-  await tx.insert(enquiry_events).values(values);
+  await tx.insert(enquiry_events).values({ ...values, org_id: requireOrgId() });
 }

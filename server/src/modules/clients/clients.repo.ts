@@ -1,5 +1,5 @@
 import { and, asc, desc, eq, ilike, isNull, or, type SQL } from 'drizzle-orm';
-import { db } from '../../db';
+import { db, requireOrgId } from '../../db';
 import { clients } from '../../db/schema';
 import type { CreateClientInput, UpdateClientInput, ListClientsQuery } from './clients.schema';
 
@@ -37,7 +37,7 @@ export const clientsRepo = {
   },
 
   async create(values: CreateClientInput) {
-    const rows = await db.insert(clients).values(values).returning();
+    const rows = await db.insert(clients).values({ ...values, org_id: requireOrgId() }).returning();
     return rows[0];
   },
 

@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { randomBytes } from 'node:crypto';
 import { z } from 'zod';
 import { and, desc, eq, inArray } from 'drizzle-orm';
-import { db } from '../../db';
+import { db, requireOrgId } from '../../db';
 import { mobilisation, mob_confirmation_tokens } from '../../db/schema';
 import { authenticate, getAuth } from '../../middleware/auth';
 import { requireNotViewer } from '../../middleware/roles';
@@ -70,7 +70,7 @@ mobilisationRouter.post(
   requireNotViewer,
   asyncHandler(async (req, res) => {
     const body = createSchema.parse(req.body);
-    const rows = await db.insert(mobilisation).values(body).returning();
+    const rows = await db.insert(mobilisation).values({ ...body, org_id: requireOrgId() }).returning();
     res.status(201).json(rows[0]);
   }),
 );
@@ -140,6 +140,7 @@ mobilisationRouter.post(
           token,
           status: 'pending',
           expires_at: expiresAt,
+          org_id: requireOrgId(),
         })
         .returning();
       return inserted[0];

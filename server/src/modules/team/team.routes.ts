@@ -49,7 +49,14 @@ teamRouter.post(
       user_metadata: { full_name: body.full_name, role: body.role },
     });
     if (error || !data.user) throw badRequest(error?.message ?? 'Failed to create user');
-    // The on_auth_user_created trigger creates the matching profiles row.
+    // The on_auth_user_created trigger creates the matching profiles row; stamp it
+    // into the inviting admin's org (+ role/name) via service role (bypasses RLS).
+    if (auth.orgId) {
+      await supabaseAdmin
+        .from('profiles')
+        .update({ org_id: auth.orgId, role: body.role, full_name: body.full_name })
+        .eq('id', data.user.id);
+    }
     res.status(201).json({ user_id: data.user.id, email: body.email });
   }),
 );

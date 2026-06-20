@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { randomBytes } from 'node:crypto';
 import { z } from 'zod';
 import { and, desc, eq, isNull, type SQL } from 'drizzle-orm';
-import { db } from '../../db';
+import { db, requireOrgId } from '../../db';
 import { intake_tokens } from '../../db/schema';
 import { authenticate, getAuth } from '../../middleware/auth';
 import { requireNotViewer } from '../../middleware/roles';
@@ -82,6 +82,7 @@ intakeTokensRouter.post(
           enquiry_id: b.enquiry_id ?? null,
           created_by: auth.userId,
           expires_at: expiresAt,
+          org_id: requireOrgId(),
         })
         .returning();
       return inserted[0];

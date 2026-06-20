@@ -2,7 +2,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Route, Routes, Navigate } from "react-router-dom";
 import { Toaster } from "sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { AuthProvider } from "@/hooks/useAuth";
+import { AuthProvider, useAuth } from "@/hooks/useAuth";
 import { useRole } from "@/hooks/useRole";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { AppLayout } from "@/components/AppLayout";
@@ -11,6 +11,14 @@ import { ErrorBoundary } from "@/components/ErrorBoundary";
 function AdminRoute({ children }: { children: React.ReactNode }) {
   const { isAdmin } = useRole();
   if (!isAdmin) return <Navigate to="/dashboard" replace />;
+  return <>{children}</>;
+}
+
+// Platform-owner gate for the cross-org Admin Console.
+function PlatformAdminRoute({ children }: { children: React.ReactNode }) {
+  const { isPlatformAdmin, profileLoading } = useAuth();
+  if (profileLoading) return null;
+  if (!isPlatformAdmin) return <Navigate to="/dashboard" replace />;
   return <>{children}</>;
 }
 
@@ -31,6 +39,7 @@ import ConfirmMobilization from "./pages/ConfirmMobilization";
 import ResetPassword from "./pages/ResetPassword";
 import SiteVisitForm from "./pages/SiteVisitForm";
 import Mobilisation from "./pages/Mobilisation";
+import AdminConsole from "./pages/AdminConsole";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -82,6 +91,7 @@ const App = () => (
               <Route path="/accounts" element={<Accounts />} />
               <Route path="/quotation-config" element={<AdminRoute><QuotationConfigPage /></AdminRoute>} />
               <Route path="/settings" element={<AdminRoute><SettingsPage /></AdminRoute>} />
+              <Route path="/admin" element={<PlatformAdminRoute><AdminConsole /></PlatformAdminRoute>} />
             </Route>
 
             {/* Redirects */}

@@ -17,7 +17,7 @@ export async function uploadToStorage(
   file: Blob,
   opts?: { upsert?: boolean; contentType?: string },
 ): Promise<string> {
-  const { signedUrl } = await apiClient.post<{ signedUrl: string; token: string; path: string }>(
+  const { signedUrl, path: storedPath } = await apiClient.post<{ signedUrl: string; token: string; path: string }>(
     "/storage/sign-upload",
     { bucket, path, upsert: opts?.upsert ?? false },
   );
@@ -28,7 +28,9 @@ export async function uploadToStorage(
     body: file,
   });
   if (!res.ok) throw new Error(`Upload failed (${res.status})`);
-  return path;
+  // The API namespaces objects under the org_id, so return the path it actually
+  // wrote to (callers that persist the path — e.g. site-visit photos — store this).
+  return storedPath ?? path;
 }
 
 /** Get a time-limited signed download URL for a private object. */

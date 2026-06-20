@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { and, desc, eq, inArray, isNull, type SQL } from 'drizzle-orm';
-import { db } from '../../db';
+import { db, requireOrgId } from '../../db';
 import { clients, enquiries, enquiry_events, quotations } from '../../db/schema';
 import { authenticate } from '../../middleware/auth';
 import { requireNotViewer } from '../../middleware/roles';
@@ -182,7 +182,7 @@ enquiriesRouter.post(
   requireNotViewer,
   asyncHandler(async (req, res) => {
     const body = createSchema.parse(req.body);
-    const rows = await db.insert(enquiries).values(body).returning();
+    const rows = await db.insert(enquiries).values({ ...body, org_id: requireOrgId() }).returning();
     res.status(201).json(rows[0]);
   }),
 );
@@ -220,7 +220,7 @@ enquiriesRouter.post(
     const body = eventSchema.parse(req.body);
     const rows = await db
       .insert(enquiry_events)
-      .values({ ...body, enquiry_id: getParam(req, 'id'), triggered_by: req.auth?.userId ?? null })
+      .values({ ...body, enquiry_id: getParam(req, 'id'), triggered_by: req.auth?.userId ?? null, org_id: requireOrgId() })
       .returning();
     res.status(201).json(rows[0]);
   }),

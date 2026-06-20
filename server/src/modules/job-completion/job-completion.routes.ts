@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { and, asc, desc, eq } from 'drizzle-orm';
-import { db } from '../../db';
+import { db, requireOrgId } from '../../db';
 import { job_completion, job_reminders } from '../../db/schema';
 import { authenticate } from '../../middleware/auth';
 import { requireNotViewer } from '../../middleware/roles';
@@ -59,7 +59,7 @@ jobCompletionRouter.post(
   requireNotViewer,
   asyncHandler(async (req, res) => {
     const body = reminderSchema.parse(req.body);
-    const rows = await db.insert(job_reminders).values(body).returning();
+    const rows = await db.insert(job_reminders).values({ ...body, org_id: requireOrgId() }).returning();
     res.status(201).json(rows[0]);
   }),
 );
@@ -104,7 +104,7 @@ jobCompletionRouter.post(
   requireNotViewer,
   asyncHandler(async (req, res) => {
     const { enquiry_id } = z.object({ enquiry_id: z.string().uuid() }).parse(req.body);
-    await db.insert(job_completion).values({ enquiry_id }).onConflictDoNothing();
+    await db.insert(job_completion).values({ enquiry_id, org_id: requireOrgId() }).onConflictDoNothing();
     const rows = await db
       .select()
       .from(job_completion)

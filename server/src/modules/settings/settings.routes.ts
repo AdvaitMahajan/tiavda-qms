@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { inArray, sql } from 'drizzle-orm';
-import { db } from '../../db';
+import { db, requireOrgId } from '../../db';
 import { app_settings } from '../../db/schema';
 import { authenticate } from '../../middleware/auth';
 import { requireEditor } from '../../middleware/roles';
@@ -39,13 +39,14 @@ settingsRouter.patch(
   requireEditor,
   asyncHandler(async (req, res) => {
     const { entries } = upsertSchema.parse(req.body);
-    const rows = Object.entries(entries).map(([key, value]) => ({ key, value: String(value) }));
+    const org_id = requireOrgId();
+    const rows = Object.entries(entries).map(([key, value]) => ({ org_id, key, value: String(value) }));
     if (rows.length === 0) throw badRequest('No settings provided');
     const result = await db
       .insert(app_settings)
       .values(rows)
       .onConflictDoUpdate({
-        target: app_settings.key,
+        target: [app_settings.org_id, app_settings.key],
         set: { value: sql`excluded.value`, updated_at: sql`now()` },
       })
       .returning();

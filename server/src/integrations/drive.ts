@@ -1,12 +1,15 @@
 import { SignJWT, importPKCS8 } from 'jose';
-import { env } from '../env';
+import { currentOrgId } from '../db';
 import { supabaseAdmin } from '../lib/supabase';
+import { resolveDriveCreds } from '../lib/org-integrations';
 
 export interface CreateDriveFolderInput {
   enquiry_id: string;
   ref_number: string;
   client_name: string;
   city: string;
+  /** Org whose provisioned Google service account to use; defaults to request org. */
+  orgId?: string | null;
 }
 
 export interface CreateDriveFolderResult {
@@ -65,13 +68,14 @@ async function findOrCreateFolder(name: string, parentId: string, accessToken: s
 export async function createDriveFolder(input: CreateDriveFolderInput): Promise<CreateDriveFolderResult> {
   const { enquiry_id, ref_number, client_name, city } = input;
   try {
-    if (!env.GOOGLE_SERVICE_ACCOUNT_B64 || !env.GOOGLE_DRIVE_ROOT_FOLDER_ID) {
-      throw new Error('Google credentials not configured');
+    const creds = await resolveDriveCreds(input.orgId ?? currentOrgId());
+    if (!creds.service_account_b64 || !creds.root_folder_id) {
+      throw new Error('Google Drive is not configured for this organization');
     }
-    const sa = JSON.parse(Buffer.from(env.GOOGLE_SERVICE_ACCOUNT_B64, 'base64').toString('utf8')) as ServiceAccount;
+    const sa = JSON.parse(Buffer.from(creds.service_account_b64, 'base64').toString('utf8')) as ServiceAccount;
     const accessToken = await getGoogleAccessToken(sa);
     const year = new Date().getFullYear().toString();
-    const yearFolderId = await findOrCreateFolder(year, env.GOOGLE_DRIVE_ROOT_FOLDER_ID, accessToken);
+    const yearFolderId = await findOrCreateFolder(year, creds.root_folder_id, accessToken);
     const projectFolderId = await findOrCreateFolder(`${ref_number} — ${client_name} — ${city}`, yearFolderId, accessToken);
     const projectFolderUrl = `https://drive.google.com/drive/folders/${projectFolderId}`;
 

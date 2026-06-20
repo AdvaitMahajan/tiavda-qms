@@ -1,7 +1,8 @@
 import { useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
+import { apiClient } from "@/lib/apiClient";
+import type { Tables } from "@/integrations/supabase/types";
 import { toast } from "sonner";
 import { Search, Users, Plus, Phone, Mail, MapPin, UserPlus, Link2 } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
@@ -42,11 +43,7 @@ export default function Clients() {
 
   const { data: clients = [], isLoading } = useQuery({
     queryKey: ["clients"],
-    queryFn: async () => {
-      const { data, error } = await supabase.from("clients").select("*").is("deleted_at", null).order("created_at", { ascending: false });
-      if (error) throw error;
-      return data;
-    },
+    queryFn: () => apiClient.get<Tables<"clients">[]>("/clients"),
   });
 
   const filtered = useMemo(() => {
@@ -78,17 +75,22 @@ export default function Clients() {
   const handleSave = async () => {
     if (!validateForm()) return;
     setSaving(true);
-    const { error } = await supabase.from("clients").insert({
-      name: form.name.trim(), phone: normalizePhone(form.phone),
-      email: form.email.trim() || null, company: form.company.trim() || null,
-      city: form.city.trim(), state: form.state.trim() || null,
-      pincode: form.pincode.trim() || null,
-      whatsapp_number: form.whatsapp_number.trim() ? normalizePhone(form.whatsapp_number) : null,
-      notes: form.notes.trim() || null, source: form.source.trim() || "manual",
-    });
-    setSaving(false);
-    if (error) { toast.error(error.message); }
-    else { toast.success("Client added"); setPanelOpen(false); setForm(emptyForm); queryClient.invalidateQueries({ queryKey: ["clients"] }); }
+    try {
+      await apiClient.post("/clients", {
+        name: form.name.trim(), phone: normalizePhone(form.phone),
+        email: form.email.trim() || null, company: form.company.trim() || null,
+        city: form.city.trim(), state: form.state.trim() || null,
+        pincode: form.pincode.trim() || null,
+        whatsapp_number: form.whatsapp_number.trim() ? normalizePhone(form.whatsapp_number) : null,
+        notes: form.notes.trim() || null, source: form.source.trim() || "manual",
+      });
+      toast.success("Client added"); setPanelOpen(false); setForm(emptyForm);
+      queryClient.invalidateQueries({ queryKey: ["clients"] });
+    } catch (e) {
+      toast.error((e as Error)?.message || "Failed to add client");
+    } finally {
+      setSaving(false);
+    }
   };
 
   const updateForm = (patch: Partial<ClientForm>) => setForm((p) => ({ ...p, ...patch }));

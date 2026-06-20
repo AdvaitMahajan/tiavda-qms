@@ -1,7 +1,8 @@
 import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
+import { apiClient } from "@/lib/apiClient";
+import type { Tables } from "@/integrations/supabase/types";
 import { sendNotification } from "@/lib/notifications";
 import { toast } from "sonner";
 import { cn, formatDate, relativeTime } from "@/lib/utils";
@@ -49,46 +50,27 @@ export default function ClientDetail() {
 
   const { data: client, isLoading: clientLoading } = useQuery({
     queryKey: ["client", id],
-    queryFn: async () => {
-      const { data, error } = await supabase.from("clients").select("*").eq("id", id!).single();
-      if (error) throw error;
-      return data;
-    },
+    queryFn: () => apiClient.get<Tables<"clients">>(`/clients/${id}`),
     enabled: !!id,
   });
 
   const { data: activeToken, refetch: refetchToken } = useQuery({
     queryKey: ["intake-token", id],
-    queryFn: async () => {
-      const { data } = await supabase.from("intake_tokens").select("*")
-        .eq("client_id", id!).eq("status", "active")
-        .order("created_at", { ascending: false }).limit(1).maybeSingle();
-      return data;
-    },
+    queryFn: () => apiClient.get<Tables<"intake_tokens"> | null>("/intake-tokens", { client_id: id, status: "active" }),
     enabled: !!id,
     refetchOnMount: "always",
   });
 
   const { data: lastUsedToken, refetch: refetchUsed } = useQuery({
     queryKey: ["intake-token-used", id],
-    queryFn: async () => {
-      const { data } = await supabase.from("intake_tokens").select("*")
-        .eq("client_id", id!).eq("status", "used")
-        .order("used_at", { ascending: false }).limit(1).maybeSingle();
-      return data;
-    },
+    queryFn: () => apiClient.get<Tables<"intake_tokens"> | null>("/intake-tokens", { client_id: id, status: "used" }),
     enabled: !!id,
     refetchOnMount: "always",
   });
 
   const { data: lastExpiredToken, refetch: refetchExpired } = useQuery({
     queryKey: ["intake-token-expired", id],
-    queryFn: async () => {
-      const { data } = await supabase.from("intake_tokens").select("*")
-        .eq("client_id", id!).eq("status", "expired")
-        .order("created_at", { ascending: false }).limit(1).maybeSingle();
-      return data;
-    },
+    queryFn: () => apiClient.get<Tables<"intake_tokens"> | null>("/intake-tokens", { client_id: id, status: "expired" }),
     enabled: !!id,
   });
 
@@ -115,16 +97,14 @@ export default function ClientDetail() {
       const waNum = (client as any).whatsapp_number || client.phone;
       if (waNum) {
         const waNumber = waNum.startsWith("+") ? waNum : `+91${waNum.replace(/\D/g, "")}`;
-        await supabase.functions.invoke("send-whatsapp", {
-          body: {
-            phone_number: waNumber,
-            template_name: "qms_intake_form",
-            parameters: [
-              { name: "client_name", value: client.name },
-              { name: "ref_number", value: "Intake Form" },
-              { name: "link", value: intakeUrl },
-            ],
-          },
+        await apiClient.post("/integrations/whatsapp", {
+          phone_number: waNumber,
+          template_name: "qms_intake_form",
+          parameters: [
+            { name: "client_name", value: client.name },
+            { name: "ref_number", value: "Intake Form" },
+            { name: "link", value: intakeUrl },
+          ],
         });
         sent = true;
       }
@@ -138,12 +118,7 @@ export default function ClientDetail() {
 
   const { data: enquiries = [] } = useQuery({
     queryKey: ["client-enquiries", id],
-    queryFn: async () => {
-      const { data, error } = await supabase.from("enquiries").select("*")
-        .eq("client_id", id!).is("deleted_at", null).order("created_at", { ascending: false });
-      if (error) throw error;
-      return data;
-    },
+    queryFn: () => apiClient.get<Tables<"enquiries">[]>("/enquiries", { client_id: id }),
     enabled: !!id,
   });
 
@@ -167,19 +142,14 @@ export default function ClientDetail() {
   const generateToken = async () => {
     setGeneratingLink(true);
     try {
-      const { data: { user } } = await supabase.auth.getUser();
       // Bind the intake link to the client's open soil-investigation enquiry so the
       // submission attaches to the RIGHT enquiry (not a fuzzy most-recent guess).
-      const { data: targetEnq } = await supabase.from("enquiries")
-        .select("id")
-        .eq("client_id", id!)
-        .eq("service_type", "soil_investigation")
-        .in("status", ["new", "intake_pending"])
-        .is("deleted_at", null)
-        .order("created_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
-      await createIntakeToken(id!, user!.id, targetEnq?.id ?? undefined);
+      const targets = await apiClient.get<{ id: string }[]>("/enquiries", {
+        client_id: id,
+        service_type: "soil_investigation",
+        status: "new,intake_pending",
+      });
+      await createIntakeToken(id!, "", targets[0]?.id ?? undefined);
       toast.success("New intake form link generated");
       await Promise.all([refetchToken(), refetchUsed(), refetchExpired()]);
     } catch (err: any) { toast.error(err.message); }
@@ -197,17 +167,20 @@ export default function ClientDetail() {
     if (Object.keys(errs).length) return;
 
     setSaving(true);
-    const { error } = await supabase.from("clients").update({
-      name: editForm.name.trim(), phone: normalizePhone(editForm.phone),
-      email: editForm.email?.trim() || null, company: editForm.company?.trim() || null,
-      city: editForm.city.trim(), state: editForm.state?.trim() || null,
-      whatsapp_number: editForm.whatsapp_number?.trim() ? normalizePhone(editForm.whatsapp_number) : null,
-      notes: editForm.notes?.trim() || null,
-      gst_number: editForm.gst_number?.trim() || null,
-    }).eq("id", id!);
-    setSaving(false);
-    if (error) { toast.error(error.message); }
-    else { toast.success("Client updated"); setEditOpen(false); queryClient.invalidateQueries({ queryKey: ["client", id] }); }
+    try {
+      await apiClient.patch(`/clients/${id}`, {
+        name: editForm.name.trim(), phone: normalizePhone(editForm.phone),
+        email: editForm.email?.trim() || null, company: editForm.company?.trim() || null,
+        city: editForm.city.trim(), state: editForm.state?.trim() || null,
+        whatsapp_number: editForm.whatsapp_number?.trim() ? normalizePhone(editForm.whatsapp_number) : null,
+        notes: editForm.notes?.trim() || null,
+      });
+      toast.success("Client updated"); setEditOpen(false); queryClient.invalidateQueries({ queryKey: ["client", id] });
+    } catch (e) {
+      toast.error((e as Error)?.message || "Failed to update client");
+    } finally {
+      setSaving(false);
+    }
   };
 
   if (clientLoading) return <div className="py-20 text-center text-muted-foreground">Loading…</div>;

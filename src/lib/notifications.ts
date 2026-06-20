@@ -1,19 +1,13 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // Frontend notification helper
 //
-// The HTML/subject for every email lives ONCE in the edge function registry at
-// supabase/functions/_shared/email-templates.ts. The frontend never builds HTML;
-// it just names a template and passes params. This file mirrors the template
-// keys + param shapes so callers get autocomplete and type-safety.
-//
-// Keep the param shapes below in sync with `TemplateParams` in the edge module.
+// Email is sent via the API's POST /integrations/email (which renders the
+// template server-side). The frontend never builds HTML; it names a template and
+// passes params. Param shapes below mirror the server template registry.
 // ─────────────────────────────────────────────────────────────────────────────
-import { supabase } from "@/integrations/supabase/client";
+import { apiClient } from "@/lib/apiClient";
 
-/** Minimal shape we need from a Supabase client — keeps typed + public clients interchangeable. */
-type InvokeCapableClient = { functions: { invoke: typeof supabase.functions.invoke } };
-
-// Mirror of TemplateParams in supabase/functions/_shared/email-templates.ts
+// Mirror of TemplateParams in server/src/integrations/email-templates.ts
 export interface NotificationParams {
   intake_link: { client_name: string; ref_number?: string; intake_url: string };
   intake_reminder: { client_name: string; ref_number: string; intake_url: string; is_final?: boolean };
@@ -56,8 +50,6 @@ export interface SendNotificationOptions<T extends NotificationTemplate> {
   attachmentBucket?: string;
   /** Override the template's default subject. */
   subject?: string;
-  /** Use a specific supabase client (e.g. the public/anon client on the Intake page). */
-  client?: InvokeCapableClient;
 }
 
 export interface SendNotificationResult {
@@ -66,28 +58,24 @@ export interface SendNotificationResult {
 }
 
 /**
- * Send a templated email via the `send-email` edge function.
+ * Send a templated email via POST /integrations/email.
  * Never throws — returns { ok, error } so callers can fire-and-forget safely.
  */
 export async function sendNotification<T extends NotificationTemplate>(
   opts: SendNotificationOptions<T>,
 ): Promise<SendNotificationResult> {
-  const client = opts.client ?? supabase;
   try {
-    const { data, error } = await client.functions.invoke("send-email", {
-      body: {
-        to: opts.to,
-        template: opts.template,
-        params: opts.params,
-        ...(opts.subject ? { subject: opts.subject } : {}),
-        ...(opts.attachmentPath ? { attachment_path: opts.attachmentPath } : {}),
-        ...(opts.attachmentBucket ? { attachment_bucket: opts.attachmentBucket } : {}),
-      },
+    const data = await apiClient.post<{ success?: boolean; error?: string }>("/integrations/email", {
+      to: opts.to,
+      template: opts.template,
+      params: opts.params,
+      ...(opts.subject ? { subject: opts.subject } : {}),
+      ...(opts.attachmentPath ? { attachment_path: opts.attachmentPath } : {}),
+      ...(opts.attachmentBucket ? { attachment_bucket: opts.attachmentBucket } : {}),
     });
-    if (error) return { ok: false, error: error.message };
     if (data?.error) return { ok: false, error: data.error };
     return { ok: true };
-  } catch (e: any) {
-    return { ok: false, error: e?.message ?? "send-email invocation failed" };
+  } catch (e) {
+    return { ok: false, error: (e as Error)?.message ?? "send-email failed" };
   }
 }

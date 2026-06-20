@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
+import { apiClient } from "@/lib/apiClient";
+import type { Tables } from "@/integrations/supabase/types";
 import { toast } from "sonner";
 import { createIntakeToken, getIntakeUrl } from "@/lib/intakeTokenUtils";
 import { sendNotification } from "@/lib/notifications";
@@ -110,10 +111,7 @@ export function AddLeadDialog({ open, onOpenChange }: { open: boolean; onOpenCha
 
   const { data: clientsList = [] } = useQuery({
     queryKey: ["clients-for-new-enquiry"],
-    queryFn: async () => {
-      const { data } = await supabase.from("clients").select("id, name, city, phone").is("deleted_at", null).order("name");
-      return data ?? [];
-    },
+    queryFn: () => apiClient.get<Tables<"clients">[]>("/clients", { order: "name" }),
     enabled: open,
   });
 
@@ -317,20 +315,12 @@ export function AddLeadDialog({ open, onOpenChange }: { open: boolean; onOpenCha
 
                 if (clientMode === "new") {
                   const trimmedPhone = phone.trim();
-                  const { data: existing } = await supabase
-                    .from("clients")
-                    .select("id")
-                    .eq("phone", trimmedPhone)
-                    .maybeSingle();
-
-                  if (existing) {
-                    resolvedClientId = existing.id;
-                    await supabase.from("clients").update({
-                      ...leadMeta,
-                      city: city.trim(),
-                    }).eq("id", resolvedClientId);
+                  const existing = await apiClient.get<{ id: string }[]>("/clients", { phone: trimmedPhone });
+                  if (existing[0]) {
+                    resolvedClientId = existing[0].id;
+                    await apiClient.patch(`/clients/${resolvedClientId}`, { ...leadMeta, city: city.trim() });
                   } else {
-                    const { data: newClient, error: cErr } = await supabase.from("clients").insert({
+                    const newClient = await apiClient.post<{ id: string }>("/clients", {
                       name: name.trim(),
                       phone: trimmedPhone,
                       email: email.trim() || null,
@@ -338,72 +328,65 @@ export function AddLeadDialog({ open, onOpenChange }: { open: boolean; onOpenCha
                       city: city.trim(),
                       source: "manual",
                       ...leadMeta,
-                    }).select("id").single();
-                    if (cErr) throw new Error("Failed to create client: " + cErr.message);
+                    });
                     resolvedClientId = newClient.id;
                   }
                 } else {
-                  await supabase.from("clients").update({
-                    ...leadMeta,
-                    city: city.trim(),
-                  }).eq("id", resolvedClientId);
+                  await apiClient.patch(`/clients/${resolvedClientId}`, { ...leadMeta, city: city.trim() });
                 }
 
                 // Create enquiry record so it appears in Kanban immediately
                 const initialStatus = serviceType === "soil_investigation" ? "intake_pending" : "new";
-                const { data: newEnquiry, error: enqErr } = await supabase.from("enquiries").insert({
+                const newEnquiry = await apiClient.post<{ id: string; ref_number: string }>("/enquiries", {
                   client_id: resolvedClientId,
                   site_city: city.trim(),
                   service_type: serviceType,
                   lead_source: source,
-                  status: initialStatus as any,
+                  status: initialStatus,
                   remarks: requirement.trim() || null,
-                }).select("id, ref_number").single();
-
-                if (enqErr) throw new Error("Failed to create enquiry: " + enqErr.message);
+                });
 
                 // Auto-send intake link for SI leads
                 if (serviceType === "soil_investigation" && resolvedClientId) {
                   try {
-                    const { data: { user: currentUser } } = await supabase.auth.getUser();
-                    if (currentUser) {
-                      const token = await createIntakeToken(resolvedClientId, currentUser.id, newEnquiry.id);
-                      const intakeUrl = getIntakeUrl(token);
-                      const clientName = name.trim() || "Client";
-                      const clientEmail = email.trim() || null;
-                      const clientPhone = phone.trim() || null;
+                    const token = await createIntakeToken(resolvedClientId, "", newEnquiry.id);
+                    const intakeUrl = getIntakeUrl(token);
+                    const clientName = name.trim() || "Client";
+                    const clientEmail = email.trim() || null;
+                    const clientPhone = phone.trim() || null;
 
-                      let linkDelivered = false;
-                      if (clientEmail) {
-                        const { ok } = await sendNotification({
-                          to: clientEmail,
-                          template: "intake_link",
-                          params: { client_name: clientName, ref_number: newEnquiry.ref_number, intake_url: intakeUrl },
+                    let linkDelivered = false;
+                    if (clientEmail) {
+                      const { ok } = await sendNotification({
+                        to: clientEmail,
+                        template: "intake_link",
+                        params: { client_name: clientName, ref_number: newEnquiry.ref_number, intake_url: intakeUrl },
+                      });
+                      if (ok) linkDelivered = true;
+                    }
+
+                    if (clientPhone) {
+                      const waNumber = clientPhone.startsWith("+") ? clientPhone : `+91${clientPhone.replace(/\D/g, "")}`;
+                      try {
+                        const r = await apiClient.post<{ error?: string }>("/integrations/whatsapp", {
+                          phone_number: waNumber,
+                          template_name: "qms_intake_form",
+                          parameters: [
+                            { name: "client_name", value: clientName },
+                            { name: "ref_number", value: newEnquiry.ref_number },
+                            { name: "link", value: intakeUrl },
+                          ],
                         });
-                        if (ok) linkDelivered = true;
+                        if (!r.error) linkDelivered = true;
+                      } catch {
+                        /* non-blocking */
                       }
+                    }
 
-                      if (clientPhone) {
-                        const waNumber = clientPhone.startsWith("+") ? clientPhone : `+91${clientPhone.replace(/\D/g, "")}`;
-                        const { error: waErr } = await supabase.functions.invoke("send-whatsapp", {
-                          body: {
-                            phone_number: waNumber,
-                            template_name: "qms_intake_form",
-                            parameters: [
-                              { name: "client_name", value: clientName },
-                              { name: "ref_number", value: newEnquiry.ref_number },
-                              { name: "link", value: intakeUrl },
-                            ],
-                          },
-                        }).catch((e) => ({ error: e }));
-                        if (!waErr) linkDelivered = true;
-                      }
-
-                      if (linkDelivered) {
-                        toast.success("Intake link sent to the client.");
-                      } else {
-                        toast.warning("Lead saved, but the intake link could NOT be sent — share it manually from the client page.");
-                      }
+                    if (linkDelivered) {
+                      toast.success("Intake link sent to the client.");
+                    } else {
+                      toast.warning("Lead saved, but the intake link could NOT be sent — share it manually from the client page.");
                     }
                   } catch (intakeErr) {
                     console.warn("Auto intake link failed:", intakeErr);

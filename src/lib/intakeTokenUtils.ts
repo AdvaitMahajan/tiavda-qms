@@ -1,43 +1,19 @@
-import { supabase } from "@/integrations/supabase/client";
+import { apiClient } from "@/lib/apiClient";
 import { sendNotification } from "@/lib/notifications";
-
-export function generateTokenString(): string {
-  const arr = new Uint8Array(24);
-  crypto.getRandomValues(arr);
-  return btoa(String.fromCharCode(...arr))
-    .replace(/\+/g, "-")
-    .replace(/\//g, "_")
-    .replace(/=/g, "");
-}
+import type { Tables } from "@/integrations/supabase/types";
 
 export async function createIntakeToken(
   clientId: string,
-  createdBy: string,
+  _createdBy: string,
   enquiryId?: string,
 ): Promise<string> {
-  // Expire prior active tokens for the SAME enquiry (so generating a link for a
-  // different/parallel enquiry of the same client doesn't kill the other's link).
-  // For legacy client-level tokens (no enquiryId), expire the client's active ones.
-  let expireQuery = supabase
-    .from("intake_tokens")
-    .update({ status: "expired" })
-    .eq("status", "active");
-  expireQuery = enquiryId
-    ? expireQuery.eq("enquiry_id", enquiryId)
-    : expireQuery.eq("client_id", clientId).is("enquiry_id", null);
-  await expireQuery;
-
-  const token = generateTokenString();
-  const { error } = await supabase.from("intake_tokens").insert({
-    token,
+  // The API generates the token + expires prior active ones. created_by is taken
+  // from the authenticated user server-side (param kept for call-site compat).
+  const row = await apiClient.post<{ token: string }>("/intake-tokens", {
     client_id: clientId,
     enquiry_id: enquiryId ?? null,
-    created_by: createdBy,
-    expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
   });
-
-  if (error) throw error;
-  return token;
+  return row.token;
 }
 
 export function getIntakeUrl(token: string): string {
@@ -49,12 +25,7 @@ export async function sendIntakeLink(
   token: string,
   refNumber: string,
 ): Promise<{ emailSent: boolean; whatsappSent: boolean }> {
-  const { data: client } = await supabase
-    .from("clients")
-    .select("name, email, email_bounced, whatsapp_number, whatsapp_invalid")
-    .eq("id", clientId)
-    .single();
-
+  const client = await apiClient.get<Tables<"clients">>(`/clients/${clientId}`);
   if (!client) throw new Error("Client not found");
 
   const intakeUrl = getIntakeUrl(token);
@@ -71,8 +42,8 @@ export async function sendIntakeLink(
   }
 
   if (client.whatsapp_number && !client.whatsapp_invalid) {
-    const { error } = await supabase.functions.invoke("send-whatsapp", {
-      body: {
+    try {
+      const r = await apiClient.post<{ error?: string }>("/integrations/whatsapp", {
         phone_number: client.whatsapp_number,
         template_name: "qms_intake_form",
         parameters: [
@@ -80,9 +51,11 @@ export async function sendIntakeLink(
           { name: "ref_number", value: refNumber },
           { name: "link", value: intakeUrl },
         ],
-      },
-    });
-    if (!error) whatsappSent = true;
+      });
+      if (!r.error) whatsappSent = true;
+    } catch {
+      /* non-blocking */
+    }
   }
 
   return { emailSent, whatsappSent };

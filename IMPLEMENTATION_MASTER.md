@@ -29,8 +29,8 @@
 | Routing | React Router 6.30.1 |
 
 ### Supabase Config
-- **URL:** `https://plastttfmuixaumzzbig.supabase.co`
-- **Region:** ap-southeast-2 (Sydney)
+- **URL:** `https://yikgnboolunszxtrmbfz.supabase.co`
+- **Region:** ap-south-1 (Mumbai)
 - **15 tables** with RLS, triggers, indexes already deployed
 - **3 storage buckets:** quotation-pdfs, receipts, reports
 - **Edge Function secrets configured:** SENDGRID_API_KEY, WATI_API_TOKEN, WATI_BASE_URL, GOOGLE_SERVICE_ACCOUNT_B64, GOOGLE_DRIVE_ROOT_FOLDER_ID, ADMIN_EMAIL, ADMIN_WHATSAPP, APP_URL, COMPANY_STATE

@@ -12,7 +12,7 @@
 -- real values, NOT committed here):
 --
 --   ALTER DATABASE postgres SET app.edge_base_url =
---     'https://plastttfmuixaumzzbig.supabase.co/functions/v1';
+--     'https://yikgnboolunszxtrmbfz.supabase.co/functions/v1';
 --   ALTER DATABASE postgres SET app.service_role_key = '<SERVICE_ROLE_KEY>';
 --
 -- (Or use Supabase Vault and read via vault.decrypted_secrets — see note below.)

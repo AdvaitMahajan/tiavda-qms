@@ -21,8 +21,8 @@ A Quotation Management System (QMS) for a geotechnical consultancy firm. This re
 - Toasts: Sonner
 
 ## Supabase Project
-- URL: https://plastttfmuixaumzzbig.supabase.co
-- Region: ap-southeast-2 (Sydney)
+- URL: https://yikgnboolunszxtrmbfz.supabase.co
+- Region: ap-south-1 (Mumbai)
 - All 15 tables already created with RLS, triggers, indexes
 
 ## Database Tables (all exist, do not recreate)

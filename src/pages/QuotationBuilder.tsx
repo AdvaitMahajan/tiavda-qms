@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { useParams, useNavigate, useSearchParams } from "react-router-dom";
-import { supabase } from "@/integrations/supabase/client";
+import { apiClient } from "@/lib/apiClient";
 import { useRole } from "@/hooks/useRole";
 import { toast } from "sonner";
 import { ArrowLeft, Plus, Trash2, Eye, Save, RefreshCw, Loader2, Download } from "lucide-react";
@@ -307,23 +307,17 @@ export default function QuotationBuilder() {
     (async () => {
       setLoading(true);
 
-      const { data: enq } = await supabase
-        .from("enquiries")
-        .select("*")
-        .eq("id", enquiryId)
-        .single();
-      if (!enq) {
+      let enq: any;
+      try {
+        enq = await apiClient.get(`/enquiries/${enquiryId}`);
+      } catch {
         toast.error("Enquiry not found");
         navigate("/enquiries");
         return;
       }
       setEnquiry(enq as any);
 
-      const { data: cl } = await supabase
-        .from("clients")
-        .select("*")
-        .eq("id", enq.client_id)
-        .single();
+      const cl = await apiClient.get(`/clients/${enq.client_id}`);
       setClient(cl as any);
 
       // Fetch rates + gst_rate + company info + BOQ notes/terms from app_settings
@@ -342,12 +336,11 @@ export default function QuotationBuilder() {
         ...Array.from({ length: 10 }, (_, i) => `quotation_note_${i + 1}`),
         "quotation_payment_terms",
       ];
-      const { data: settingsRows } = await supabase
-        .from("app_settings")
-        .select("key, value")
-        .in("key", [...RATE_KEYS, ...BOQ_RATE_KEYS, ...COMPANY_KEYS, ...BOQ_NOTE_KEYS, "gst_rate"]);
+      const settingsRows = await apiClient.get<{ key: string; value: string }[]>("/settings", {
+        keys: [...RATE_KEYS, ...BOQ_RATE_KEYS, ...COMPANY_KEYS, ...BOQ_NOTE_KEYS, "gst_rate"].join(","),
+      });
       const settingsMap: Record<string, string> = {};
-      settingsRows?.forEach((r) => {
+      settingsRows.forEach((r) => {
         settingsMap[r.key] = r.value;
       });
       setAllSettings(settingsMap);
@@ -369,14 +362,8 @@ export default function QuotationBuilder() {
       const dk = extended.distanceKm ?? 50;
 
       // Fetch latest completed site visit
-      const { data: visitRow } = await supabase
-        .from("site_visits")
-        .select("*")
-        .eq("enquiry_id", enquiryId)
-        .eq("status", "completed")
-        .order("visit_date", { ascending: false })
-        .limit(1)
-        .maybeSingle();
+      const visits = await apiClient.get<any[]>("/site-visits", { enquiry_id: enquiryId });
+      const visitRow = visits.find((v) => v.status === "completed") ?? null;
       setSiteVisit(visitRow);
 
       const initialConditions = buildSiteConditions(extended, visitRow);
@@ -384,11 +371,7 @@ export default function QuotationBuilder() {
 
       const loadQuotId = quotationId || fromVersionId;
       if (loadQuotId) {
-        const { data: quot } = await supabase
-          .from("quotations")
-          .select("*")
-          .eq("id", loadQuotId)
-          .single();
+        const quot = await apiClient.get<any>(`/quotations/${loadQuotId}`).catch(() => null);
         if (quot) {
           setNumBores(quot.num_bores ?? B);
           setDepthPerBore(quot.depth_per_bore_m ?? D);
@@ -590,23 +573,16 @@ export default function QuotationBuilder() {
     if (!enquiry || !client) return;
     setSaving(true);
     try {
-      const { data: existing } = await supabase
-        .from("quotations")
-        .select("version, id, status")
-        .eq("enquiry_id", enquiry.id)
-        .order("version", { ascending: false });
-
-      const maxVersion = existing?.length ? Math.max(...existing.map((q) => q.version)) : 0;
+      const existing = await apiClient.get<Array<{ version: number; id: string; status: string }>>(
+        "/quotations",
+        { enquiry_id: enquiry.id },
+      );
+      const maxVersion = existing.length ? Math.max(...existing.map((q) => q.version)) : 0;
       const newVersion = maxVersion + 1;
 
-      const draftIds = (existing ?? [])
-        .filter((q) => q.status === "draft")
-        .map((q) => q.id);
+      const draftIds = existing.filter((q) => q.status === "draft").map((q) => q.id);
       if (draftIds.length) {
-        await supabase
-          .from("quotations")
-          .update({ status: "superseded" as any })
-          .in("id", draftIds);
+        await apiClient.post("/quotations/supersede", { ids: draftIds });
       }
 
       let saveItems: any[];
@@ -640,7 +616,7 @@ export default function QuotationBuilder() {
       }
       const variantNotes = Object.keys(variantNotesObj).length > 0 ? JSON.stringify(variantNotesObj) : null;
 
-      const { error } = await supabase.from("quotations").insert({
+      await apiClient.post("/quotations", {
         enquiry_id: enquiry.id,
         variant: "A",
         variant_label: variantLabel,
@@ -666,9 +642,8 @@ export default function QuotationBuilder() {
         template_type: templateType,
         status: "draft",
         version: newVersion,
-      } as any);
+      });
 
-      if (error) throw error;
       toast.success("Quotation saved as draft");
       navigate(`/enquiries/${enquiry.id}`);
     } catch (e: any) {

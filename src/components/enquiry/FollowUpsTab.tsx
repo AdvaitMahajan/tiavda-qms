@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
+import { apiClient } from "@/lib/apiClient";
 import { useAuth } from "@/hooks/useAuth";
 import { formatDate, cn } from "@/lib/utils";
 import { toast } from "sonner";
@@ -58,19 +58,12 @@ export function FollowUpsTab({ enquiryId }: { enquiryId: string }) {
 
   const { data: followUps = [], isLoading } = useQuery({
     queryKey: ["follow-ups", enquiryId],
-    queryFn: async () => {
-      const { data } = await supabase
-        .from("follow_ups")
-        .select("*")
-        .eq("enquiry_id", enquiryId)
-        .order("scheduled_date", { ascending: false });
-      return data ?? [];
-    },
+    queryFn: () => apiClient.get<FollowUp[]>("/follow-ups", { enquiry_id: enquiryId }),
   });
 
   const addMutation = useMutation({
     mutationFn: async () => {
-      const { error } = await supabase.from("follow_ups").insert({
+      await apiClient.post("/follow-ups", {
         enquiry_id: enquiryId,
         scheduled_date: addDate,
         scheduled_time: addTime || null,
@@ -78,12 +71,11 @@ export function FollowUpsTab({ enquiryId }: { enquiryId: string }) {
         outcome: "pending",
         auto_scheduled: false,
       });
-      if (error) throw error;
 
       // Update enquiry next_follow_up if this date is earlier
-      const { data: enq } = await supabase.from("enquiries").select("next_follow_up").eq("id", enquiryId).single();
+      const enq = await apiClient.get<{ next_follow_up: string | null }>(`/enquiries/${enquiryId}`);
       if (!enq?.next_follow_up || addDate < enq.next_follow_up) {
-        await supabase.from("enquiries").update({ next_follow_up: addDate }).eq("id", enquiryId);
+        await apiClient.patch(`/enquiries/${enquiryId}`, { next_follow_up: addDate });
       }
     },
     onSuccess: () => {
@@ -100,17 +92,17 @@ export function FollowUpsTab({ enquiryId }: { enquiryId: string }) {
     mutationFn: async () => {
       if (!completeTarget) return;
 
-      await supabase.from("follow_ups").update({
-        outcome: outcome as FollowUpOutcome,
+      await apiClient.patch(`/follow-ups/${completeTarget.id}`, {
+        outcome: outcome,
         outcome_notes: outcomeNotes || null,
         completed_at: new Date().toISOString(),
         completed_by: user?.id ?? null,
-      }).eq("id", completeTarget.id);
+      });
 
       let newNextDate: string | null = null;
 
       if (scheduleNext && nextDate) {
-        await supabase.from("follow_ups").insert({
+        await apiClient.post("/follow-ups", {
           enquiry_id: enquiryId,
           scheduled_date: nextDate,
           auto_scheduled: false,
@@ -121,18 +113,17 @@ export function FollowUpsTab({ enquiryId }: { enquiryId: string }) {
 
       // Auto-reschedule on no_response if enabled in app_settings
       if (outcome === "no_response" && !scheduleNext) {
-        const { data: settingsRows } = await supabase
-          .from("app_settings")
-          .select("key,value")
-          .in("key", ["auto_followup_no_response", "auto_followup_no_response_days"]);
-        const settingsMap = new Map(settingsRows?.map((r) => [r.key, r.value]) ?? []);
+        const settingsRows = await apiClient.get<{ key: string; value: string }[]>("/settings", {
+          keys: "auto_followup_no_response,auto_followup_no_response_days",
+        });
+        const settingsMap = new Map(settingsRows.map((r) => [r.key, r.value]));
         const autoReschedule = (settingsMap.get("auto_followup_no_response") ?? "true") !== "false";
         const rescheduleDays = parseInt(settingsMap.get("auto_followup_no_response_days") ?? "4", 10) || 4;
         if (autoReschedule) {
           const next = new Date();
           next.setDate(next.getDate() + rescheduleDays);
           const autoNextDate = next.toISOString().slice(0, 10);
-          await supabase.from("follow_ups").insert({
+          await apiClient.post("/follow-ups", {
             enquiry_id: enquiryId,
             scheduled_date: autoNextDate,
             auto_scheduled: true,
@@ -145,52 +136,34 @@ export function FollowUpsTab({ enquiryId }: { enquiryId: string }) {
 
       // Update enquiry next_follow_up
       if (outcome === "closed" && !scheduleNext) {
-        await supabase.from("enquiries").update({ next_follow_up: null }).eq("id", enquiryId);
+        await apiClient.patch(`/enquiries/${enquiryId}`, { next_follow_up: null });
       } else if (newNextDate) {
-        await supabase.from("enquiries").update({ next_follow_up: newNextDate }).eq("id", enquiryId);
+        await apiClient.patch(`/enquiries/${enquiryId}`, { next_follow_up: newNextDate });
       } else {
         // Find next pending follow-up
-        const { data: nextPending } = await supabase
-          .from("follow_ups")
-          .select("scheduled_date")
-          .eq("enquiry_id", enquiryId)
-          .eq("outcome", "pending")
-          .neq("id", completeTarget.id)
-          .order("scheduled_date")
-          .limit(1)
-          .maybeSingle();
-        await supabase.from("enquiries").update({
+        const all = await apiClient.get<FollowUp[]>("/follow-ups", { enquiry_id: enquiryId });
+        const nextPending = all
+          .filter((f) => f.outcome === "pending" && f.id !== completeTarget.id)
+          .sort((a, b) => a.scheduled_date.localeCompare(b.scheduled_date))[0];
+        await apiClient.patch(`/enquiries/${enquiryId}`, {
           next_follow_up: nextPending?.scheduled_date ?? null,
-        }).eq("id", enquiryId);
+        });
       }
 
-      await supabase.from("enquiry_events").insert({
-        enquiry_id: enquiryId,
+      await apiClient.post(`/enquiries/${enquiryId}/events`, {
         event_type: "follow_up_completed",
-        triggered_by: user?.id ?? null,
-        metadata: { outcome, follow_up_id: completeTarget.id } as any,
+        metadata: { outcome, follow_up_id: completeTarget.id },
       });
 
       // Auto-advance enquiry from "sent" → "follow_up" when a follow-up is completed
-      const { data: enqStatus } = await supabase
-        .from("enquiries")
-        .select("status")
-        .eq("id", enquiryId)
-        .single();
-
+      const enqStatus = await apiClient.get<{ status: string }>(`/enquiries/${enquiryId}`);
       if (enqStatus?.status === "sent") {
-        await supabase.from("enquiries").update({
-          status: "follow_up" as any,
-          updated_at: new Date().toISOString(),
-        }).eq("id", enquiryId);
-
-        await supabase.from("enquiry_events").insert({
-          enquiry_id: enquiryId,
+        await apiClient.patch(`/enquiries/${enquiryId}`, { status: "follow_up" });
+        await apiClient.post(`/enquiries/${enquiryId}/events`, {
           event_type: "status_change",
           from_status: "sent",
           to_status: "follow_up",
-          triggered_by: user?.id ?? null,
-          metadata: { trigger: "follow_up_completed" } as any,
+          metadata: { trigger: "follow_up_completed" },
         });
       }
 

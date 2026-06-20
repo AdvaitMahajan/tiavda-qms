@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
+import { apiClient } from "@/lib/apiClient";
+import type { Tables } from "@/integrations/supabase/types";
 import { formatDate } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -25,23 +26,17 @@ export default function FollowUps() {
   const { data: followUps, isLoading } = useQuery({
     queryKey: ["global-follow-ups"],
     queryFn: async () => {
-      const { data } = await supabase
-        .from("follow_ups")
-        .select("*")
-        .order("scheduled_date", { ascending: true });
-      if (!data?.length) return { items: [], enquiryMap: new Map(), clientMap: new Map() };
+      const data = await apiClient.get<Tables<"follow_ups">[]>("/follow-ups");
+      if (!data.length) return { items: [], enquiryMap: new Map(), clientMap: new Map() };
 
-      const enquiryIds = [...new Set(data.map((f) => f.enquiry_id))];
-      const { data: enquiries } = await supabase
-        .from("enquiries").select("id, ref_number, site_city, client_id")
-        .in("id", enquiryIds);
-      const clientIds = [...new Set(enquiries?.map((e) => e.client_id) ?? [])];
-      const { data: clients } = await supabase
-        .from("clients").select("id, name")
-        .in("id", clientIds);
-
-      const enquiryMap = new Map(enquiries?.map((e) => [e.id, e]) ?? []);
-      const clientMap = new Map(clients?.map((c) => [c.id, c]) ?? []);
+      // One batched call: all enquiries with their client embedded.
+      const enquiries = await apiClient.get<
+        Array<Tables<"enquiries"> & { client?: { id: string; name: string } | null }>
+      >("/enquiries", { embed: "client", include_deleted: true });
+      const enquiryMap = new Map(enquiries.map((e) => [e.id, e]));
+      const clientMap = new Map(
+        enquiries.filter((e) => e.client).map((e) => [e.client!.id, e.client!]),
+      );
       return { items: data, enquiryMap, clientMap };
     },
   });

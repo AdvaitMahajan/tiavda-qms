@@ -1,4 +1,5 @@
-import { supabase } from "@/integrations/supabase/client";
+import { apiClient } from "@/lib/apiClient";
+import type { Tables } from "@/integrations/supabase/types";
 
 interface CadenceStep {
   dayOffset: number;
@@ -29,34 +30,29 @@ export async function createFollowUpCadence(enquiryId: string): Promise<number> 
     };
   });
 
-  const { error } = await supabase.from("follow_ups").insert(rows);
-  if (error) throw error;
+  for (const row of rows) {
+    await apiClient.post("/follow-ups", row);
+  }
   return rows.length;
 }
 
 export async function cleanupConditionalFollowUps(enquiryId: string): Promise<void> {
-  await supabase
-    .from("follow_ups")
-    .update({ outcome: "cancelled" as any })
-    .eq("enquiry_id", enquiryId)
-    .eq("outcome", "pending")
-    .eq("auto_scheduled", true)
-    .eq("is_conditional", true);
+  const all = await apiClient.get<Tables<"follow_ups">[]>("/follow-ups", { enquiry_id: enquiryId });
+  const targets = all.filter((f) => f.outcome === "pending" && f.auto_scheduled && f.is_conditional);
+  for (const f of targets) {
+    await apiClient.patch(`/follow-ups/${f.id}`, { outcome: "closed" });
+  }
 }
 
 const TERMINAL_STATUSES = ["approved", "lost", "inactive", "completed", "payment_received", "mobilization_scheduled", "job_active"];
 
 export async function cancelPendingFollowUps(enquiryId: string): Promise<void> {
-  await supabase
-    .from("follow_ups")
-    .update({ outcome: "cancelled" as any })
-    .eq("enquiry_id", enquiryId)
-    .eq("outcome", "pending");
-
-  await supabase
-    .from("enquiries")
-    .update({ next_follow_up: null })
-    .eq("id", enquiryId);
+  const all = await apiClient.get<Tables<"follow_ups">[]>("/follow-ups", { enquiry_id: enquiryId });
+  const pending = all.filter((f) => f.outcome === "pending");
+  for (const f of pending) {
+    await apiClient.patch(`/follow-ups/${f.id}`, { outcome: "closed" });
+  }
+  await apiClient.patch(`/enquiries/${enquiryId}`, { next_follow_up: null });
 }
 
 export function shouldCancelFollowUps(toStatus: string): boolean {

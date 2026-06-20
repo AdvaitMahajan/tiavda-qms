@@ -1,0 +1,141 @@
+import { Router } from 'express';
+import { and, asc, desc, eq, gte, inArray, isNull, lte, notInArray, sql } from 'drizzle-orm';
+import { db } from '../../db';
+import { clients, enquiries, enquiry_events, follow_ups, job_reminders, payments, quotations } from '../../db/schema';
+import { authenticate } from '../../middleware/auth';
+import { asyncHandler } from '../../lib/http';
+
+const COUNT = sql<number>`count(*)::int`;
+const today = () => new Date().toISOString().slice(0, 10);
+
+export const dashboardRouter = Router();
+dashboardRouter.use(authenticate);
+
+// Headline stat cards.
+dashboardRouter.get(
+  '/stats',
+  asyncHandler(async (_req, res) => {
+    const t = today();
+    const [
+      newEnq, sentQuotes, followToday, pendingPay, activeJobs, totalEnq, wonEnq, intakePending,
+      pipeline, book,
+    ] = await Promise.all([
+      db.select({ c: COUNT }).from(enquiries).where(and(eq(enquiries.status, 'new'), isNull(enquiries.deleted_at))),
+      db.select({ c: COUNT }).from(enquiries).where(and(eq(enquiries.status, 'sent'), isNull(enquiries.deleted_at))),
+      db.select({ c: COUNT }).from(follow_ups).where(and(eq(follow_ups.scheduled_date, t), eq(follow_ups.outcome, 'pending'))),
+      db.select({ c: COUNT }).from(payments).where(eq(payments.status, 'request_sent')),
+      db.select({ c: COUNT }).from(enquiries).where(and(inArray(enquiries.status, ['job_active', 'mobilization_scheduled']), isNull(enquiries.deleted_at))),
+      db.select({ c: COUNT }).from(enquiries).where(isNull(enquiries.deleted_at)),
+      db.select({ c: COUNT }).from(enquiries).where(and(inArray(enquiries.status, ['approved', 'payment_received', 'mobilization_scheduled', 'job_active', 'confirmed', 'completed']), isNull(enquiries.deleted_at))),
+      db.select({ c: COUNT }).from(enquiries).where(and(eq(enquiries.status, 'intake_pending'), isNull(enquiries.deleted_at))),
+      db.select({ s: sql<number>`coalesce(sum(${quotations.total_amount}),0)::float` }).from(quotations).where(eq(quotations.status, 'approved')),
+      db
+        .select({ s: sql<number>`coalesce(sum(${quotations.total_amount}),0)::float` })
+        .from(quotations)
+        .innerJoin(enquiries, eq(quotations.enquiry_id, enquiries.id))
+        .where(and(eq(quotations.status, 'approved'), notInArray(enquiries.status, ['lost', 'inactive', 'completed']), isNull(enquiries.deleted_at))),
+    ]);
+
+    res.json({
+      new_enquiries: newEnq[0]?.c ?? 0,
+      sent_quotes: sentQuotes[0]?.c ?? 0,
+      followups_today: followToday[0]?.c ?? 0,
+      pending_payments: pendingPay[0]?.c ?? 0,
+      active_jobs: activeJobs[0]?.c ?? 0,
+      total_enquiries: totalEnq[0]?.c ?? 0,
+      won_enquiries: wonEnq[0]?.c ?? 0,
+      intake_pending: intakePending[0]?.c ?? 0,
+      pipeline_value: pipeline[0]?.s ?? 0,
+      quotation_book_value: book[0]?.s ?? 0,
+    });
+  }),
+);
+
+// Pipeline strip — counts per status (excluding soft-deleted).
+dashboardRouter.get(
+  '/pipeline',
+  asyncHandler(async (_req, res) => {
+    const rows = await db
+      .select({ status: enquiries.status, count: COUNT })
+      .from(enquiries)
+      .where(isNull(enquiries.deleted_at))
+      .groupBy(enquiries.status);
+    res.json(rows);
+  }),
+);
+
+// Today's actions — overdue + due follow-ups.
+dashboardRouter.get(
+  '/actions',
+  asyncHandler(async (_req, res) => {
+    const rows = await db
+      .select({
+        id: follow_ups.id,
+        scheduled_date: follow_ups.scheduled_date,
+        notes: follow_ups.notes,
+        enquiry_id: follow_ups.enquiry_id,
+        ref_number: enquiries.ref_number,
+        site_city: enquiries.site_city,
+        client_name: clients.name,
+      })
+      .from(follow_ups)
+      .innerJoin(enquiries, eq(enquiries.id, follow_ups.enquiry_id))
+      .leftJoin(clients, eq(clients.id, enquiries.client_id))
+      .where(and(lte(follow_ups.scheduled_date, today()), eq(follow_ups.outcome, 'pending')))
+      .orderBy(asc(follow_ups.scheduled_date))
+      .limit(10);
+    res.json(rows);
+  }),
+);
+
+// Job reminders due within the next 7 days.
+dashboardRouter.get(
+  '/reminders',
+  asyncHandler(async (_req, res) => {
+    const t = today();
+    const in7 = new Date(Date.now() + 7 * 86_400_000).toISOString();
+    const rows = await db
+      .select({
+        id: job_reminders.id,
+        reminder_type: job_reminders.reminder_type,
+        days_before: job_reminders.days_before,
+        scheduled_for: job_reminders.scheduled_for,
+        target_date: job_reminders.target_date,
+        enquiry_id: job_reminders.enquiry_id,
+        job_id: job_reminders.job_id,
+        ref_number: enquiries.ref_number,
+        client_name: clients.name,
+      })
+      .from(job_reminders)
+      .innerJoin(enquiries, eq(enquiries.id, job_reminders.enquiry_id))
+      .leftJoin(clients, eq(clients.id, enquiries.client_id))
+      .where(and(gte(job_reminders.scheduled_for, t), lte(job_reminders.scheduled_for, in7), eq(job_reminders.sent, false)))
+      .orderBy(asc(job_reminders.scheduled_for))
+      .limit(8);
+    res.json(rows);
+  }),
+);
+
+// Recent activity feed.
+dashboardRouter.get(
+  '/activity',
+  asyncHandler(async (_req, res) => {
+    const rows = await db
+      .select({
+        id: enquiry_events.id,
+        event_type: enquiry_events.event_type,
+        from_status: enquiry_events.from_status,
+        to_status: enquiry_events.to_status,
+        created_at: enquiry_events.created_at,
+        enquiry_id: enquiry_events.enquiry_id,
+        ref_number: enquiries.ref_number,
+        client_name: clients.name,
+      })
+      .from(enquiry_events)
+      .innerJoin(enquiries, eq(enquiries.id, enquiry_events.enquiry_id))
+      .leftJoin(clients, eq(clients.id, enquiries.client_id))
+      .orderBy(desc(enquiry_events.created_at))
+      .limit(15);
+    res.json(rows);
+  }),
+);

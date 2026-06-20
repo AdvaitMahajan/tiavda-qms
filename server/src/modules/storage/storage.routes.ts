@@ -18,8 +18,12 @@ storageRouter.post(
   '/sign-upload',
   requireNotViewer,
   asyncHandler(async (req, res) => {
-    const { bucket, path } = z.object({ bucket: bucketSchema, path: z.string().min(1) }).parse(req.body);
-    const { data, error } = await supabaseAdmin.storage.from(bucket).createSignedUploadUrl(path);
+    const { bucket, path, upsert } = z
+      .object({ bucket: bucketSchema, path: z.string().min(1), upsert: z.boolean().optional() })
+      .parse(req.body);
+    const { data, error } = await supabaseAdmin.storage
+      .from(bucket)
+      .createSignedUploadUrl(path, { upsert: upsert ?? false });
     if (error || !data) throw badRequest(error?.message ?? 'Failed to create upload URL');
     res.json({ bucket, ...data }); // { signedUrl, token, path }
   }),

@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useParams, useNavigate, useSearchParams } from "react-router-dom";
-import { supabase } from "@/integrations/supabase/client";
+import { apiClient } from "@/lib/apiClient";
+import { uploadToStorage, downloadFromStorage } from "@/lib/storage";
 import { useAuth } from "@/hooks/useAuth";
 import { useRole } from "@/hooks/useRole";
 import { AssigneeDropdown } from "@/components/AssigneeDropdown";
@@ -338,9 +339,9 @@ function VariantCard({
                       return;
                     }
                   }
-                  const { data, error } = await supabase.storage.from("quotation-pdfs").download(path);
-                  if (data) {
-                    const url = URL.createObjectURL(data);
+                  try {
+                    const blob = await downloadFromStorage("quotation-pdfs", path);
+                    const url = URL.createObjectURL(blob);
                     const a = document.createElement("a");
                     a.href = url;
                     a.download = path.split("/").pop() || "quotation.pdf";
@@ -348,7 +349,7 @@ function VariantCard({
                     a.click();
                     a.remove();
                     URL.revokeObjectURL(url);
-                  } else {
+                  } catch (error) {
                     console.error("Download error:", error);
                     toast.error("Failed to download PDF — please regenerate it");
                   }
@@ -491,16 +492,20 @@ export default function EnquiryDetail() {
   const fetchAll = useCallback(async () => {
     if (!id) return;
     setLoading(true);
-    const { data: enq } = await supabase.from("enquiries").select("*").eq("id", id).single();
-    if (!enq) { setLoading(false); return; }
-    setEnquiry(enq);
-    const [clientRes, quotRes] = await Promise.all([
-      supabase.from("clients").select("*").eq("id", enq.client_id).single(),
-      supabase.from("quotations").select("*").eq("enquiry_id", id).order("version", { ascending: false }).order("variant"),
-    ]);
-    setClient(clientRes.data);
-    setQuotations(quotRes.data ?? []);
-    setLoading(false);
+    try {
+      const enq = await apiClient.get<Enquiry>(`/enquiries/${id}`);
+      setEnquiry(enq);
+      const [clientData, quots] = await Promise.all([
+        apiClient.get<Client>(`/clients/${enq.client_id}`),
+        apiClient.get<Quotation[]>("/quotations", { enquiry_id: id }),
+      ]);
+      setClient(clientData);
+      setQuotations(quots ?? []);
+    } catch {
+      setEnquiry(null);
+    } finally {
+      setLoading(false);
+    }
   }, [id]);
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
@@ -516,11 +521,10 @@ export default function EnquiryDetail() {
     if (!enquiry) return;
     setSavingContact(true);
     try {
-      const { error } = await supabase.from("enquiries").update({
+      await apiClient.patch(`/enquiries/${enquiry.id}`, {
         contact_person_name: contactName.trim() || null,
         contact_person_phone: contactPhone.trim() || null,
-      } as any).eq("id", enquiry.id);
-      if (error) throw error;
+      });
       setEditingContact(false);
       toast.success("Contact person updated");
       fetchAll();
@@ -533,37 +537,35 @@ export default function EnquiryDetail() {
 
   const handleAssign = async (userId: string | null) => {
     if (!enquiry || !user) return;
-    const { error } = await supabase
-      .from("enquiries")
-      .update({ assigned_to: userId })
-      .eq("id", enquiry.id);
-    if (error) { toast.error("Failed to assign"); return; }
-    setEnquiry({ ...enquiry, assigned_to: userId });
+    try {
+      await apiClient.patch(`/enquiries/${enquiry.id}`, { assigned_to: userId });
+      setEnquiry({ ...enquiry, assigned_to: userId });
 
-    await supabase.from("enquiry_events").insert({
-      enquiry_id: enquiry.id,
-      type: "assigned",
-      description: userId ? "Enquiry assigned to a team member" : "Enquiry unassigned",
-      created_by: user.id,
-    });
-
-    if (userId) {
-      await supabase.from("notifications").insert({
-        user_id: userId,
-        type: "assignment",
-        title: `Assigned to ${enquiry.ref_number}`,
-        body: `You have been assigned to enquiry ${enquiry.ref_number}`,
-        enquiry_id: enquiry.id,
-        link: `/enquiries/${enquiry.id}`,
+      await apiClient.post(`/enquiries/${enquiry.id}/events`, {
+        event_type: "assigned",
+        metadata: { description: userId ? "Enquiry assigned to a team member" : "Enquiry unassigned" },
       });
+
+      if (userId) {
+        await apiClient.post("/notifications", {
+          user_id: userId,
+          type: "assignment",
+          title: `Assigned to ${enquiry.ref_number}`,
+          body: `You have been assigned to enquiry ${enquiry.ref_number}`,
+          enquiry_id: enquiry.id,
+          link: `/enquiries/${enquiry.id}`,
+        });
+      }
+      toast.success(userId ? "Enquiry assigned" : "Enquiry unassigned");
+    } catch {
+      toast.error("Failed to assign");
     }
-    toast.success(userId ? "Enquiry assigned" : "Enquiry unassigned");
   };
 
   const isConsultancy = enquiry?.service_type === "consultancy";
 
   const handleSaveLineItems = async (quotationId: string, newItems: LineItem[]) => {
-    const { data: qRow } = await supabase.from("quotations").select("gst_rate").eq("id", quotationId).single();
+    const qRow = await apiClient.get<Quotation>(`/quotations/${quotationId}`);
     const gstPct = Number(qRow?.gst_rate) || 0;
     const subtotal = newItems.reduce((sum, it) => sum + it.amount, 0);
     const gstAmount = +(subtotal * (gstPct / 100)).toFixed(2);
@@ -571,18 +573,19 @@ export default function EnquiryDetail() {
     const mobilisationCost = newItems.find((it) => it.description.toLowerCase().includes("mobilis"))?.amount ?? 0;
     const drillingCost = newItems.filter((it) => it.description.toLowerCase().includes("drill") || it.description.toLowerCase().includes("core")).reduce((s, it) => s + it.amount, 0);
     const reportingCost = newItems.filter((it) => it.section === "D" || it.description.toLowerCase().includes("report") || it.description.toLowerCase().includes("boring log")).reduce((s, it) => s + it.amount, 0);
-    const { error } = await supabase.from("quotations").update({
-      line_items: JSON.stringify(newItems) as any,
-      subtotal: +subtotal.toFixed(2),
-      gst_amount: gstAmount,
-      total_amount: total,
-      mobilisation_cost: +mobilisationCost.toFixed(2),
-      drilling_cost: +drillingCost.toFixed(2),
-      reporting_cost: +reportingCost.toFixed(2),
-      pdf_status: null,
-      pdf_url: null,
-    }).eq("id", quotationId);
-    if (error) { toast.error("Failed to save: " + error.message); return; }
+    try {
+      await apiClient.patch(`/quotations/${quotationId}`, {
+        line_items: JSON.stringify(newItems),
+        subtotal: +subtotal.toFixed(2),
+        gst_amount: gstAmount,
+        total_amount: total,
+        mobilisation_cost: +mobilisationCost.toFixed(2),
+        drilling_cost: +drillingCost.toFixed(2),
+        reporting_cost: +reportingCost.toFixed(2),
+        pdf_status: null,
+        pdf_url: null,
+      });
+    } catch (e) { toast.error("Failed to save: " + (e as Error).message); return; }
     toast.success("Line items updated — please regenerate the PDF.");
     fetchAll();
   };
@@ -590,7 +593,7 @@ export default function EnquiryDetail() {
   const generatePdf = async (q: Quotation) => {
     if (!client || !enquiry) return;
     setPdfLoading(q.id);
-    await supabase.from("quotations").update({ pdf_status: "generating" }).eq("id", q.id);
+    await apiClient.patch(`/quotations/${q.id}`, { pdf_status: "generating" });
     try {
       const isConsultancyQuote = (q as any).service_type === "consultancy" || isConsultancy;
       const qTemplateType = q.template_type ?? TEMPLATE_IDS.ORIGINAL_SI;
@@ -616,8 +619,9 @@ export default function EnquiryDetail() {
         "company_address", "bank_account_name", "bank_name",
         "bank_account_number", "bank_account_type", "bank_branch", "bank_ifsc",
       ];
-      const { data: pdfSettings } = await supabase.from("app_settings").select("key, value")
-        .in("key", ["quotation_validity_days", ...allNoteKeys, paymentTermsKey, "quotation_footer_text", ...COMPANY_KEYS]);
+      const pdfSettings = await apiClient.get<{ key: string; value: string }[]>("/settings", {
+        keys: ["quotation_validity_days", ...allNoteKeys, paymentTermsKey, "quotation_footer_text", ...COMPANY_KEYS].join(","),
+      });
       const pdfSettingsMap: Record<string, string> = {};
       pdfSettings?.forEach((r) => { pdfSettingsMap[r.key] = r.value; });
       const validityDays = parseInt(pdfSettingsMap.quotation_validity_days ?? "30", 10) || 30;
@@ -681,12 +685,11 @@ export default function EnquiryDetail() {
       const year = new Date().getFullYear();
       const filename = `${enquiry.ref_number}-v${q.version}-${q.variant}.pdf`;
       const path = `${year}/${enquiry.ref_number}/${filename}`;
-      const { error: upErr } = await supabase.storage.from("quotation-pdfs").upload(path, blob, { contentType: "application/pdf", upsert: true });
-      if (upErr) throw upErr;
-      await supabase.from("quotations").update({ pdf_url: path, pdf_status: "ready" }).eq("id", q.id);
+      await uploadToStorage("quotation-pdfs", path, blob, { upsert: true, contentType: "application/pdf" });
+      await apiClient.patch(`/quotations/${q.id}`, { pdf_url: path, pdf_status: "ready" });
       toast.success("PDF generated successfully");
     } catch (err: any) {
-      await supabase.from("quotations").update({ pdf_status: "failed" }).eq("id", q.id);
+      await apiClient.patch(`/quotations/${q.id}`, { pdf_status: "failed" });
       toast.error("PDF generation failed: " + (err.message || "Unknown error"));
     } finally {
       setPdfLoading(null);
@@ -698,29 +701,22 @@ export default function EnquiryDetail() {
     if (!approveTarget || !enquiry) return;
     setApproving(true);
     try {
-      const { error: approveErr } = await supabase.from("quotations").update({
-        status: "approved" as any, approved_at: new Date().toISOString(), approved_by: user!.id,
-      }).eq("id", approveTarget.id);
-      if (approveErr) {
-        if (approveErr.code === "23505") {
+      // Transactional approve: marks approved, supersedes other variants, moves
+      // the enquiry to 'pending', and logs the event — all server-side.
+      try {
+        await apiClient.post(`/quotations/${approveTarget.id}/approve`);
+      } catch (e) {
+        if ((e as { status?: number }).status === 409) {
           toast.error("Another variant was just approved — please refresh the page.");
           setApproving(false); setApproveTarget(null); return;
         }
-        throw approveErr;
+        throw e;
       }
-      await supabase.from("quotations").update({ status: "superseded" as any })
-        .eq("enquiry_id", enquiry.id).neq("id", approveTarget.id)
-        .in("status", ["draft", "approved", "sent"] as any);
-      const prevStatus = enquiry.status;
-      await supabase.from("enquiries").update({ status: "pending" as any }).eq("id", enquiry.id);
-      await supabase.from("enquiry_events").insert({
-        enquiry_id: enquiry.id, event_type: "quotation_approved",
-        from_status: prevStatus as any, to_status: "pending" as any, triggered_by: user!.id,
-      });
       toast.success(`Variant ${approveTarget.variant} approved successfully!`);
+      const approvedId = approveTarget.id;
       setApproveTarget(null);
       await fetchAll();
-      const { data: updatedQ } = await supabase.from("quotations").select("*").eq("id", approveTarget.id).single();
+      const updatedQ = await apiClient.get<Quotation>(`/quotations/${approvedId}`);
       if (updatedQ) generatePdf(updatedQ);
     } catch (err: any) {
       toast.error(err.message || "Approval failed");
@@ -743,8 +739,8 @@ export default function EnquiryDetail() {
       }
 
       const subject = `Quotation — ${enquiry.ref_number}`;
-      const { data: validityRow } = await supabase.from("app_settings").select("value").eq("key", "quotation_validity_days").maybeSingle();
-      const validityDays = parseInt(validityRow?.value ?? "30", 10) || 30;
+      const validitySettings = await apiClient.get<{ key: string; value: string }[]>("/settings", { keys: "quotation_validity_days" });
+      const validityDays = parseInt(validitySettings[0]?.value ?? "30", 10) || 30;
       const validityDate = new Date(Date.now() + validityDays * 24 * 60 * 60 * 1000).toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" });
 
       let emailSent = false;
@@ -767,11 +763,11 @@ export default function EnquiryDetail() {
           toast.error("Email delivery failed — continuing.");
         } else {
           emailSent = true;
-          await supabase.from("communication_log").insert({
+          await apiClient.post("/communications", {
             enquiry_id: enquiry.id,
             client_id: client.id,
-            channel: "email" as any,
-            direction: "outbound" as any,
+            channel: "email",
+            direction: "outbound",
             subject,
             body: "Quotation email sent",
             status: "sent",
@@ -784,8 +780,9 @@ export default function EnquiryDetail() {
         const formattedAmount = new Intl.NumberFormat("en-IN", {
           style: "currency", currency: "INR", maximumFractionDigits: 0,
         }).format(Number(approvedQuotation.total_amount));
-        const { data: waData, error: waErr } = await supabase.functions.invoke("send-whatsapp", {
-          body: {
+        let waData: { error?: string; whatsapp_invalid?: boolean } = {};
+        try {
+          waData = await apiClient.post<{ error?: string; whatsapp_invalid?: boolean }>("/integrations/whatsapp", {
             phone_number: client.whatsapp_number,
             template_name: "qms_quotation_sent",
             parameters: [
@@ -794,22 +791,23 @@ export default function EnquiryDetail() {
               { name: "amount", value: formattedAmount },
               { name: "validity_days", value: String(validityDays) },
             ],
-          },
-        });
-        if (waErr || waData?.error) {
-          const errMsg = waData?.error || waErr?.message || "Unknown error";
-          console.error("WhatsApp send error:", errMsg);
+          });
+        } catch (e) {
+          waData = { error: (e as Error).message };
+        }
+        if (waData?.error) {
+          console.error("WhatsApp send error:", waData.error);
           if (waData?.whatsapp_invalid) {
-            await supabase.from("clients").update({ whatsapp_invalid: true }).eq("id", client.id);
+            await apiClient.patch(`/clients/${client.id}`, { whatsapp_invalid: true });
           }
           toast.error("WhatsApp delivery failed — continuing.");
         } else {
           whatsappSent = true;
-          await supabase.from("communication_log").insert({
+          await apiClient.post("/communications", {
             enquiry_id: enquiry.id,
             client_id: client.id,
-            channel: "whatsapp" as any,
-            direction: "outbound" as any,
+            channel: "whatsapp",
+            direction: "outbound",
             subject: `WhatsApp: Quotation ${enquiry.ref_number}`,
             body: "Quotation WhatsApp sent",
             status: "sent",
@@ -818,20 +816,19 @@ export default function EnquiryDetail() {
         }
       }
 
-      await supabase.from("quotations").update({
-        status: "sent" as any,
+      await apiClient.patch(`/quotations/${approvedQuotation.id}`, {
+        status: "sent",
         sent_at: new Date().toISOString(),
-      }).eq("id", approvedQuotation.id);
+      });
 
       const prevStatus = enquiry.status;
-      await supabase.from("enquiries").update({ status: "sent" as any }).eq("id", enquiry.id);
+      await apiClient.patch(`/enquiries/${enquiry.id}`, { status: "sent" });
 
       // Create follow-up cadence (Day 1, 3, 5, 15, 30)
-      const { data: settingsRows } = await supabase
-        .from("app_settings")
-        .select("key,value")
-        .in("key", ["auto_followup_after_quote"]);
-      const settingsMap = new Map(settingsRows?.map((r) => [r.key, r.value]) ?? []);
+      const settingsRows = await apiClient.get<{ key: string; value: string }[]>("/settings", {
+        keys: "auto_followup_after_quote",
+      });
+      const settingsMap = new Map(settingsRows.map((r) => [r.key, r.value]));
       const autoFollowupEnabled = (settingsMap.get("auto_followup_after_quote") ?? "true") !== "false";
 
       if (autoFollowupEnabled) {
@@ -842,12 +839,10 @@ export default function EnquiryDetail() {
         }
       }
 
-      await supabase.from("enquiry_events").insert({
-        enquiry_id: enquiry.id,
+      await apiClient.post(`/enquiries/${enquiry.id}/events`, {
         event_type: "quotation_sent",
-        from_status: prevStatus as any,
-        to_status: "sent" as any,
-        triggered_by: user?.id ?? null,
+        from_status: prevStatus,
+        to_status: "sent",
       });
 
       if (emailSent || whatsappSent) {
@@ -870,18 +865,16 @@ export default function EnquiryDetail() {
     setMarkingLost(true);
     try {
       const prevStatus = enquiry.status;
-      await supabase.from("enquiries").update({
-        status: "lost" as any,
+      await apiClient.patch(`/enquiries/${enquiry.id}`, {
+        status: "lost",
         lost_date: new Date().toISOString().slice(0, 10),
         lost_reason: lostReason || null,
-      }).eq("id", enquiry.id);
-      await supabase.from("enquiry_events").insert({
-        enquiry_id: enquiry.id,
+      });
+      await apiClient.post(`/enquiries/${enquiry.id}/events`, {
         event_type: "marked_lost",
-        from_status: prevStatus as any,
-        to_status: "lost" as any,
-        triggered_by: user?.id ?? null,
-        metadata: lostReason ? { reason: lostReason } as any : null,
+        from_status: prevStatus,
+        to_status: "lost",
+        metadata: lostReason ? { reason: lostReason } : null,
       });
       toast.success("Enquiry marked as lost.");
       setLostModalOpen(false);
@@ -908,26 +901,23 @@ export default function EnquiryDetail() {
     try {
       const prevStatus = enquiry.status;
       // Mark the winning quotation as accepted so the quote status mirrors the deal.
-      await supabase.from("quotations").update({ status: "accepted" as any }).eq("id", finalizedQuote.id);
-      await supabase.from("enquiries").update({
-        status: "approved" as any,
+      await apiClient.patch(`/quotations/${finalizedQuote.id}`, { status: "accepted" });
+      await apiClient.patch(`/enquiries/${enquiry.id}`, {
+        status: "approved",
         confirmed_date: new Date().toISOString().slice(0, 10),
-        updated_at: new Date().toISOString(),
-      }).eq("id", enquiry.id);
+      });
 
-      await supabase.from("enquiry_events").insert({
-        enquiry_id: enquiry.id,
+      await apiClient.post(`/enquiries/${enquiry.id}/events`, {
         event_type: "status_change",
-        from_status: prevStatus as any,
-        to_status: "approved" as any,
-        triggered_by: user?.id ?? null,
-        metadata: { trigger: "marked_won" } as any,
+        from_status: prevStatus,
+        to_status: "approved",
+        metadata: { trigger: "marked_won" },
       });
 
       // Create payment record (50% advance) from the winning quotation.
       if (Number(finalizedQuote.total_amount) > 0) {
         const advanceAmount = Math.round(Number(finalizedQuote.total_amount) * 0.5);
-        await supabase.from("payments").insert({
+        await apiClient.post("/payments", {
           enquiry_id: enquiry.id,
           quotation_id: finalizedQuote.id,
           payment_type: "advance",
@@ -936,16 +926,8 @@ export default function EnquiryDetail() {
         });
       }
 
-      // Create job completion tracker
-      const { data: existingJob } = await supabase
-        .from("job_completion")
-        .select("id")
-        .eq("enquiry_id", enquiry.id)
-        .limit(1)
-        .maybeSingle();
-      if (!existingJob) {
-        await supabase.from("job_completion").insert({ enquiry_id: enquiry.id });
-      }
+      // Create job completion tracker (idempotent get-or-create)
+      await apiClient.post("/job-completion", { enquiry_id: enquiry.id });
 
       // Cancel pending follow-ups
       await cancelPendingFollowUps(enquiry.id);
@@ -965,17 +947,15 @@ export default function EnquiryDetail() {
     setReactivating(true);
     try {
       const prevStatus = enquiry.status;
-      await supabase.from("enquiries").update({
-        status: "follow_up" as any,
+      await apiClient.patch(`/enquiries/${enquiry.id}`, {
+        status: "follow_up",
         lost_date: null,
         lost_reason: null,
-      }).eq("id", enquiry.id);
-      await supabase.from("enquiry_events").insert({
-        enquiry_id: enquiry.id,
+      });
+      await apiClient.post(`/enquiries/${enquiry.id}/events`, {
         event_type: "reactivated",
-        from_status: prevStatus as any,
-        to_status: "follow_up" as any,
-        triggered_by: user?.id ?? null,
+        from_status: prevStatus,
+        to_status: "follow_up",
       });
       toast.success("Enquiry reactivated — moved to Follow Up.");
       fetchAll();
@@ -1457,7 +1437,7 @@ export default function EnquiryDetail() {
                         <button
                           key={String(opt.value)}
                           onClick={async () => {
-                            await supabase.from("enquiries").update({ site_visit_required: opt.value }).eq("id", enquiry.id);
+                            await apiClient.patch(`/enquiries/${enquiry.id}`, { site_visit_required: opt.value });
                             setEnquiry((prev) => prev ? { ...prev, site_visit_required: opt.value } : prev);
                           }}
                           className="px-3 py-1.5 rounded-lg text-[13px] font-semibold transition-all"

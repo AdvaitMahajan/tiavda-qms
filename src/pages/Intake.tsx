@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
-import { PUBLIC_SUPABASE_CLIENT_NAME, supabasePublic } from "@/integrations/supabase/publicClient";
-import { sendNotification } from "@/lib/notifications";
+import { PUBLIC_SUPABASE_CLIENT_NAME } from "@/integrations/supabase/publicClient";
+import { publicApi } from "@/lib/apiClient";
+import { getPublicStorageUrl } from "@/lib/storage";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { motion, AnimatePresence } from "framer-motion";
@@ -131,19 +132,8 @@ function extractCoordsFromMapsUrl(url: string): { lat: number; lng: number } | n
   return null;
 }
 
-async function getPublicClientDebugContext() {
-  const { data, error } = await supabasePublic.auth.getSession();
-  if (error) {
-    console.warn("[Intake] Unable to inspect public client session state", {
-      client: PUBLIC_SUPABASE_CLIENT_NAME,
-      error: error.message,
-    });
-  }
-  return {
-    client: PUBLIC_SUPABASE_CLIENT_NAME,
-    hasSession: Boolean(data.session),
-    sessionUserId: data.session?.user.id ?? null,
-  };
+function getPublicClientDebugContext() {
+  return { client: PUBLIC_SUPABASE_CLIENT_NAME };
 }
 
 function Stepper({ value, onChange, min, max }: { value: number; onChange: (v: number) => void; min: number; max: number }) {
@@ -267,10 +257,13 @@ export default function Intake() {
   useEffect(() => {
     async function validate() {
       if (!tokenStr) { setTokenError("invalid"); setLoading(false); return; }
-      const { data, error } = await supabasePublic
-        .from("intake_tokens").select("id, status, expires_at, client_id")
-        .eq("token", tokenStr).maybeSingle();
-      if (error || !data) setTokenError("invalid");
+      let data: { id: string; status: string; expires_at: string; client_id: string | null } | null = null;
+      try {
+        data = await publicApi.get("/public/intake/validate", { token: tokenStr });
+      } catch {
+        data = null;
+      }
+      if (!data) setTokenError("invalid");
       else if (data.status === "used") setTokenError("used");
       else if (new Date(data.expires_at) < new Date()) setTokenError("expired");
       else if (!data.client_id) {
@@ -329,7 +322,7 @@ export default function Intake() {
     if (!validateStep(step) || !tokenData || !tokenStr) return;
     setSubmitting(true);
     try {
-      const clientDebug = await getPublicClientDebugContext();
+      const clientDebug = getPublicClientDebugContext();
       const extendedData: Record<string, any> = {};
       if (form.distance_km) extendedData.distance_km = Number(form.distance_km);
       if (form.soil_fraction) extendedData.soil_fraction = parseFloat(form.soil_fraction);
@@ -369,43 +362,31 @@ export default function Intake() {
           "---EXTENDED_DATA---\n" + JSON.stringify(extendedData);
       }
 
-      const rpcPayload = {
-        p_token: tokenStr,
-        p_site_address: form.site_address.trim(),
-        p_site_city: form.site_city.trim(),
-        p_site_state: form.site_state.trim() || null,
-        p_site_pincode: form.site_pincode.trim() || null,
-        p_structure_type: form.structure_type,
-        p_num_floors: form.num_floors,
-        p_basement_floors: form.basement_floors,
-        p_num_bores: form.num_bores,
-        p_expected_depth_m: form.expected_depth_m ? Number(form.expected_depth_m) : null,
-        p_soil_type_hint: form.soil_type_hint || null,
-        p_remarks: remarksPayload || null,
-        // H8: send the structured data so the RPC can populate typed columns
+      const submitPayload = {
+        token: tokenStr,
+        site_address: form.site_address.trim(),
+        site_city: form.site_city.trim(),
+        site_state: form.site_state.trim() || null,
+        site_pincode: form.site_pincode.trim() || null,
+        structure_type: form.structure_type,
+        num_floors: form.num_floors,
+        basement_floors: form.basement_floors,
+        num_bores: form.num_bores,
+        expected_depth_m: form.expected_depth_m ? Number(form.expected_depth_m) : null,
+        soil_type_hint: form.soil_type_hint || null,
+        remarks: remarksPayload || null,
+        // H8: send the structured data so the API/RPC can populate typed columns
         // (the blob in remarks is kept for back-compat with older consumers).
-        p_extended: extendedData,
+        extended: extendedData,
+        client_name: form.contact_person || undefined,
       };
 
-      console.log("[Intake] RPC submit_intake_form", {
+      console.log("[Intake] POST /public/intake/submit", {
         ...clientDebug,
-        fn: "submit_intake_form",
-        data: rpcPayload,
+        data: submitPayload,
       });
 
-      const { data, error } = await (supabasePublic as typeof supabasePublic & {
-        rpc: (
-          fn: string,
-          args: Record<string, unknown>,
-        ) => Promise<{
-          data: SubmitIntakeRpcResult | SubmitIntakeRpcResult[] | null;
-          error: { message?: string } | null;
-        }>;
-      }).rpc("submit_intake_form", rpcPayload);
-
-      if (error) throw error;
-
-      const result = Array.isArray(data) ? data[0] : data;
+      const result = await publicApi.post<SubmitIntakeRpcResult>("/public/intake/submit", submitPayload);
 
       if (!result) throw new Error("Submission failed. Please try again.");
       if (result.error) throw new Error(result.error);
@@ -425,12 +406,14 @@ export default function Intake() {
           const uploadOne = async (file: File, kind: "photos" | "layouts") => {
             const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
             const path = `intake/${result.ref_number}/${kind}/${Date.now()}_${safeName}`;
-            const { error: upErr } = await supabasePublic.storage
-              .from("intake-uploads")
-              .upload(path, file, { upsert: false });
-            if (upErr) return null;
-            const { data: urlData } = supabasePublic.storage.from("intake-uploads").getPublicUrl(path);
-            return { name: file.name, url: urlData.publicUrl, size: file.size };
+            try {
+              const { signedUrl } = await publicApi.post<{ signedUrl: string }>("/public/intake/sign-upload", { token: tokenStr, path });
+              const up = await fetch(signedUrl, { method: "PUT", headers: { "Content-Type": file.type || "application/octet-stream" }, body: file });
+              if (!up.ok) return null;
+              return { name: file.name, url: getPublicStorageUrl("intake-uploads", path), size: file.size };
+            } catch {
+              return null;
+            }
           };
 
           for (const file of files) {
@@ -443,11 +426,9 @@ export default function Intake() {
           }
 
           if (sitePhotos.length > 0 || layoutPlans.length > 0) {
-            await (supabasePublic as typeof supabasePublic & {
-              rpc: (fn: string, args: Record<string, unknown>) => Promise<{ error: unknown }>;
-            }).rpc("attach_intake_files", {
-              p_submission_id: result.submission_id,
-              p_attachments: { sitePhotos, layoutPlans },
+            await publicApi.post("/public/intake/attach-files", {
+              submission_id: result.submission_id,
+              attachments: { sitePhotos, layoutPlans },
             });
           }
         } catch (attachErr) {
@@ -455,46 +436,8 @@ export default function Intake() {
         }
       }
 
-      // Notify admin via email about new intake submission
-      supabasePublic
-        .from("app_settings").select("value").eq("key", "admin_email").maybeSingle()
-        .then(({ data: adminRow }) => {
-          const adminEmail = adminRow?.value;
-          if (!adminEmail) return;
-          sendNotification({
-            client: supabasePublic,
-            to: adminEmail,
-            template: "new_intake_admin",
-            params: {
-              ref_number: result.ref_number,
-              site_city: form.site_city,
-              structure_type: form.structure_type || "—",
-              num_bores: form.num_bores,
-            },
-          });
-        })
-        .catch((err: any) => console.warn("Admin email notification failed:", err));
-
-      // Notify admin via WhatsApp about new intake submission
-      supabasePublic
-        .from("app_settings").select("value").eq("key", "admin_whatsapp").maybeSingle()
-        .then(({ data: waRow }) => {
-          const adminWhatsapp = waRow?.value;
-          if (!adminWhatsapp) return;
-          supabasePublic.functions.invoke("send-whatsapp", {
-            body: {
-              phone_number: adminWhatsapp,
-              template_name: "qms_intake_submitted",
-              parameters: [
-                { name: "ref_number", value: result.ref_number },
-                { name: "client_name", value: form.contact_person || "Client" },
-                { name: "city", value: form.site_city },
-                { name: "structure_type", value: form.structure_type || "Not specified" },
-              ],
-            },
-          });
-        })
-        .catch((err: any) => console.warn("Admin WhatsApp notification failed:", err));
+      // Admin notifications (in-app + email + WhatsApp) are sent server-side by
+      // POST /public/intake/submit — no client-side notify needed here.
 
       setSubmitted(true);
     } catch (err: any) {

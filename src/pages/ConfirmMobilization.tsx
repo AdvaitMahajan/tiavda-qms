@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useSearchParams } from "react-router-dom";
-import { supabase } from "@/integrations/supabase/client";
+import { publicApi } from "@/lib/apiClient";
 import { Loader2, CheckCircle2, Calendar, MapPin, AlertTriangle } from "lucide-react";
 
 type TokenData = {
@@ -45,15 +45,20 @@ export default function ConfirmMobilization() {
     }
 
     (async () => {
-      const { data: row, error: err } = await supabase.rpc("get_mob_confirmation", { p_token: token });
+      let row: TokenData | null = null;
+      try {
+        row = await publicApi.get<TokenData | null>("/public/mob-confirmation", { token });
+      } catch {
+        row = null;
+      }
 
-      if (err || !row) {
+      if (!row) {
         setError("Invalid or expired confirmation link.");
         setLoading(false);
         return;
       }
 
-      const tokenRow = row as unknown as TokenData;
+      const tokenRow = row;
 
       if (tokenRow.status !== "pending") {
         setData(tokenRow);
@@ -77,9 +82,8 @@ export default function ConfirmMobilization() {
     if (!data || !token) return;
     setConfirming(true);
     try {
-      const { data: res, error: err } = await supabase.rpc("confirm_mobilisation", { p_token: token });
-      const r = res as { ok?: boolean; error?: string } | null;
-      if (err || !r?.ok) {
+      const r = await publicApi.post<{ ok?: boolean; error?: string } | null>("/public/mob-confirmation/confirm", { token });
+      if (!r?.ok) {
         setError(r?.error === "expired" ? "This confirmation link has expired. Please contact us." : "Something went wrong. Please try again.");
         return;
       }
@@ -95,13 +99,12 @@ export default function ConfirmMobilization() {
     if (!data || !token || !altDate) return;
     setConfirming(true);
     try {
-      const { data: res, error: err } = await supabase.rpc("propose_alternate_mobilisation", {
-        p_token: token,
-        p_date: altDate,
-        p_notes: altNotes || null,
+      const r = await publicApi.post<{ ok?: boolean } | null>("/public/mob-confirmation/propose-alternate", {
+        token,
+        date: altDate,
+        notes: altNotes || null,
       });
-      const r = res as { ok?: boolean } | null;
-      if (err || !r?.ok) {
+      if (!r?.ok) {
         setError("Something went wrong. Please try again.");
         return;
       }

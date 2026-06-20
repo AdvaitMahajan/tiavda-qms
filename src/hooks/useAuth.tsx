@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useState, useCallback, type ReactNode } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { apiClient } from "@/lib/apiClient";
 import type { User, Session } from "@supabase/supabase-js";
 import type { Tables } from "@/integrations/supabase/types";
 
@@ -34,13 +35,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const fetchProfile = useCallback(async (uid: string) => {
     setProfileLoading(true);
-    const { data } = await supabase
-      .from("profiles")
-      .select("*")
-      .eq("id", uid)
-      .single();
-    setProfile(data);
-    setProfileLoading(false);
+    try {
+      const data = await apiClient.get<Profile>(`/profiles/${uid}`);
+      setProfile(data);
+    } catch {
+      setProfile(null);
+    } finally {
+      setProfileLoading(false);
+    }
   }, []);
 
   const refetchProfile = useCallback(() => {

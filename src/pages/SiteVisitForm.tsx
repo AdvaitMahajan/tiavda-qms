@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useSearchParams } from "react-router-dom";
-import { supabasePublic } from "@/integrations/supabase/publicClient";
+import { publicApi } from "@/lib/apiClient";
 import {
   MapPin, CheckCircle2, Droplets, ShieldCheck, Lock, Fence,
   Loader2, ClipboardCheck, AlertTriangle, User, Phone, Mail, Building2,
@@ -87,10 +87,9 @@ export default function SiteVisitForm() {
 
   async function loadVisit(t: string) {
     try {
-      const { data: row, error: svErr } = await supabasePublic.rpc("get_site_visit", { p_token: t });
-      const sv = row as unknown as (VisitData & { enquiry?: EnquiryData & { client?: EnquiryData["clients"] } }) | null;
+      const sv = await publicApi.get<(VisitData & { enquiry?: EnquiryData & { client?: EnquiryData["clients"] } }) | null>("/public/site-visit", { token: t });
 
-      if (svErr || !sv) {
+      if (!sv) {
         setError("This site visit link is invalid or has expired.");
         setLoading(false);
         return;
@@ -141,19 +140,18 @@ export default function SiteVisitForm() {
     if (!visit) return;
     setSaving(true);
     try {
-      const { data: res, error: updateErr } = await supabasePublic.rpc("submit_site_visit", {
-        p_token: token!,
-        p_feasibility: feasibility,
-        p_water: waterConfirmed,
-        p_access: accessConfirmed,
-        p_security: securityConfirmed,
-        p_fencing: fencingConfirmed,
-        p_observations: observationNotes,
-        p_recommendations: recommendations,
-        p_cost_factors: selectedCostFactors,
+      const r = await publicApi.post<{ ok?: boolean } | null>("/public/site-visit/submit", {
+        token: token!,
+        feasibility,
+        water: waterConfirmed,
+        access: accessConfirmed,
+        security: securityConfirmed,
+        fencing: fencingConfirmed,
+        observations: observationNotes,
+        recommendations,
+        cost_factors: selectedCostFactors,
       });
-      const r = res as { ok?: boolean } | null;
-      if (updateErr || !r?.ok) throw new Error(updateErr?.message || "submit failed");
+      if (!r?.ok) throw new Error("submit failed");
 
       setSubmitted(true);
     } catch (err: any) {

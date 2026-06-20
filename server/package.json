@@ -4,7 +4,7 @@
   "private": true,
   "description": "QMS custom API backend (Railway) — replaces direct Supabase access and edge functions",
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   },
   "main": "dist/index.js",
   "scripts": {

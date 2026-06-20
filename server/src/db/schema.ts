@@ -517,6 +517,8 @@ export const organizations = pgTable('organizations', {
   slug: text('slug').unique(),
   status: text('status').notNull().default('active'), // active | suspended
   plan: text('plan'),
+  features: jsonb('features').notNull().default(sql`'{}'::jsonb`), // { quotations, payments, site_visits, comms }
+  limits: jsonb('limits').notNull().default(sql`'{}'::jsonb`), // { max_users }
   created_at: timestamp('created_at', { withTimezone: true, mode: 'string' }).notNull().defaultNow(),
   updated_at: timestamp('updated_at', { withTimezone: true, mode: 'string' }).notNull().defaultNow(),
 });

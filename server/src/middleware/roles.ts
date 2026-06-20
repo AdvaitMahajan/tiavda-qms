@@ -46,3 +46,16 @@ export const requirePlatformAdmin: RequestHandler = (req, _res, next) => {
   if (!req.auth.isPlatformAdmin) return next(forbidden('Requires platform admin'));
   next();
 };
+
+/**
+ * Hard feature gate. The platform owner toggles features per org; if the caller's
+ * org does not have `key` enabled, the API refuses (403) regardless of the UI.
+ * Mount after authenticate on the routers a feature governs.
+ */
+export function requireFeature(key: string): RequestHandler {
+  return (req, _res, next) => {
+    if (!req.auth) return next(unauthorized());
+    if (req.auth.features?.[key]) return next();
+    return next(forbidden(`The "${key}" feature is not enabled for your organization`));
+  };
+}

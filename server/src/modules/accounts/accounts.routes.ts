@@ -3,10 +3,11 @@ import { desc, eq } from 'drizzle-orm';
 import { db } from '../../db';
 import { clients, enquiries, payments } from '../../db/schema';
 import { authenticate } from '../../middleware/auth';
+import { requireFeature } from '../../middleware/roles';
 import { asyncHandler } from '../../lib/http';
 
 export const accountsRouter = Router();
-accountsRouter.use(authenticate);
+accountsRouter.use(authenticate, requireFeature('payments'));
 
 // Full payments ledger with nested enquiry + client (shape matches the original
 // Supabase nested select used by the Accounts page).

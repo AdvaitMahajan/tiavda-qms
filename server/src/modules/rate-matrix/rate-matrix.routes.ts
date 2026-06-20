@@ -4,7 +4,7 @@ import { asc, eq } from 'drizzle-orm';
 import { db, requireOrgId } from '../../db';
 import { rate_matrix } from '../../db/schema';
 import { authenticate, getAuth } from '../../middleware/auth';
-import { requireEditor } from '../../middleware/roles';
+import { requireEditor, requireFeature } from '../../middleware/roles';
 import { asyncHandler, getParam } from '../../lib/http';
 import { notFound } from '../../lib/errors';
 
@@ -30,7 +30,7 @@ const createSchema = z.object({
 const updateSchema = createSchema.partial();
 
 export const rateMatrixRouter = Router();
-rateMatrixRouter.use(authenticate);
+rateMatrixRouter.use(authenticate, requireFeature('quotations'));
 
 // RLS parity: select = all authenticated; insert/update/delete = is_editor.
 rateMatrixRouter.get(

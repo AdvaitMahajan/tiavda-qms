@@ -4,7 +4,7 @@ import { and, asc, desc, eq, inArray, ne } from 'drizzle-orm';
 import { db, requireOrgId } from '../../db';
 import { enquiries, quotations } from '../../db/schema';
 import { authenticate, getAuth } from '../../middleware/auth';
-import { requireEditor } from '../../middleware/roles';
+import { requireEditor, requireFeature } from '../../middleware/roles';
 import { asyncHandler, getParam } from '../../lib/http';
 import { badRequest, notFound } from '../../lib/errors';
 import { logEnquiryEvent } from '../../lib/events';
@@ -65,7 +65,7 @@ const updateSchema = z.object({
 });
 
 export const quotationsRouter = Router();
-quotationsRouter.use(authenticate);
+quotationsRouter.use(authenticate, requireFeature('quotations'));
 
 // GET /quotations?enquiry_id=...  (order: version desc, then variant) — read for all.
 quotationsRouter.get(

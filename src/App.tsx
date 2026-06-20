@@ -22,6 +22,14 @@ function PlatformAdminRoute({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+// Per-org feature gate — redirect to dashboard if the org doesn't have the feature.
+function FeatureRoute({ feature, children }: { feature: string; children: React.ReactNode }) {
+  const { organization, profileLoading } = useAuth();
+  if (profileLoading) return null;
+  if (!organization?.features?.[feature]) return <Navigate to="/dashboard" replace />;
+  return <>{children}</>;
+}
+
 import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
 import Enquiries from "./pages/Enquiries";
@@ -81,15 +89,15 @@ const App = () => (
             >
               <Route path="/dashboard" element={<Dashboard />} />
               <Route path="/follow-ups" element={<FollowUps />} />
-              <Route path="/mobilisation" element={<Mobilisation />} />
+              <Route path="/mobilisation" element={<FeatureRoute feature="site_visits"><Mobilisation /></FeatureRoute>} />
               <Route path="/enquiries" element={<Enquiries />} />
               <Route path="/enquiries/:id" element={<EnquiryDetail />} />
               <Route path="/enquiries/:id/quotation" element={<QuotationBuilder />} />
               <Route path="/enquiries/:id/quotation/:quotationId" element={<QuotationBuilder />} />
               <Route path="/clients" element={<Clients />} />
               <Route path="/clients/:id" element={<ClientDetail />} />
-              <Route path="/accounts" element={<Accounts />} />
-              <Route path="/quotation-config" element={<AdminRoute><QuotationConfigPage /></AdminRoute>} />
+              <Route path="/accounts" element={<FeatureRoute feature="payments"><Accounts /></FeatureRoute>} />
+              <Route path="/quotation-config" element={<AdminRoute><FeatureRoute feature="quotations"><QuotationConfigPage /></FeatureRoute></AdminRoute>} />
               <Route path="/settings" element={<AdminRoute><SettingsPage /></AdminRoute>} />
               <Route path="/admin" element={<PlatformAdminRoute><AdminConsole /></PlatformAdminRoute>} />
             </Route>

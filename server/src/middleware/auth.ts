@@ -16,6 +16,8 @@ export interface AuthContext {
   orgId: string | null;
   /** Platform owner — can use /admin/* cross-org routes; never sees business data. */
   isPlatformAdmin: boolean;
+  /** Per-org feature flags (quotations/payments/site_visits/comms). */
+  features: Record<string, boolean>;
   claims: Record<string, unknown>;
 }
 
@@ -50,6 +52,20 @@ export async function authenticate(req: Request, res: Response, next: NextFuncti
     if (!profile) throw forbidden('No profile for this user');
     if (profile.is_active === false) throw forbidden('Account is deactivated');
 
+    // Resolve the org's feature flags + status (suspended orgs are blocked).
+    let features: Record<string, boolean> = {};
+    if (profile.org_id) {
+      const { data: org } = await supabaseAdmin
+        .from('organizations')
+        .select('status, features')
+        .eq('id', profile.org_id)
+        .maybeSingle();
+      if (org?.status === 'suspended' && !profile.is_platform_admin) {
+        throw forbidden('This organization is suspended. Contact the platform administrator.');
+      }
+      features = (org?.features as Record<string, boolean>) ?? {};
+    }
+
     const role: Role = ROLES.includes(profile.role as Role) ? (profile.role as Role) : 'viewer';
     req.auth = {
       userId,
@@ -57,6 +73,7 @@ export async function authenticate(req: Request, res: Response, next: NextFuncti
       role,
       orgId: (profile.org_id as string | null) ?? null,
       isPlatformAdmin: !!profile.is_platform_admin,
+      features,
       claims: claims as Record<string, unknown>,
     };
 

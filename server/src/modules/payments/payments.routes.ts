@@ -4,7 +4,7 @@ import { desc, eq } from 'drizzle-orm';
 import { db, requireOrgId } from '../../db';
 import { payments } from '../../db/schema';
 import { authenticate } from '../../middleware/auth';
-import { requireEditor } from '../../middleware/roles';
+import { requireEditor, requireFeature } from '../../middleware/roles';
 import { asyncHandler, getParam } from '../../lib/http';
 import { notFound } from '../../lib/errors';
 
@@ -36,7 +36,7 @@ const updateSchema = z.object({
 
 // RLS parity: select = all; insert/update/delete = is_editor.
 export const paymentsRouter = Router();
-paymentsRouter.use(authenticate);
+paymentsRouter.use(authenticate, requireFeature('payments'));
 
 paymentsRouter.get(
   '/',

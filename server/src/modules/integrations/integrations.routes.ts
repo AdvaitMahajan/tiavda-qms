@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { authenticate } from '../../middleware/auth';
-import { requireNotViewer } from '../../middleware/roles';
+import { requireNotViewer, requireFeature } from '../../middleware/roles';
 import { asyncHandler } from '../../lib/http';
 import { sendEmail } from '../../integrations/email';
 import { sendWhatsApp } from '../../integrations/whatsapp';
@@ -34,7 +34,7 @@ const driveSchema = z.object({
 // All integration sends require a non-viewer. Results are returned as structured
 // JSON (200) so the client can read { success | error | whatsapp_invalid }.
 export const integrationsRouter = Router();
-integrationsRouter.use(authenticate);
+integrationsRouter.use(authenticate, requireFeature('comms'));
 
 integrationsRouter.post(
   '/email',

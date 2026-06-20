@@ -12,6 +12,8 @@ export interface Organization {
   slug: string | null;
   status: string;
   plan: string | null;
+  features?: Record<string, boolean>;
+  limits?: Record<string, unknown>;
 }
 
 interface AuthContextType {

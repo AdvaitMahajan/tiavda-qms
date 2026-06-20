@@ -4,7 +4,7 @@ import { desc, eq } from 'drizzle-orm';
 import { db, requireOrgId } from '../../db';
 import { site_visits } from '../../db/schema';
 import { authenticate } from '../../middleware/auth';
-import { requireNotViewer } from '../../middleware/roles';
+import { requireNotViewer, requireFeature } from '../../middleware/roles';
 import { asyncHandler, getParam } from '../../lib/http';
 import { notFound } from '../../lib/errors';
 
@@ -35,7 +35,7 @@ const updateSchema = z.object({
 
 // Authenticated site-visit management (the public field form uses the RPC routes).
 export const siteVisitsRouter = Router();
-siteVisitsRouter.use(authenticate);
+siteVisitsRouter.use(authenticate, requireFeature('site_visits'));
 
 siteVisitsRouter.get(
   '/',

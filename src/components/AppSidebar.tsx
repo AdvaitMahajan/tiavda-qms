@@ -9,9 +9,9 @@ const navItems = [
   { path: "/clients", label: "Clients", icon: Users },
   { path: "/enquiries", label: "Enquiries", icon: FileText },
   { path: "/follow-ups", label: "Follow-ups", icon: CalendarClock },
-  { path: "/mobilisation", label: "Mobilisation", icon: Truck },
-  { path: "/accounts", label: "Accounts", icon: Wallet },
-  { path: "/quotation-config", label: "Quotation Config", icon: ClipboardList, adminOnly: true },
+  { path: "/mobilisation", label: "Mobilisation", icon: Truck, feature: "site_visits" },
+  { path: "/accounts", label: "Accounts", icon: Wallet, feature: "payments" },
+  { path: "/quotation-config", label: "Quotation Config", icon: ClipboardList, adminOnly: true, feature: "quotations" },
   { path: "/settings", label: "Settings", icon: Settings, adminOnly: true },
   { path: "/admin", label: "Admin Console", icon: Building2, platformOnly: true },
 ];
@@ -20,11 +20,18 @@ export function AppSidebar() {
   const { pathname } = useLocation();
   const { user, signOut, profileLoading, organization, isPlatformAdmin } = useAuth();
   const { isAdmin } = useRole();
+  const features = organization?.features ?? {};
   // Platform owner sees ONLY the Admin Console (no per-org operational nav).
-  // Org users see the operational items (admin-only ones gated by role).
+  // Org users see the operational items (admin-only gated by role, others gated
+  // by the org's enabled features). During load, show to avoid flicker.
   const visibleItems = isPlatformAdmin
     ? navItems.filter((item) => item.platformOnly)
-    : navItems.filter((item) => (!item.adminOnly || profileLoading || isAdmin) && !item.platformOnly);
+    : navItems.filter(
+        (item) =>
+          (!item.adminOnly || profileLoading || isAdmin) &&
+          !item.platformOnly &&
+          (!item.feature || profileLoading || features[item.feature]),
+      );
 
   return (
     <aside

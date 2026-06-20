@@ -5,7 +5,7 @@ import { and, desc, eq, inArray } from 'drizzle-orm';
 import { db, requireOrgId } from '../../db';
 import { mobilisation, mob_confirmation_tokens } from '../../db/schema';
 import { authenticate, getAuth } from '../../middleware/auth';
-import { requireNotViewer } from '../../middleware/roles';
+import { requireNotViewer, requireFeature } from '../../middleware/roles';
 import { asyncHandler, getParam } from '../../lib/http';
 import { badRequest, notFound } from '../../lib/errors';
 
@@ -44,7 +44,7 @@ const updateSchema = z.object({
 });
 
 export const mobilisationRouter = Router();
-mobilisationRouter.use(authenticate);
+mobilisationRouter.use(authenticate, requireFeature('site_visits'));
 
 // GET /mobilisation?enquiry_id=    -> single row or null
 // GET /mobilisation?enquiry_ids=.. -> list (pipeline queue)

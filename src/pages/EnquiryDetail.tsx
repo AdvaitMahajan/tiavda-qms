@@ -463,7 +463,13 @@ function VariantCard({
 export default function EnquiryDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, organization } = useAuth();
+  // Per-org feature flags (hide tabs the org's plan doesn't include). Show unless
+  // a feature is explicitly disabled, so existing/all-on orgs are unaffected.
+  const orgFeatures = organization?.features ?? {};
+  const hasPayments = orgFeatures.payments !== false;
+  const hasSiteVisits = orgFeatures.site_visits !== false;
+  const hasComms = orgFeatures.comms !== false;
   const { canAssignEnquiry, canEditEnquiry, canEditQuotation } = useRole();
   const [enquiry, setEnquiry] = useState<Enquiry | null>(null);
   const [client, setClient] = useState<Client | null>(null);
@@ -990,11 +996,11 @@ export default function EnquiryDetail() {
 
   const allTabs = [
     { key: "quotations", label: "Quotations" },
-    ...(showSiteVisitTab ? [{ key: "site-visits", label: "Site Visits" }] : []),
+    ...(showSiteVisitTab && hasSiteVisits ? [{ key: "site-visits", label: "Site Visits" }] : []),
     { key: "follow-ups", label: "Follow-ups" },
-    { key: "payments", label: "Payments" },
-    { key: "communications", label: "Communications" },
-    ...(showMobilisation ? [{ key: "mobilisation", label: "Mobilisation" }] : []),
+    ...(hasPayments ? [{ key: "payments", label: "Payments" }] : []),
+    ...(hasComms ? [{ key: "communications", label: "Communications" }] : []),
+    ...(showMobilisation && hasSiteVisits ? [{ key: "mobilisation", label: "Mobilisation" }] : []),
     ...(showJobTabs ? [{ key: "job", label: "Job Completion" }] : []),
     { key: "activity", label: "Activity" },
   ];

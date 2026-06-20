@@ -10,6 +10,7 @@ import {
   listOrgIntegrationStatus,
   type IntegrationProvider,
 } from '../../lib/org-integrations';
+import { PLAN_KEYS, featuresForPlan, limitsForPlan, normaliseFeatures } from '../../lib/plans';
 
 /**
  * Platform-admin console (cross-org). Uses the service-role client throughout —
@@ -45,11 +46,23 @@ adminRouter.post(
   '/orgs',
   asyncHandler(async (req, res) => {
     const body = z
-      .object({ name: z.string().min(1), slug: z.string().min(1).optional(), plan: z.string().optional() })
+      .object({
+        name: z.string().min(1),
+        slug: z.string().min(1).optional(),
+        plan: z.enum(PLAN_KEYS).default('pro'),
+        features: z.record(z.boolean()).optional(),
+      })
       .parse(req.body);
+    const features = body.features ? normaliseFeatures(body.features) : featuresForPlan(body.plan);
     const { data, error } = await supabaseAdmin
       .from('organizations')
-      .insert({ name: body.name, slug: body.slug ?? null, plan: body.plan ?? null })
+      .insert({
+        name: body.name,
+        slug: body.slug ?? null,
+        plan: body.plan,
+        features,
+        limits: limitsForPlan(body.plan),
+      })
       .select()
       .single();
     if (error) throw badRequest(error.message);
@@ -64,12 +77,27 @@ adminRouter.patch(
       .object({
         name: z.string().min(1).optional(),
         status: z.enum(['active', 'suspended']).optional(),
-        plan: z.string().nullable().optional(),
+        plan: z.enum(PLAN_KEYS).optional(),
+        features: z.record(z.boolean()).optional(),
+        limits: z.record(z.any()).optional(),
       })
       .parse(req.body);
+    const patch: Record<string, unknown> = { updated_at: new Date().toISOString() };
+    if (body.name !== undefined) patch.name = body.name;
+    if (body.status !== undefined) patch.status = body.status;
+    if (body.plan !== undefined) {
+      patch.plan = body.plan;
+      // Changing plan resets features/limits to that plan's preset unless the
+      // request also sends explicit features/limits (overrides).
+      if (body.features === undefined) patch.features = featuresForPlan(body.plan);
+      if (body.limits === undefined) patch.limits = limitsForPlan(body.plan);
+    }
+    if (body.features !== undefined) patch.features = normaliseFeatures(body.features);
+    if (body.limits !== undefined) patch.limits = body.limits;
+
     const { data, error } = await supabaseAdmin
       .from('organizations')
-      .update({ ...body, updated_at: new Date().toISOString() })
+      .update(patch)
       .eq('id', getParam(req, 'id'))
       .select()
       .single();
@@ -105,6 +133,17 @@ adminRouter.post(
         role: ROLE.default('super_admin'),
       })
       .parse(req.body);
+
+    // Enforce the plan's user limit.
+    const { data: org } = await supabaseAdmin.from('organizations').select('limits').eq('id', orgId).maybeSingle();
+    const maxUsers = (org?.limits as { max_users?: number | null } | null)?.max_users ?? null;
+    if (maxUsers != null) {
+      const { count } = await supabaseAdmin.from('profiles').select('id', { count: 'exact', head: true }).eq('org_id', orgId);
+      if ((count ?? 0) >= maxUsers) {
+        throw badRequest(`User limit reached for this plan (${maxUsers}). Upgrade the plan to add more users.`);
+      }
+    }
+
     const { data, error } = await supabaseAdmin.auth.admin.createUser({
       email: body.email,
       password: body.password,

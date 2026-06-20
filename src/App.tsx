@@ -32,7 +32,20 @@ import ResetPassword from "./pages/ResetPassword";
 import SiteVisitForm from "./pages/SiteVisitForm";
 import Mobilisation from "./pages/Mobilisation";
 
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      retry: (count, error) => {
+        const status = (error as { status?: number })?.status;
+        if (status && status >= 400 && status < 500) return false; // don't retry 4xx (incl. 401)
+        return count < 2;
+      },
+      staleTime: 30_000,
+      refetchOnWindowFocus: true,
+    },
+    mutations: { retry: false },
+  },
+});
 
 const App = () => (
   <ErrorBoundary>

@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { and, desc, eq, inArray, isNull, type SQL } from 'drizzle-orm';
 import { db } from '../../db';
-import { enquiries, enquiry_events } from '../../db/schema';
+import { clients, enquiries, enquiry_events, quotations } from '../../db/schema';
 import { authenticate } from '../../middleware/auth';
 import { requireNotViewer } from '../../middleware/roles';
 import { asyncHandler, getParam } from '../../lib/http';
@@ -84,6 +84,7 @@ const listQuery = z.object({
   service_type: z.string().optional(),
   include_deleted: z.coerce.boolean().default(false),
   order: z.enum(['created_at', 'confirmed_date', 'enquiry_date']).default('created_at'),
+  embed: z.string().optional(), // comma list: client,quote
 });
 
 const eventSchema = z.object({
@@ -121,7 +122,49 @@ enquiriesRouter.get(
       .from(enquiries)
       .where(conds.length ? and(...conds) : undefined)
       .orderBy(desc(orderCol));
-    res.json(rows);
+
+    const embed = (q.embed ?? '').split(',').map((s) => s.trim()).filter(Boolean);
+    if (!embed.length || rows.length === 0) {
+      res.json(rows);
+      return;
+    }
+
+    // Batched enrichment (no N+1): one query for clients, one for quote totals.
+    let clientMap: Map<string, { id: string; name: string; phone: string }> | null = null;
+    let quoteMap: Map<string, number> | null = null;
+
+    if (embed.includes('client')) {
+      const clientIds = [...new Set(rows.map((r) => r.client_id))];
+      const cs = await db
+        .select({ id: clients.id, name: clients.name, phone: clients.phone })
+        .from(clients)
+        .where(inArray(clients.id, clientIds));
+      clientMap = new Map(cs.map((c) => [c.id, c]));
+    }
+
+    if (embed.includes('quote')) {
+      const ids = rows.map((r) => r.id);
+      const qs = await db
+        .select({
+          enquiry_id: quotations.enquiry_id,
+          total_amount: quotations.total_amount,
+        })
+        .from(quotations)
+        .where(and(inArray(quotations.enquiry_id, ids), inArray(quotations.status, ['approved', 'sent', 'accepted'])))
+        .orderBy(desc(quotations.version));
+      quoteMap = new Map();
+      for (const qr of qs) {
+        if (!quoteMap.has(qr.enquiry_id)) quoteMap.set(qr.enquiry_id, qr.total_amount);
+      }
+    }
+
+    res.json(
+      rows.map((r) => ({
+        ...r,
+        ...(clientMap ? { client: clientMap.get(r.client_id) ?? null } : {}),
+        ...(quoteMap ? { quote_total: quoteMap.get(r.id) ?? null } : {}),
+      })),
+    );
   }),
 );
 

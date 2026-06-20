@@ -20,6 +20,7 @@ import { storageRouter } from '../modules/storage/storage.routes';
 import { teamRouter } from '../modules/team/team.routes';
 import { cronRouter } from '../modules/cron/cron.routes';
 import { publicRouter } from '../modules/public/public.routes';
+import { intakeTokensRouter } from '../modules/intake-tokens/intake-tokens.routes';
 
 /**
  * Root API router. Domain routers are mounted here as they are implemented.
@@ -30,6 +31,7 @@ export const apiRouter = Router();
 
 apiRouter.use('/health', healthRouter);
 apiRouter.use('/clients', clientsRouter);
+apiRouter.use('/intake-tokens', intakeTokensRouter);
 apiRouter.use('/profiles', profilesRouter);
 apiRouter.use('/rate-matrix', rateMatrixRouter);
 apiRouter.use('/settings', settingsRouter);

@@ -1,9 +1,19 @@
-import { Outlet } from "react-router-dom";
+import { Outlet, useLocation, Navigate } from "react-router-dom";
+import { useAuth } from "@/hooks/useAuth";
 import { AppSidebar } from "./AppSidebar";
 import { TopBar } from "./TopBar";
 import { BottomTabBar } from "./BottomTabBar";
 
 export function AppLayout() {
+  const { isPlatformAdmin, profileLoading } = useAuth();
+  const { pathname } = useLocation();
+
+  // Platform owner = pure admin console: no per-org operational screens. Keep
+  // them within /admin (their account has no business org to operate).
+  if (!profileLoading && isPlatformAdmin && !pathname.startsWith("/admin")) {
+    return <Navigate to="/admin" replace />;
+  }
+
   return (
     <div className="flex min-h-screen">
       {/* Sidebar: hidden on mobile, icon-only on tablet (md), full on desktop (lg) */}
@@ -17,8 +27,8 @@ export function AppLayout() {
           </div>
         </main>
       </div>
-      {/* Bottom tab bar: only on mobile */}
-      <BottomTabBar />
+      {/* Bottom tab bar: only on mobile, and only for org users (operational nav). */}
+      {!isPlatformAdmin && <BottomTabBar />}
     </div>
   );
 }

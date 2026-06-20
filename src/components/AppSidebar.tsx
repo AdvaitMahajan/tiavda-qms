@@ -20,11 +20,11 @@ export function AppSidebar() {
   const { pathname } = useLocation();
   const { user, signOut, profileLoading, organization, isPlatformAdmin } = useAuth();
   const { isAdmin } = useRole();
-  const visibleItems = navItems.filter(
-    (item) =>
-      (!item.adminOnly || profileLoading || isAdmin) &&
-      (!item.platformOnly || isPlatformAdmin),
-  );
+  // Platform owner sees ONLY the Admin Console (no per-org operational nav).
+  // Org users see the operational items (admin-only ones gated by role).
+  const visibleItems = isPlatformAdmin
+    ? navItems.filter((item) => item.platformOnly)
+    : navItems.filter((item) => (!item.adminOnly || profileLoading || isAdmin) && !item.platformOnly);
 
   return (
     <aside

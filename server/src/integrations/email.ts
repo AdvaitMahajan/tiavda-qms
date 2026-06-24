@@ -36,7 +36,8 @@ export async function sendEmail(input: SendEmailInput): Promise<SendEmailResult>
   }
   if (!html_body) return { success: false, error: 'Nothing to send: provide a template or html_body' };
 
-  const creds = await resolveEmailCreds(input.orgId ?? currentOrgId());
+  const orgId = input.orgId ?? currentOrgId();
+  const creds = await resolveEmailCreds(orgId);
   if (!creds.api_key) return { success: false, error: 'Email is not configured for this organization' };
   const senderEmail = creds.sender_email;
   const senderName = creds.sender_name;
@@ -44,8 +45,15 @@ export async function sendEmail(input: SendEmailInput): Promise<SendEmailResult>
   let attachment: Array<{ content: string; name: string }> | undefined;
   if (attachment_path) {
     const bucket = attachment_bucket || 'quotation-pdfs';
-    const { data, error } = await supabaseAdmin.storage.from(bucket).download(attachment_path);
-    if (error || !data) return { success: false, error: `Failed to fetch attachment ${bucket}/${attachment_path}` };
+    // Storage objects are namespaced under the org_id (see storage.routes orgScopedPath),
+    // and the DB stores the logical (un-prefixed) path — so org-scope it here too, or the
+    // download misses the file. Idempotent: won't double-prefix an already-scoped path.
+    const scopedPath =
+      orgId && attachment_path !== orgId && !attachment_path.startsWith(`${orgId}/`)
+        ? `${orgId}/${attachment_path}`
+        : attachment_path;
+    const { data, error } = await supabaseAdmin.storage.from(bucket).download(scopedPath);
+    if (error || !data) return { success: false, error: `Failed to fetch attachment ${bucket}/${scopedPath}` };
     const buffer = Buffer.from(await data.arrayBuffer());
     attachment = [{ content: buffer.toString('base64'), name: attachment_path.split('/').pop() || 'attachment.pdf' }];
   } else if (attachment_url) {

@@ -18,7 +18,7 @@ import {
 import { CalendarClock, Plus, Check } from "lucide-react";
 import type { Tables } from "@/integrations/supabase/types";
 import { EmptyState } from "@/components/ui/EmptyState";
-import { cleanupConditionalFollowUps } from "@/lib/followUpCadence";
+import { completeFollowUp } from "@/lib/followUpCadence";
 
 type FollowUp = Tables<"follow_ups">;
 type FollowUpOutcome = FollowUp["outcome"];
@@ -91,86 +91,14 @@ export function FollowUpsTab({ enquiryId }: { enquiryId: string }) {
   const completeMutation = useMutation({
     mutationFn: async () => {
       if (!completeTarget) return;
-
-      await apiClient.patch(`/follow-ups/${completeTarget.id}`, {
-        outcome: outcome,
-        outcome_notes: outcomeNotes || null,
-        completed_at: new Date().toISOString(),
-        completed_by: user?.id ?? null,
+      await completeFollowUp({
+        followUp: completeTarget,
+        outcome,
+        outcomeNotes,
+        completedBy: user?.id ?? null,
+        scheduleNext,
+        nextDate,
       });
-
-      let newNextDate: string | null = null;
-
-      if (scheduleNext && nextDate) {
-        await apiClient.post("/follow-ups", {
-          enquiry_id: enquiryId,
-          scheduled_date: nextDate,
-          auto_scheduled: false,
-          outcome: "pending",
-        });
-        newNextDate = nextDate;
-      }
-
-      // Auto-reschedule on no_response if enabled in app_settings
-      if (outcome === "no_response" && !scheduleNext) {
-        const settingsRows = await apiClient.get<{ key: string; value: string }[]>("/settings", {
-          keys: "auto_followup_no_response,auto_followup_no_response_days",
-        });
-        const settingsMap = new Map(settingsRows.map((r) => [r.key, r.value]));
-        const autoReschedule = (settingsMap.get("auto_followup_no_response") ?? "true") !== "false";
-        const rescheduleDays = parseInt(settingsMap.get("auto_followup_no_response_days") ?? "4", 10) || 4;
-        if (autoReschedule) {
-          const next = new Date();
-          next.setDate(next.getDate() + rescheduleDays);
-          const autoNextDate = next.toISOString().slice(0, 10);
-          await apiClient.post("/follow-ups", {
-            enquiry_id: enquiryId,
-            scheduled_date: autoNextDate,
-            auto_scheduled: true,
-            outcome: "pending",
-            notes: "Auto: rescheduled after no response",
-          });
-          newNextDate = autoNextDate;
-        }
-      }
-
-      // Update enquiry next_follow_up
-      if (outcome === "closed" && !scheduleNext) {
-        await apiClient.patch(`/enquiries/${enquiryId}`, { next_follow_up: null });
-      } else if (newNextDate) {
-        await apiClient.patch(`/enquiries/${enquiryId}`, { next_follow_up: newNextDate });
-      } else {
-        // Find next pending follow-up
-        const all = await apiClient.get<FollowUp[]>("/follow-ups", { enquiry_id: enquiryId });
-        const nextPending = all
-          .filter((f) => f.outcome === "pending" && f.id !== completeTarget.id)
-          .sort((a, b) => a.scheduled_date.localeCompare(b.scheduled_date))[0];
-        await apiClient.patch(`/enquiries/${enquiryId}`, {
-          next_follow_up: nextPending?.scheduled_date ?? null,
-        });
-      }
-
-      await apiClient.post(`/enquiries/${enquiryId}/events`, {
-        event_type: "follow_up_completed",
-        metadata: { outcome, follow_up_id: completeTarget.id },
-      });
-
-      // Auto-advance enquiry from "sent" → "follow_up" when a follow-up is completed
-      const enqStatus = await apiClient.get<{ status: string }>(`/enquiries/${enquiryId}`);
-      if (enqStatus?.status === "sent") {
-        await apiClient.patch(`/enquiries/${enquiryId}`, { status: "follow_up" });
-        await apiClient.post(`/enquiries/${enquiryId}/events`, {
-          event_type: "status_change",
-          from_status: "sent",
-          to_status: "follow_up",
-          metadata: { trigger: "follow_up_completed" },
-        });
-      }
-
-      // Cleanup conditional (Day 15/30) follow-ups if client reached and deal progressing
-      if (outcome === "reached" || outcome === "closed") {
-        await cleanupConditionalFollowUps(enquiryId);
-      }
     },
     onSuccess: () => {
       toast.success("Follow-up completed!");

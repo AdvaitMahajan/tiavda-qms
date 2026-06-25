@@ -16,6 +16,12 @@ const DEFAULT_CADENCE: CadenceStep[] = [
 ];
 
 export async function createFollowUpCadence(enquiryId: string): Promise<number> {
+  // Idempotency guard: a quotation can be sent more than once, and each send used
+  // to create a full cadence — piling up duplicate follow-ups. Skip if an active
+  // (pending, auto-scheduled) cadence already exists for this enquiry.
+  const existing = await apiClient.get<Tables<"follow_ups">[]>("/follow-ups", { enquiry_id: enquiryId });
+  if (existing.some((f) => f.auto_scheduled && f.outcome === "pending")) return 0;
+
   const baseDate = new Date();
   const rows = DEFAULT_CADENCE.map((step) => {
     const scheduled = new Date(baseDate);

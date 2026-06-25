@@ -219,11 +219,17 @@ export default function Accounts() {
                 <Chip key={s} active={statusFilter === s} onClick={() => setStatusFilter(s)} label={s === "outstanding" ? "Not Paid" : s[0].toUpperCase() + s.slice(1)} />
               ))}
             </div>
-            <div className="flex gap-1">
-              {(["all", "advance", "final"] as const).map((t) => (
-                <Chip key={t} active={typeFilter === t} onClick={() => setTypeFilter(t)} label={t[0].toUpperCase() + t.slice(1)} />
-              ))}
-            </div>
+            <select
+              value={typeFilter}
+              onChange={(e) => setTypeFilter(e.target.value as "all" | "advance" | "final")}
+              aria-label="Payment type"
+              style={{ padding: "7px 28px 7px 11px", borderRadius: "8px", border: "1px solid #E0E7EF", fontSize: "12px", fontWeight: 600,
+                background: "#FAFBFC", color: "#546E7A", cursor: "pointer" }}
+            >
+              <option value="all">All types</option>
+              <option value="advance">Advance</option>
+              <option value="final">Final</option>
+            </select>
             <div className="relative">
               <Search style={{ width: 14, height: 14, color: "#94A3B8", position: "absolute", left: 10, top: 10 }} />
               <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Client or ref…"

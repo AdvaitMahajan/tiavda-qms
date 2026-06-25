@@ -38,13 +38,14 @@ export const followUpsRouter = Router();
 followUpsRouter.use(authenticate);
 
 // GET /follow-ups            -> global list (FollowUps page), order scheduled_date asc
-// GET /follow-ups?enquiry_id -> per-enquiry list (FollowUpsTab), order scheduled_date desc
+// GET /follow-ups?enquiry_id -> per-enquiry list (FollowUpsTab), order scheduled_date asc
+//   (soonest/overdue first — the next thing to act on is at the top)
 // ?order=asc|desc overrides the default.
 followUpsRouter.get(
   '/',
   asyncHandler(async (req, res) => {
     const enquiryId = req.query.enquiry_id ? z.string().uuid().parse(req.query.enquiry_id) : null;
-    const order = req.query.order === 'asc' ? 'asc' : req.query.order === 'desc' ? 'desc' : enquiryId ? 'desc' : 'asc';
+    const order = req.query.order === 'desc' ? 'desc' : 'asc';
     const orderBy = order === 'asc' ? asc(follow_ups.scheduled_date) : desc(follow_ups.scheduled_date);
     const rows = await db
       .select()

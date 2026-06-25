@@ -1,12 +1,17 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiClient } from "@/lib/apiClient";
 import type { Tables } from "@/integrations/supabase/types";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Truck, CheckCircle2, CreditCard, CalendarCheck, Hammer, MapPin, Phone } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
+import { PaymentsTab } from "@/components/enquiry/PaymentsTab";
+import { MobilisationSection } from "@/components/enquiry/MobilisationSection";
+import { JobCompletionTab } from "@/components/enquiry/JobCompletionTab";
+import { Truck, CreditCard, CalendarCheck, Hammer, MapPin, Phone, ExternalLink } from "lucide-react";
 
 type Tab = "won" | "payment_received" | "mob_scheduled" | "job_active";
 
@@ -22,6 +27,7 @@ interface MobRow {
   ref_number: string;
   status: string;
   site_city: string;
+  client_id: string;
   client_name: string;
   client_phone: string;
   quote_amount: number | null;
@@ -67,6 +73,7 @@ function useMobilisationData() {
           ref_number: e.ref_number,
           status: e.status,
           site_city: e.site_city,
+          client_id: e.client_id,
           client_name: e.client?.name ?? "Unknown",
           client_phone: e.client?.phone ?? "",
           quote_amount: e.quote_total ?? null,
@@ -84,8 +91,14 @@ function useMobilisationData() {
 
 export default function Mobilisation() {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [tab, setTab] = useState<Tab>("payment_received");
+  const [selected, setSelected] = useState<MobRow | null>(null);
   const { data: rows, isLoading } = useMobilisationData();
+
+  // Keep the drawer's selected row in sync with fresh queue data after an action.
+  const selectedRow = selected ? (rows?.find((r) => r.id === selected.id) ?? selected) : null;
+  const refreshQueue = () => queryClient.invalidateQueries({ queryKey: ["mobilisation-queue"] });
 
   const counts: Record<Tab, number> = {
     won: rows?.filter((r) => r.status === "approved").length ?? 0,
@@ -196,10 +209,7 @@ export default function Mobilisation() {
                 background: "#FFFFFF",
                 border: "1px solid #E0E7EF",
               }}
-              onClick={() => {
-                const tabTarget = tab === "won" ? "payments" : tab === "payment_received" ? "mobilisation" : tab === "mob_scheduled" ? "mobilisation" : "job";
-                navigate(`/enquiries/${row.id}?tab=${tabTarget}`);
-              }}
+              onClick={() => setSelected(row)}
             >
               {/* Icon */}
               <div
@@ -282,6 +292,95 @@ export default function Mobilisation() {
           ))}
         </div>
       )}
+
+      {/* Detail drawer — insights + the same action panels from the enquiry page, no navigation */}
+      <Sheet open={!!selected} onOpenChange={(o) => !o && setSelected(null)}>
+        <SheetContent side="right" className="w-full sm:max-w-xl overflow-y-auto">
+          {selectedRow && (
+            <>
+              <SheetHeader>
+                <SheetTitle className="flex items-center gap-2">
+                  <span className="font-mono text-sm" style={{ color: "#1565C0" }}>{selectedRow.ref_number}</span>
+                  <Badge variant="secondary" className="capitalize">{selectedRow.status.replace(/_/g, " ")}</Badge>
+                </SheetTitle>
+                <SheetDescription className="text-base font-semibold text-foreground">
+                  {selectedRow.client_name}
+                </SheetDescription>
+              </SheetHeader>
+
+              {/* Insights */}
+              <div
+                className="mt-4 grid grid-cols-2 gap-3 rounded-xl border p-4 text-sm"
+                style={{ borderColor: "#E0E7EF", background: "#F8FAFC" }}
+              >
+                <div>
+                  <p className="text-muted-foreground text-xs">Site</p>
+                  <p className="font-medium flex items-center gap-1"><MapPin className="h-3 w-3" />{selectedRow.site_city}</p>
+                </div>
+                {selectedRow.client_phone && (
+                  <div>
+                    <p className="text-muted-foreground text-xs">Phone</p>
+                    <a href={`tel:${selectedRow.client_phone}`} className="font-medium flex items-center gap-1" style={{ color: "#1B5EA0" }}>
+                      <Phone className="h-3 w-3" />{selectedRow.client_phone}
+                    </a>
+                  </div>
+                )}
+                {selectedRow.quote_amount != null && (
+                  <div>
+                    <p className="text-muted-foreground text-xs">Quote</p>
+                    <p className="font-medium">{formatCurrency(selectedRow.quote_amount)}</p>
+                  </div>
+                )}
+                <div>
+                  <p className="text-muted-foreground text-xs">Service</p>
+                  <p className="font-medium">{selectedRow.service_type === "soil_investigation" ? "Soil Investigation" : "Consultancy"}</p>
+                </div>
+                {selectedRow.mob_date && (
+                  <div>
+                    <p className="text-muted-foreground text-xs">Mobilisation</p>
+                    <p className="font-medium" style={{ color: "#059669" }}>
+                      {formatDate(selectedRow.mob_date)}{selectedRow.mob_time ? ` at ${selectedRow.mob_time}` : ""}
+                    </p>
+                  </div>
+                )}
+                {selectedRow.team_lead_name && (
+                  <div>
+                    <p className="text-muted-foreground text-xs">Team Lead</p>
+                    <p className="font-medium">{selectedRow.team_lead_name}</p>
+                  </div>
+                )}
+                {selectedRow.confirmed_date && (
+                  <div>
+                    <p className="text-muted-foreground text-xs">Won on</p>
+                    <p className="font-medium">{formatDate(selectedRow.confirmed_date)}</p>
+                  </div>
+                )}
+              </div>
+
+              {/* Stage action — the exact panels used on the enquiry detail page */}
+              <div className="mt-5">
+                {selectedRow.status === "approved" && (
+                  <PaymentsTab enquiryId={selectedRow.id} onStatusChange={refreshQueue} />
+                )}
+                {(selectedRow.status === "payment_received" || selectedRow.status === "mobilization_scheduled") && (
+                  <MobilisationSection
+                    enquiryId={selectedRow.id}
+                    enquiry={{ id: selectedRow.id, ref_number: selectedRow.ref_number, site_city: selectedRow.site_city, client_id: selectedRow.client_id }}
+                    onStatusChange={refreshQueue}
+                  />
+                )}
+                {selectedRow.status === "job_active" && (
+                  <JobCompletionTab enquiryId={selectedRow.id} />
+                )}
+              </div>
+
+              <Button variant="outline" className="w-full mt-5" onClick={() => navigate(`/enquiries/${selectedRow.id}`)}>
+                <ExternalLink className="mr-1 h-4 w-4" /> Open full enquiry
+              </Button>
+            </>
+          )}
+        </SheetContent>
+      </Sheet>
     </div>
   );
 }

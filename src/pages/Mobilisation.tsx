@@ -7,7 +7,7 @@ import { formatCurrency, formatDate } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
-import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { PaymentsTab } from "@/components/enquiry/PaymentsTab";
 import { MobilisationSection } from "@/components/enquiry/MobilisationSection";
 import { JobCompletionTab } from "@/components/enquiry/JobCompletionTab";
@@ -293,20 +293,20 @@ export default function Mobilisation() {
         </div>
       )}
 
-      {/* Detail drawer — insights + the same action panels from the enquiry page, no navigation */}
-      <Sheet open={!!selected} onOpenChange={(o) => !o && setSelected(null)}>
-        <SheetContent side="right" className="w-full sm:max-w-xl overflow-y-auto">
+      {/* Detail modal — insights + the same action panels from the enquiry page, no navigation */}
+      <Dialog open={!!selected} onOpenChange={(o) => !o && setSelected(null)}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           {selectedRow && (
             <>
-              <SheetHeader>
-                <SheetTitle className="flex items-center gap-2">
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2">
                   <span className="font-mono text-sm" style={{ color: "#1565C0" }}>{selectedRow.ref_number}</span>
                   <Badge variant="secondary" className="capitalize">{selectedRow.status.replace(/_/g, " ")}</Badge>
-                </SheetTitle>
-                <SheetDescription className="text-base font-semibold text-foreground">
+                </DialogTitle>
+                <DialogDescription className="text-base font-semibold text-foreground">
                   {selectedRow.client_name}
-                </SheetDescription>
-              </SheetHeader>
+                </DialogDescription>
+              </DialogHeader>
 
               {/* Insights */}
               <div
@@ -379,8 +379,8 @@ export default function Mobilisation() {
               </Button>
             </>
           )}
-        </SheetContent>
-      </Sheet>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

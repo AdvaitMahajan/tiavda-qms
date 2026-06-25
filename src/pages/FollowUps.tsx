@@ -15,7 +15,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { CalendarClock, CheckCircle, Phone, Mail, MapPin, ExternalLink, Check, Building2 } from "lucide-react";
 
 type FollowUp = Tables<"follow_ups">;
@@ -238,24 +238,24 @@ export default function FollowUps() {
         </div>
       )}
 
-      {/* Detail drawer — insights + complete, no navigation */}
-      <Sheet open={!!selected} onOpenChange={(o) => !o && closeDetail()}>
-        <SheetContent side="right" className="w-full sm:max-w-md overflow-y-auto">
+      {/* Detail modal — insights + complete, no navigation */}
+      <Dialog open={!!selected} onOpenChange={(o) => !o && closeDetail()}>
+        <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
           {selected && (
             <>
-              <SheetHeader>
-                <SheetTitle className="flex items-center gap-2">
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2">
                   <span className="font-mono text-sm text-muted-foreground">{selectedEnq?.ref_number ?? "—"}</span>
                   {selectedEnq?.status && (
                     <Badge variant="secondary" className="capitalize">{String(selectedEnq.status).replace(/_/g, " ")}</Badge>
                   )}
-                </SheetTitle>
-                <SheetDescription className="text-base font-semibold text-foreground">
+                </DialogTitle>
+                <DialogDescription className="text-base font-semibold text-foreground">
                   {selectedClient?.name ?? selectedEnq?.client?.name ?? "Client"}
-                </SheetDescription>
-              </SheetHeader>
+                </DialogDescription>
+              </DialogHeader>
 
-              <div className="mt-5 space-y-6">
+              <div className="mt-2 space-y-6">
                 {/* Client contact */}
                 <section className="space-y-2">
                   <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Client</h3>
@@ -336,8 +336,8 @@ export default function FollowUps() {
               </div>
             </>
           )}
-        </SheetContent>
-      </Sheet>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

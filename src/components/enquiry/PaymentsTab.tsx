@@ -16,7 +16,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { CreditCard, ExternalLink, FileText, Loader2 } from "lucide-react";
 import type { Tables } from "@/integrations/supabase/types";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -497,11 +497,11 @@ export function PaymentsTab({ enquiryId, onStatusChange }: { enquiryId: string; 
         ))
       )}
 
-      {/* Request Payment Sheet */}
-      <Sheet open={showRequest} onOpenChange={setShowRequest}>
-        <SheetContent>
-          <SheetHeader><SheetTitle>Request {reqType === "final" ? "Final" : "Advance"} Payment</SheetTitle></SheetHeader>
-          <div className="space-y-4 mt-6">
+      {/* Request Payment Dialog */}
+      <Dialog open={showRequest} onOpenChange={setShowRequest}>
+        <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
+          <DialogHeader><DialogTitle>Request {reqType === "final" ? "Final" : "Advance"} Payment</DialogTitle></DialogHeader>
+          <div className="space-y-4 mt-2">
             <div>
               <Label>Payment Type</Label>
               <div className="flex gap-2 mt-1.5">
@@ -536,14 +536,14 @@ export function PaymentsTab({ enquiryId, onStatusChange }: { enquiryId: string; 
               Send Request
             </Button>
           </div>
-        </SheetContent>
-      </Sheet>
+        </DialogContent>
+      </Dialog>
 
-      {/* Mark Received Sheet */}
-      <Sheet open={!!showReceive} onOpenChange={(o) => !o && setShowReceive(null)}>
-        <SheetContent>
-          <SheetHeader><SheetTitle>Mark Payment Received</SheetTitle></SheetHeader>
-          <div className="space-y-4 mt-6">
+      {/* Mark Received Dialog */}
+      <Dialog open={!!showReceive} onOpenChange={(o) => !o && setShowReceive(null)}>
+        <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
+          <DialogHeader><DialogTitle>Mark Payment Received</DialogTitle></DialogHeader>
+          <div className="space-y-4 mt-2">
             <div>
               <Label>Amount Received ₹</Label>
               <Input type="number" value={recAmount} onChange={(e) => setRecAmount(e.target.value)} min={1} />
@@ -575,8 +575,8 @@ export function PaymentsTab({ enquiryId, onStatusChange }: { enquiryId: string; 
               Confirm Received
             </Button>
           </div>
-        </SheetContent>
-      </Sheet>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

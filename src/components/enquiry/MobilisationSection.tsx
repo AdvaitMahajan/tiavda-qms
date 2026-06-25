@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent } from "@/components/ui/card";
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Loader2, FolderOpen, FolderX, CalendarDays, ExternalLink, CheckCircle2, Clock, AlertTriangle, ShieldCheck, FileWarning } from "lucide-react";
 import type { Tables } from "@/integrations/supabase/types";
 
@@ -325,10 +325,10 @@ export function MobilisationSection({ enquiryId, enquiry, onStatusChange }: { en
           <CalendarDays className="mr-2 h-4 w-4" /> Schedule Mobilisation
         </Button>
 
-        <Sheet open={showForm} onOpenChange={setShowForm}>
-          <SheetContent>
-            <SheetHeader><SheetTitle>Schedule Mobilisation</SheetTitle></SheetHeader>
-            <div className="space-y-4 mt-6">
+        <Dialog open={showForm} onOpenChange={setShowForm}>
+          <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
+            <DialogHeader><DialogTitle>Schedule Mobilisation</DialogTitle></DialogHeader>
+            <div className="space-y-4 mt-2">
               <div><Label>Mobilisation Date *</Label><Input type="date" value={mobDate} onChange={(e) => setMobDate(e.target.value)} /></div>
               <div><Label>Time</Label><Input type="time" value={mobTime} onChange={(e) => setMobTime(e.target.value)} /></div>
               <div><Label>Team Lead</Label><AssigneeDropdown value={teamLeadId} onChange={setTeamLeadId} filterRole="mobilization_lead" /></div>
@@ -340,8 +340,8 @@ export function MobilisationSection({ enquiryId, enquiry, onStatusChange }: { en
                 {saving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null} Save
               </Button>
             </div>
-          </SheetContent>
-        </Sheet>
+          </DialogContent>
+        </Dialog>
       </>
     );
   }

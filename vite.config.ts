@@ -6,7 +6,11 @@ import path from "path";
 export default defineConfig(() => ({
   server: {
     host: "::",
-    port: 8080,
+    // 5173, NOT 8080 — the API owns :8080 locally (VITE_API_URL=http://localhost:8080/api).
+    // If Vite also grabbed 8080, every /api/* call hit Vite's SPA fallback and got
+    // index.html back (HTTP 200), which surfaced as "x.filter is not a function".
+    port: 5173,
+    strictPort: true,
     hmr: {
       overlay: false,
     },

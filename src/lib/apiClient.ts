@@ -62,11 +62,13 @@ async function request<T>(method: string, path: string, opts: RequestOpts = {}):
 
   const text = await res.text();
   let payload: unknown = null;
+  let isJson = true;
   if (text) {
     try {
       payload = JSON.parse(text);
     } catch {
       payload = text;
+      isJson = false;
     }
   }
 
@@ -77,6 +79,18 @@ async function request<T>(method: string, path: string, opts: RequestOpts = {}):
       void supabase.auth.signOut();
     }
     throw new ApiError(res.status, errObj.message || res.statusText || "Request failed", errObj.code, errObj.details);
+  }
+
+  // A 200 that isn't JSON means we're not actually talking to the API — e.g. the
+  // request hit a dev server's SPA fallback and got index.html back. Fail loudly
+  // here instead of returning HTML to callers (which showed up as confusing
+  // "x.filter is not a function" crashes deep in the pages).
+  if (!isJson) {
+    throw new ApiError(
+      502,
+      `Expected JSON from the API but got a non-JSON response from ${BASE}. ` +
+        `Check VITE_API_URL — it may be pointing at the frontend dev server instead of the API.`,
+    );
   }
 
   return payload as T;

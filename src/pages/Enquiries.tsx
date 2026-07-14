@@ -1,5 +1,5 @@
-import { useState, useMemo } from "react";
-import { useNavigate } from "react-router-dom";
+import { useState, useMemo, useEffect } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiClient } from "@/lib/apiClient";
 import { formatCurrency, relativeTime } from "@/lib/utils";
@@ -158,6 +158,17 @@ export default function Enquiries() {
   const [showClosed, setShowClosed] = useState(false);
   const { data: rows, isLoading } = useEnquiries();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+
+  // Deep-link support: /enquiries?status=lost or ?status=sent,follow_up,negotiation
+  // (used by the dashboard metric tiles so tapping a number lands on exactly that data).
+  const statusParam = searchParams.get("status") ?? "";
+  useEffect(() => {
+    const wanted = statusParam.split(",").map((s) => s.trim()).filter(Boolean) as LeadStatus[];
+    setStatusFilter(wanted);
+    // Closed states are hidden on the board by default — reveal them when linked to.
+    if (wanted.some((s) => s === "lost" || s === "inactive" || s === "completed")) setShowClosed(true);
+  }, [statusParam]);
 
   const filtered = useMemo(() => {
     if (!rows) return [];

@@ -10,6 +10,7 @@ import {
   FileText, Send, CalendarClock, CreditCard, Briefcase,
   CheckCircle, Bell, Activity, Hammer, Receipt,
   Plus, Users, Settings, TrendingUp, IndianRupee, ClipboardList, BarChart3, ClipboardCheck,
+  UserCheck, UserX,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -47,6 +48,10 @@ function Counter({ target }: { target: number }) {
 
 // ─── Stat card definitions ───
 
+const WON_QS = "approved,payment_received,mobilization_scheduled,job_active,confirmed,completed";
+const ORDER_QS = "approved,payment_received,mobilization_scheduled,job_active";
+
+// `link` = where tapping the metric takes you, pre-filtered to exactly that data.
 const STAT_CARD_DEFS = [
   {
     label: "New Enquiries",
@@ -54,6 +59,7 @@ const STAT_CARD_DEFS = [
     gradient: "linear-gradient(90deg,#1565C0,#2979FF)",
     iconBg: "#EBF2FF",
     iconColor: "#1565C0",
+    link: "/enquiries?status=new",
   },
   {
     label: "Quotes Sent",
@@ -61,6 +67,7 @@ const STAT_CARD_DEFS = [
     gradient: "linear-gradient(90deg,#6A1B9A,#AB47BC)",
     iconBg: "#F3E8FF",
     iconColor: "#6A1B9A",
+    link: "/enquiries?status=sent",
   },
   {
     label: "Follow-ups Today",
@@ -68,6 +75,7 @@ const STAT_CARD_DEFS = [
     gradient: "linear-gradient(90deg,#E65100,#FF8F00)",
     iconBg: "#FFF3E0",
     iconColor: "#E65100",
+    link: "/follow-ups",
   },
   {
     label: "Payments Pending",
@@ -75,6 +83,7 @@ const STAT_CARD_DEFS = [
     gradient: "linear-gradient(90deg,#FF8F00,#FFB300)",
     iconBg: "#FFFDE0",
     iconColor: "#FF8F00",
+    link: "/accounts",
   },
   {
     label: "Active Jobs",
@@ -82,6 +91,7 @@ const STAT_CARD_DEFS = [
     gradient: "linear-gradient(90deg,#00897B,#26A69A)",
     iconBg: "#E0F2F1",
     iconColor: "#00897B",
+    link: "/enquiries?status=job_active,mobilization_scheduled",
   },
   {
     label: "Conversion %",
@@ -89,6 +99,7 @@ const STAT_CARD_DEFS = [
     gradient: "linear-gradient(90deg,#15673A,#22C55E)",
     iconBg: "#DCFCE7",
     iconColor: "#15673A",
+    link: `/enquiries?status=${WON_QS}`,
   },
   {
     label: "Pipeline Value",
@@ -97,6 +108,7 @@ const STAT_CARD_DEFS = [
     iconBg: "#EDE9FE",
     iconColor: "#7C3AED",
     isCurrency: true,
+    link: `/enquiries?status=${ORDER_QS}`,
   },
   {
     label: "Order Book",
@@ -104,6 +116,7 @@ const STAT_CARD_DEFS = [
     gradient: "linear-gradient(90deg,#0E7490,#22D3EE)",
     iconBg: "#CFFAFE",
     iconColor: "#0E7490",
+    link: `/enquiries?status=${ORDER_QS}`,
   },
   {
     label: "Pending Quotes",
@@ -111,6 +124,7 @@ const STAT_CARD_DEFS = [
     gradient: "linear-gradient(90deg,#D97706,#F59E0B)",
     iconBg: "#FEF3C7",
     iconColor: "#D97706",
+    link: "/enquiries?status=sent,follow_up,negotiation",
   },
   {
     label: "Quotation Book",
@@ -119,6 +133,7 @@ const STAT_CARD_DEFS = [
     iconBg: "#D1FAE5",
     iconColor: "#059669",
     isCurrency: true,
+    link: `/enquiries?status=${ORDER_QS}`,
   },
   {
     label: "Intake Pending",
@@ -126,9 +141,67 @@ const STAT_CARD_DEFS = [
     gradient: "linear-gradient(90deg,#0284C7,#38BDF8)",
     iconBg: "#E0F2FE",
     iconColor: "#0284C7",
-    link: "/enquiries",
+    link: "/enquiries?status=intake_pending",
+  },
+  {
+    label: "Total Clients",
+    icon: Users,
+    gradient: "linear-gradient(90deg,#1565C0,#64B5F6)",
+    iconBg: "#EBF2FF",
+    iconColor: "#1565C0",
+    link: "/clients",
+  },
+  {
+    label: "Converted Clients",
+    icon: UserCheck,
+    gradient: "linear-gradient(90deg,#15673A,#4ADE80)",
+    iconBg: "#DCFCE7",
+    iconColor: "#15673A",
+    link: "/clients?segment=converted",
+  },
+  {
+    label: "Lost / Rejected",
+    icon: UserX,
+    gradient: "linear-gradient(90deg,#B91C1C,#F87171)",
+    iconBg: "#FEE2E2",
+    iconColor: "#B91C1C",
+    link: "/clients?segment=lost",
   },
 ] as const;
+
+/** Which value from /dashboard/stats each card shows. */
+const METRIC_KEY: Record<string, string> = {
+  "Total Clients": "total_clients",
+  "Converted Clients": "converted_clients",
+  "Lost / Rejected": "lost_clients",
+  "Conversion %": "conversion",
+  "New Enquiries": "new_enquiries",
+  "Intake Pending": "intake_pending",
+  "Quotes Sent": "sent_quotes",
+  "Pending Quotes": "pending_quotes",
+  "Follow-ups Today": "followups_today",
+  "Quotation Book": "quotation_book_value",
+  "Pipeline Value": "pipeline_value",
+  "Order Book": "order_book",
+  "Payments Pending": "pending_payments",
+  "Active Jobs": "active_jobs",
+};
+
+/**
+ * Reading order: WHO (clients) → WHAT'S COMING IN (enquiries & quotes) →
+ * WHAT IT'S WORTH / WHAT'S RUNNING (revenue & delivery). Each row is a coherent
+ * story instead of a flat wall of 14 numbers.
+ */
+const STAT_GROUPS = [
+  { title: "Clients", labels: ["Total Clients", "Converted Clients", "Lost / Rejected", "Conversion %"] },
+  { title: "Enquiries & Quotations", labels: ["New Enquiries", "Intake Pending", "Quotes Sent", "Pending Quotes", "Follow-ups Today"] },
+  { title: "Revenue & Delivery", labels: ["Quotation Book", "Pipeline Value", "Order Book", "Payments Pending", "Active Jobs"] },
+] as const;
+
+const DEF_BY_LABEL = Object.fromEntries(STAT_CARD_DEFS.map((d) => [d.label, d])) as Record<
+  string,
+  (typeof STAT_CARD_DEFS)[number]
+>;
 
 const PIPELINE_PILL_CLASSES: Record<LeadStatus, string> = {
   new: "bg-slate-100 text-slate-700 border-slate-200",
@@ -158,15 +231,19 @@ function useStatCards() {
         pending_payments: number; active_jobs: number; total_enquiries: number;
         won_enquiries: number; intake_pending: number; pipeline_value: number;
         quotation_book_value: number; order_book: number; pending_quotes: number;
+        total_clients: number; converted_clients: number; lost_clients: number;
       }>("/dashboard/stats");
       const total = d.total_enquiries;
       const won = d.won_enquiries;
-      const conversionRate = total > 0 ? Math.round((won / total) * 100) : 0;
-      return [
-        d.new_enquiries, d.sent_quotes, d.followups_today, d.pending_payments, d.active_jobs,
-        conversionRate, Math.round(d.pipeline_value), d.order_book, d.pending_quotes,
-        Math.round(d.quotation_book_value), d.intake_pending,
-      ];
+      const conversion = total > 0 ? Math.round((won / total) * 100) : 0;
+      // Keyed by metric — no fragile positional coupling with the card definitions,
+      // so cards can be reordered/regrouped freely.
+      return {
+        ...d,
+        conversion,
+        pipeline_value: Math.round(d.pipeline_value),
+        quotation_book_value: Math.round(d.quotation_book_value),
+      } as Record<string, number>;
     },
     refetchInterval: 20_000,
   });
@@ -334,56 +411,81 @@ export default function Dashboard() {
         </p>
       </div>
 
-      {/* ── Section 1: Stat Cards ── */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {stats.isLoading
-          ? Array.from({ length: 8 }).map((_, i) => <SkeletonCard key={i} />)
-          : STAT_CARD_DEFS.map((def, i) => {
-              const Icon = def.icon;
-              const value = stats.data?.[i] ?? 0;
-              const isCurrency = "isCurrency" in def && def.isCurrency;
-              const isPercentage = def.label === "Conversion %";
-              return (
-                <div key={def.label} style={cardStyle}>
+      {/* ── Section 1: Stat Cards, grouped so they read as a story ── */}
+      <div className="space-y-6">
+        {STAT_GROUPS.map((group) => (
+          <div key={group.title} className="space-y-2.5">
+            <p className="text-[12px] font-semibold uppercase tracking-widest" style={{ color: "#546E7A" }}>
+              {group.title}
+            </p>
+            {/* Columns match the group size so every metric sits on ONE line (4 → 4 cols, 5 → 5 cols). */}
+            <div
+              className={`grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 ${
+                group.labels.length === 5 ? "lg:grid-cols-5" : "lg:grid-cols-4"
+              }`}
+            >
+              {group.labels.map((label) => {
+                const def = DEF_BY_LABEL[label];
+                if (!def) return null;
+                if (stats.isLoading) return <SkeletonCard key={label} />;
+
+                const Icon = def.icon;
+                const value = stats.data?.[METRIC_KEY[label] ?? ""] ?? 0;
+                const isCurrency = "isCurrency" in def && def.isCurrency;
+                const isPercentage = label === "Conversion %";
+                return (
                   <div
-                    style={{
-                      position: "absolute",
-                      top: 0, left: 0, right: 0,
-                      height: "4px",
-                      background: def.gradient,
+                    key={label}
+                    role="button"
+                    tabIndex={0}
+                    title={`View ${label}`}
+                    onClick={() => navigate(def.link)}
+                    onKeyDown={(e) => { if (e.key === "Enter") navigate(def.link); }}
+                    style={{ ...cardStyle, cursor: "pointer", transition: "transform 120ms, box-shadow 120ms" }}
+                    onMouseEnter={(e) => {
+                      (e.currentTarget as HTMLElement).style.transform = "translateY(-2px)";
+                      (e.currentTarget as HTMLElement).style.boxShadow = "0 8px 20px rgba(0,0,0,0.10)";
                     }}
-                  />
-                  <div className="flex items-start justify-between mt-1">
-                    <div>
-                      <p className="text-[13px] font-semibold uppercase tracking-wide mb-2" style={{ color: "#546E7A" }}>
-                        {def.label}
-                      </p>
+                    onMouseLeave={(e) => {
+                      (e.currentTarget as HTMLElement).style.transform = "none";
+                      (e.currentTarget as HTMLElement).style.boxShadow = "0 2px 8px rgba(0,0,0,0.06)";
+                    }}
+                  >
+                    <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: "4px", background: def.gradient }} />
+                    <div className="flex items-start justify-between mt-1">
+                      <div>
+                        <p className="text-[13px] font-semibold uppercase tracking-wide mb-2" style={{ color: "#546E7A" }}>
+                          {label}
+                        </p>
+                        <div
+                          className="font-bold"
+                          style={{ fontFamily: "Sora, sans-serif", fontSize: isCurrency ? "28px" : "42px", lineHeight: 1, color: "#0A1929" }}
+                        >
+                          {isCurrency ? (
+                            <span style={{ fontFamily: "JetBrains Mono, monospace", fontSize: "26px" }}>
+                              {formatCurrency(value)}
+                            </span>
+                          ) : (
+                            <>
+                              <AnimatedNumber value={value} />
+                              {isPercentage && <span style={{ fontSize: "24px", color: "#546E7A" }}>%</span>}
+                            </>
+                          )}
+                        </div>
+                      </div>
                       <div
-                        className="font-bold"
-                        style={{ fontFamily: "Sora, sans-serif", fontSize: isCurrency ? "28px" : "42px", lineHeight: 1, color: "#0A1929" }}
+                        className="flex items-center justify-center rounded-xl flex-shrink-0"
+                        style={{ width: "44px", height: "44px", background: def.iconBg }}
                       >
-                        {isCurrency ? (
-                          <span style={{ fontFamily: "JetBrains Mono, monospace", fontSize: "26px" }}>
-                            {formatCurrency(value)}
-                          </span>
-                        ) : (
-                          <>
-                            <AnimatedNumber value={value} />
-                            {isPercentage && <span style={{ fontSize: "24px", color: "#546E7A" }}>%</span>}
-                          </>
-                        )}
+                        <Icon style={{ width: "22px", height: "22px", color: def.iconColor }} />
                       </div>
                     </div>
-                    <div
-                      className="flex items-center justify-center rounded-xl flex-shrink-0"
-                      style={{ width: "44px", height: "44px", background: def.iconBg }}
-                    >
-                      <Icon style={{ width: "22px", height: "22px", color: def.iconColor }} />
-                    </div>
                   </div>
-                </div>
-              );
-            })}
+                );
+              })}
+            </div>
+          </div>
+        ))}
       </div>
 
       {/* ── Section 2: Pipeline Strip ── */}
@@ -407,7 +509,7 @@ export default function Dashboard() {
                 return (
                   <button
                     key={status}
-                    onClick={() => navigate("/enquiries")}
+                    onClick={() => navigate(`/enquiries?status=${status}`)}
                     className={`flex items-center gap-2 px-4 py-2 rounded-full text-[13px] font-semibold whitespace-nowrap border transition-all hover:scale-105 ${PIPELINE_PILL_CLASSES[status]}`}
                   >
                     <span>{STATUS_LABELS[status]}</span>

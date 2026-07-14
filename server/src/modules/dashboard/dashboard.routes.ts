@@ -16,9 +16,14 @@ dashboardRouter.get(
   '/stats',
   asyncHandler(async (_req, res) => {
     const t = today();
+    // Client-level segmentation:
+    //   converted = has >=1 enquiry that reached a won/executed state
+    //   lost      = has enquiries and EVERY one ended lost/inactive (never converted)
+    const WON = ['approved', 'payment_received', 'mobilization_scheduled', 'job_active', 'confirmed', 'completed'] as const;
+
     const [
       newEnq, sentQuotes, followToday, pendingPay, activeJobs, totalEnq, wonEnq, intakePending,
-      pipeline, book, orderBook, pendingQuotes,
+      pipeline, book, orderBook, pendingQuotes, totalClients, convertedClients, lostClientsRes,
     ] = await Promise.all([
       db.select({ c: COUNT }).from(enquiries).where(and(eq(enquiries.status, 'new'), isNull(enquiries.deleted_at))),
       db.select({ c: COUNT }).from(enquiries).where(and(eq(enquiries.status, 'sent'), isNull(enquiries.deleted_at))),
@@ -36,7 +41,30 @@ dashboardRouter.get(
         .where(and(eq(quotations.status, 'approved'), notInArray(enquiries.status, ['lost', 'inactive', 'completed']), isNull(enquiries.deleted_at))),
       db.select({ c: COUNT }).from(enquiries).where(and(inArray(enquiries.status, ['approved', 'payment_received', 'mobilization_scheduled', 'job_active']), isNull(enquiries.deleted_at))),
       db.select({ c: COUNT }).from(enquiries).where(and(inArray(enquiries.status, ['sent', 'follow_up', 'negotiation']), isNull(enquiries.deleted_at))),
+      // total clients
+      db.select({ c: COUNT }).from(clients).where(isNull(clients.deleted_at)),
+      // converted clients (distinct clients with at least one won/executed enquiry)
+      db
+        .select({ c: sql<number>`count(distinct ${enquiries.client_id})::int` })
+        .from(enquiries)
+        .where(and(inArray(enquiries.status, [...WON]), isNull(enquiries.deleted_at))),
+      // lost clients: has enquiries, and none of them is anything other than lost/inactive
+      db.execute(sql`
+        select count(*)::int as c
+        from clients c
+        where c.deleted_at is null
+          and exists (select 1 from enquiries e where e.client_id = c.id and e.deleted_at is null)
+          and not exists (
+            select 1 from enquiries e
+            where e.client_id = c.id and e.deleted_at is null
+              and e.status not in ('lost', 'inactive')
+          )
+      `),
     ]);
+
+    const lostClients = Number(
+      ((lostClientsRes as unknown as { rows?: Array<{ c: number }> })?.rows?.[0]?.c) ?? 0,
+    );
 
     res.json({
       new_enquiries: newEnq[0]?.c ?? 0,
@@ -51,6 +79,9 @@ dashboardRouter.get(
       quotation_book_value: book[0]?.s ?? 0,
       order_book: orderBook[0]?.c ?? 0,
       pending_quotes: pendingQuotes[0]?.c ?? 0,
+      total_clients: totalClients[0]?.c ?? 0,
+      converted_clients: convertedClients[0]?.c ?? 0,
+      lost_clients: lostClients,
     });
   }),
 );

@@ -1,10 +1,10 @@
 import { useState, useMemo } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiClient } from "@/lib/apiClient";
 import type { Tables } from "@/integrations/supabase/types";
 import { toast } from "sonner";
-import { Search, Users, Plus, Phone, Mail, MapPin, UserPlus, Link2 } from "lucide-react";
+import { Search, Users, Plus, Phone, Mail, MapPin, UserPlus, Link2, CheckCircle2, XCircle, Activity } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
@@ -46,20 +46,67 @@ export default function Clients() {
     queryFn: () => apiClient.get<Tables<"clients">[]>("/clients"),
   });
 
-  const filtered = useMemo(() => {
-    if (!search.trim()) return clients;
-    const q = search.toLowerCase();
-    return clients.filter((c) => c.name.toLowerCase().includes(q) || c.phone.toLowerCase().includes(q) || c.city.toLowerCase().includes(q));
-  }, [clients, search]);
+  // Enquiry statuses drive the client segmentation (converted / lost / open).
+  const { data: enquiryRows = [] } = useQuery({
+    queryKey: ["clients-enquiry-segments"],
+    queryFn: () => apiClient.get<Array<{ client_id: string; status: string }>>("/enquiries"),
+  });
 
-  // Stat counts
-  const now = new Date();
-  const addedThisMonth = clients.filter((c) => {
-    const d = new Date(c.created_at);
-    return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
-  }).length;
-  // TODO wire count — no has_active_intake_token field available on clients table
-  const withActiveLinks = "—";
+  // Deep-link: /clients?segment=converted|lost|open  (dashboard tiles link here)
+  const [searchParams, setSearchParams] = useSearchParams();
+  const segment = searchParams.get("segment") ?? "all";
+  const setSegment = (s: string) => {
+    const next = new URLSearchParams(searchParams);
+    if (s === "all") next.delete("segment");
+    else next.set("segment", s);
+    setSearchParams(next, { replace: true });
+  };
+
+  const WON = ["approved", "payment_received", "mobilization_scheduled", "job_active", "confirmed", "completed"];
+  const LOST = ["lost", "inactive"];
+
+  /** converted = has >=1 won enquiry · lost = has enquiries and ALL ended lost/inactive
+   *  open = still in the pipeline · none = no enquiries yet */
+  const segmentByClient = useMemo(() => {
+    const byClient = new Map<string, string[]>();
+    for (const e of enquiryRows) {
+      if (!e.client_id) continue;
+      const list = byClient.get(e.client_id) ?? [];
+      list.push(e.status);
+      byClient.set(e.client_id, list);
+    }
+    const map = new Map<string, "converted" | "lost" | "open" | "none">();
+    for (const c of clients) {
+      const statuses = byClient.get(c.id) ?? [];
+      if (statuses.length === 0) map.set(c.id, "none");
+      else if (statuses.some((s) => WON.includes(s))) map.set(c.id, "converted");
+      else if (statuses.every((s) => LOST.includes(s))) map.set(c.id, "lost");
+      else map.set(c.id, "open");
+    }
+    return map;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clients, enquiryRows]);
+
+  const counts = useMemo(() => {
+    let converted = 0, lost = 0, open = 0;
+    for (const c of clients) {
+      const s = segmentByClient.get(c.id);
+      if (s === "converted") converted++;
+      else if (s === "lost") lost++;
+      else if (s === "open") open++;
+    }
+    return { total: clients.length, converted, lost, open };
+  }, [clients, segmentByClient]);
+
+  const filtered = useMemo(() => {
+    let result = clients;
+    if (segment !== "all") result = result.filter((c) => segmentByClient.get(c.id) === segment);
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      result = result.filter((c) => c.name.toLowerCase().includes(q) || c.phone.toLowerCase().includes(q) || c.city.toLowerCase().includes(q));
+    }
+    return result;
+  }, [clients, search, segment, segmentByClient]);
 
   const validateForm = (): boolean => {
     const errs: Record<string, string> = {};
@@ -152,53 +199,56 @@ export default function Clients() {
         </div>
       </div>
 
-      {/* Stats row — 3 cards */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "16px", marginBottom: "24px" }}>
-        {/* Total Clients */}
-        <div style={{
-          background: "white", borderRadius: "14px", padding: "16px 20px",
-          border: "1px solid #E0E7EF", boxShadow: "0 2px 8px rgba(0,0,0,0.05)",
-          display: "flex", alignItems: "center", justifyContent: "space-between",
-        }}>
-          <div>
-            <div style={{ fontFamily: "Sora, sans-serif", fontWeight: 700, fontSize: "28px", color: "#0A1929", lineHeight: 1 }}>{clients.length}</div>
-            <div style={{ fontSize: "12px", color: "#546E7A", textTransform: "uppercase", letterSpacing: "0.08em", marginTop: "6px" }}>Total Clients</div>
-          </div>
-          <div style={{ width: "40px", height: "40px", borderRadius: "50%", background: "#EBF2FF", display: "flex", alignItems: "center", justifyContent: "center" }}>
-            <Users style={{ width: "18px", height: "18px", color: "#1565C0" }} />
-          </div>
-        </div>
-
-        {/* Added This Month */}
-        <div style={{
-          background: "white", borderRadius: "14px", padding: "16px 20px",
-          border: "1px solid #E0E7EF", boxShadow: "0 2px 8px rgba(0,0,0,0.05)",
-          display: "flex", alignItems: "center", justifyContent: "space-between",
-        }}>
-          <div>
-            <div style={{ fontFamily: "Sora, sans-serif", fontWeight: 700, fontSize: "28px", color: "#0A1929", lineHeight: 1 }}>{addedThisMonth}</div>
-            <div style={{ fontSize: "12px", color: "#546E7A", textTransform: "uppercase", letterSpacing: "0.08em", marginTop: "6px" }}>Added This Month</div>
-          </div>
-          <div style={{ width: "40px", height: "40px", borderRadius: "50%", background: "#FFF3E0", display: "flex", alignItems: "center", justifyContent: "center" }}>
-            <UserPlus style={{ width: "18px", height: "18px", color: "#E65100" }} />
-          </div>
-        </div>
-
-        {/* With Active Links */}
-        <div style={{
-          background: "white", borderRadius: "14px", padding: "16px 20px",
-          border: "1px solid #E0E7EF", boxShadow: "0 2px 8px rgba(0,0,0,0.05)",
-          display: "flex", alignItems: "center", justifyContent: "space-between",
-        }}>
-          <div>
-            <div style={{ fontFamily: "Sora, sans-serif", fontWeight: 700, fontSize: "28px", color: "#0A1929", lineHeight: 1 }}>{withActiveLinks}</div>
-            <div style={{ fontSize: "12px", color: "#546E7A", textTransform: "uppercase", letterSpacing: "0.08em", marginTop: "6px" }}>With Active Links</div>
-          </div>
-          <div style={{ width: "40px", height: "40px", borderRadius: "50%", background: "#E8F5E9", display: "flex", alignItems: "center", justifyContent: "center" }}>
-            <Link2 style={{ width: "18px", height: "18px", color: "#00897B" }} />
-          </div>
-        </div>
+      {/* Segment cards — click to filter the list below (also deep-linkable via ?segment=) */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "16px", marginBottom: "24px" }}>
+        {([
+          { key: "all", label: "Total Clients", value: counts.total, icon: Users, color: "#1565C0", bg: "#EBF2FF" },
+          { key: "converted", label: "Converted", value: counts.converted, icon: CheckCircle2, color: "#15673A", bg: "#DCFCE7" },
+          { key: "lost", label: "Lost / Rejected", value: counts.lost, icon: XCircle, color: "#B91C1C", bg: "#FEE2E2" },
+          { key: "open", label: "In Pipeline", value: counts.open, icon: Activity, color: "#E65100", bg: "#FFF3E0" },
+        ] as const).map((card) => {
+          const active = segment === card.key;
+          const Icon = card.icon;
+          return (
+            <button
+              key={card.key}
+              onClick={() => setSegment(card.key)}
+              title={`Show ${card.label}`}
+              style={{
+                background: "white", borderRadius: "14px", padding: "16px 20px", textAlign: "left",
+                border: active ? `2px solid ${card.color}` : "1px solid #E0E7EF",
+                boxShadow: active ? `0 4px 14px ${card.color}25` : "0 2px 8px rgba(0,0,0,0.05)",
+                display: "flex", alignItems: "center", justifyContent: "space-between",
+                cursor: "pointer", transition: "all 150ms",
+              }}
+            >
+              <div>
+                <div style={{ fontFamily: "Sora, sans-serif", fontWeight: 700, fontSize: "28px", color: "#0A1929", lineHeight: 1 }}>{card.value}</div>
+                <div style={{ fontSize: "12px", color: active ? card.color : "#546E7A", textTransform: "uppercase", letterSpacing: "0.08em", marginTop: "6px", fontWeight: active ? 700 : 400 }}>
+                  {card.label}
+                </div>
+              </div>
+              <div style={{ width: "40px", height: "40px", borderRadius: "50%", background: card.bg, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <Icon style={{ width: "18px", height: "18px", color: card.color }} />
+              </div>
+            </button>
+          );
+        })}
       </div>
+
+      {segment !== "all" && (
+        <div style={{ marginTop: "-12px", marginBottom: "16px", display: "flex", alignItems: "center", gap: "8px" }}>
+          <span style={{ fontSize: "13px", color: "#546E7A" }}>
+            Showing <strong style={{ color: "#0A1929" }}>{filtered.length}</strong> {segment === "open" ? "in-pipeline" : segment} client{filtered.length === 1 ? "" : "s"}
+          </span>
+          <button
+            onClick={() => setSegment("all")}
+            style={{ fontSize: "12px", fontWeight: 600, color: "#1565C0", background: "#EBF2FF", border: "1px solid #BFDBFE", borderRadius: "999px", padding: "3px 10px", cursor: "pointer" }}
+          >
+            Clear filter
+          </button>
+        </div>
+      )}
 
       {/* Table card */}
       <div style={{

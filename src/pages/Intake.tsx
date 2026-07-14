@@ -38,7 +38,6 @@ type FormData = {
   plot_fenced: string;
   soil_type_hint: string;
   distance_km: string;
-  soil_fraction: string;
   site_access_types: string[];
   water_available: string;
   electricity_available: string;
@@ -79,7 +78,7 @@ const initialForm: FormData = {
   structure_type: "", num_bores: 1, expected_depth_m: "",
   num_floors: 0, basement_floors: 0, height_of_basements: "", num_podiums: 0, plot_fenced: "",
   soil_type_hint: "",
-  distance_km: "", soil_fraction: "0.7",
+  distance_km: "",
   site_access: "", site_access_types: [], water_available: "", electricity_available: "",
   security_arrangement: "", permissions_obtained: "", water_quantity: "",
   safety_required: false, safety_requirements: "",
@@ -97,14 +96,6 @@ const WATER_QUANTITY_OPTIONS = [
   { value: "sufficient", label: "Sufficient (500+ liters/day)" },
   { value: "limited", label: "Limited (needs tanker backup)" },
   { value: "none", label: "No water available on site" },
-];
-
-const SOIL_FRACTION_OPTIONS = [
-  { value: "1.0", label: "100% Soil / 0% Rock" },
-  { value: "0.7", label: "70% Soil / 30% Rock" },
-  { value: "0.5", label: "50% Soil / 50% Rock" },
-  { value: "0.3", label: "30% Soil / 70% Rock" },
-  { value: "0.0", label: "0% Soil / 100% Rock" },
 ];
 
 const MAPS_URL_PATTERN = /^https?:\/\/(www\.)?(google\.(com|co\.\w+)\/maps|goo\.gl\/maps|maps\.app\.goo\.gl|maps\.google\.com)/;
@@ -294,9 +285,9 @@ export default function Intake() {
         errs.gst_number = "Invalid GST format (e.g. 22AAAAA0000A1Z5)";
       }
       if (!form.site_address.trim()) errs.site_address = "Site address is required";
-      if (!form.google_maps_url.trim()) {
-        errs.google_maps_url = "Site location (Google Maps link) is required";
-      } else if (!isValidMapsUrl(form.google_maps_url)) {
+      // Site location (Google Maps link) is OPTIONAL — only validate the format
+      // when the client actually provides one.
+      if (form.google_maps_url.trim() && !isValidMapsUrl(form.google_maps_url)) {
         errs.google_maps_url = "Please enter a valid Google Maps link";
       }
       if (!form.site_city.trim()) errs.site_city = "City is required";
@@ -304,13 +295,9 @@ export default function Intake() {
     }
     if (s === 2) {
       if (!form.structure_type) errs.structure_type = "Please select a structure type";
-      if (form.num_bores < 1) errs.num_bores = "At least 1 bore required";
+      if (form.num_bores < 1) errs.num_bores = "Enter at least 1 bore";
     }
-    if (s === 4) {
-      // Site photographs are required (anyone can photograph the plot); the
-      // layout plan / drawing is optional (many residential clients lack one).
-      if (files.length < 1) errs.files = "At least one site photograph is required";
-    }
+    // Step 4 attachments (site photographs + layout plan) are all OPTIONAL.
     setErrors(errs);
     return Object.keys(errs).length === 0;
   };
@@ -325,7 +312,6 @@ export default function Intake() {
       const clientDebug = getPublicClientDebugContext();
       const extendedData: Record<string, any> = {};
       if (form.distance_km) extendedData.distance_km = Number(form.distance_km);
-      if (form.soil_fraction) extendedData.soil_fraction = parseFloat(form.soil_fraction);
       if (form.site_access) extendedData.site_access = form.site_access;
       if (form.water_available) extendedData.water_available = form.water_available === "yes";
       if (form.electricity_available) extendedData.electricity_available = form.electricity_available === "yes";
@@ -642,7 +628,7 @@ export default function Intake() {
                     </div>
                     <div>
                       <label className="mb-1.5 block" style={{ fontSize: "12px", fontWeight: 600, color: "#546E7A", textTransform: "uppercase", letterSpacing: "0.05em" }}>
-                        Google Maps Link <span style={{ color: "#C62828" }}>*</span>
+                        Google Maps Link <span style={{ color: "#94A3B8", fontWeight: 500 }}>(optional)</span>
                       </label>
                       <Input
                         value={form.google_maps_url}
@@ -673,7 +659,7 @@ export default function Intake() {
                       })()}
                       {!form.google_maps_url.trim() && (
                         <p className="mt-1 text-[12px]" style={{ color: "#546E7A" }}>
-                          Share the exact pin location from Google Maps for accurate site identification
+                          Optional — sharing the exact pin location from Google Maps helps us identify the site accurately
                         </p>
                       )}
                     </div>
@@ -771,7 +757,19 @@ export default function Intake() {
                         <label className="mb-2 block" style={{ fontSize: "12px", fontWeight: 600, color: "#546E7A", textTransform: "uppercase", letterSpacing: "0.05em" }}>
                           Number of Bores <span style={{ color: "#C62828" }}>*</span>
                         </label>
-                        <Stepper value={form.num_bores} onChange={(v) => updateForm({ num_bores: v })} min={1} max={100} />
+                        <Input
+                          type="number"
+                          min={1}
+                          placeholder="e.g. 4"
+                          value={form.num_bores === 0 ? "" : String(form.num_bores)}
+                          onChange={(e) => {
+                            const raw = e.target.value;
+                            const parsed = parseInt(raw, 10);
+                            updateForm({ num_bores: raw === "" || isNaN(parsed) ? 0 : Math.max(0, parsed) });
+                          }}
+                          style={{ borderColor: errors.num_bores ? "#C62828" : "#E0E7EF", borderRadius: "10px" }}
+                        />
+                        {errors.num_bores && <p className="mt-1 text-[13px]" style={{ color: "#C62828" }}>{errors.num_bores}</p>}
                       </div>
                       <div>
                         <label className="mb-1.5 block" style={{ fontSize: "12px", fontWeight: 600, color: "#546E7A", textTransform: "uppercase", letterSpacing: "0.05em" }}>
@@ -853,21 +851,6 @@ export default function Intake() {
                           onChange={(e) => updateForm({ distance_km: e.target.value })}
                           style={{ borderColor: "#E0E7EF", borderRadius: "10px" }}
                         />
-                      </div>
-                      <div>
-                        <label className="mb-1.5 block" style={{ fontSize: "12px", fontWeight: 600, color: "#546E7A", textTransform: "uppercase", letterSpacing: "0.05em" }}>
-                          Soil / Rock Ratio
-                        </label>
-                        <select
-                          value={form.soil_fraction}
-                          onChange={(e) => updateForm({ soil_fraction: e.target.value })}
-                          className="w-full rounded-[10px] text-sm"
-                          style={{ border: "1.5px solid #E0E7EF", padding: "8px 12px", background: "#FAFBFC", color: "#0A1929" }}
-                        >
-                          {SOIL_FRACTION_OPTIONS.map((opt) => (
-                            <option key={opt.value} value={opt.value}>{opt.label}</option>
-                          ))}
-                        </select>
                       </div>
                     </div>
                   </div>
@@ -1103,7 +1086,7 @@ export default function Intake() {
                     {/* File Attachments */}
                     <div>
                       <label className="mb-2 block" style={{ fontSize: "12px", fontWeight: 600, color: "#546E7A", textTransform: "uppercase", letterSpacing: "0.05em" }}>
-                        Site Photographs <span style={{ color: "#C62828" }}>*</span>
+                        Site Photographs <span style={{ color: "#94A3B8", fontWeight: 500 }}>(optional)</span>
                       </label>
                       {errors.files && <p className="mb-1.5 text-[13px]" style={{ color: "#C62828" }}>{errors.files}</p>}
                       <label

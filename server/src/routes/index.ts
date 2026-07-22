@@ -23,6 +23,7 @@ import { publicRouter } from '../modules/public/public.routes';
 import { intakeTokensRouter } from '../modules/intake-tokens/intake-tokens.routes';
 import { adminRouter } from '../modules/admin/admin.routes';
 import { cityRatesRouter } from '../modules/city-rates/city-rates.routes';
+import { auditRouter } from '../modules/audit/audit.routes';
 
 /**
  * Root API router. Domain routers are mounted here as they are implemented.
@@ -37,6 +38,7 @@ apiRouter.use('/intake-tokens', intakeTokensRouter);
 apiRouter.use('/profiles', profilesRouter);
 apiRouter.use('/rate-matrix', rateMatrixRouter);
 apiRouter.use('/city-rates', cityRatesRouter);
+apiRouter.use('/audit', auditRouter);
 apiRouter.use('/settings', settingsRouter);
 apiRouter.use('/notifications', notificationsRouter);
 apiRouter.use('/enquiries', enquiriesRouter);

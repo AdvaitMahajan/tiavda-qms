@@ -1,5 +1,5 @@
 import { Link, useLocation } from "react-router-dom";
-import { LayoutDashboard, FileText, Users, CalendarClock, Settings, LogOut, ClipboardList, Truck, Wallet, Building2 } from "lucide-react";
+import { LayoutDashboard, FileText, Users, CalendarClock, Settings, LogOut, ClipboardList, Truck, Wallet, Building2, History } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useRole } from "@/hooks/useRole";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -12,6 +12,7 @@ const navItems = [
   { path: "/mobilisation", label: "Mobilisation", icon: Truck, feature: "site_visits" },
   { path: "/accounts", label: "Accounts", icon: Wallet, feature: "payments" },
   { path: "/quotation-config", label: "Quotation Config", icon: ClipboardList, adminOnly: true, feature: "quotations" },
+  { path: "/audit-log", label: "Audit Log", icon: History, adminOnly: true },
   { path: "/settings", label: "Settings", icon: Settings, adminOnly: true },
   { path: "/admin", label: "Admin Console", icon: Building2, platformOnly: true },
 ];

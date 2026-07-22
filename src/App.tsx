@@ -48,6 +48,7 @@ import ResetPassword from "./pages/ResetPassword";
 import SiteVisitForm from "./pages/SiteVisitForm";
 import Mobilisation from "./pages/Mobilisation";
 import AdminConsole from "./pages/AdminConsole";
+import AuditLog from "./pages/AuditLog";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -98,6 +99,7 @@ const App = () => (
               <Route path="/clients/:id" element={<ClientDetail />} />
               <Route path="/accounts" element={<FeatureRoute feature="payments"><Accounts /></FeatureRoute>} />
               <Route path="/quotation-config" element={<AdminRoute><FeatureRoute feature="quotations"><QuotationConfigPage /></FeatureRoute></AdminRoute>} />
+              <Route path="/audit-log" element={<AdminRoute><AuditLog /></AdminRoute>} />
               <Route path="/settings" element={<AdminRoute><SettingsPage /></AdminRoute>} />
               <Route path="/admin" element={<PlatformAdminRoute><AdminConsole /></PlatformAdminRoute>} />
             </Route>

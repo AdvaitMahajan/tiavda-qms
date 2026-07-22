@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { and, asc, desc, eq, gte, inArray, isNull, lte, notInArray, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, inArray, isNull, lte, sql } from 'drizzle-orm';
 import { db } from '../../db';
 import { clients, enquiries, enquiry_events, follow_ups, job_reminders, payments, quotations } from '../../db/schema';
 import { authenticate } from '../../middleware/auth';
@@ -23,7 +23,7 @@ dashboardRouter.get(
 
     const [
       newEnq, sentQuotes, followToday, pendingPay, activeJobs, totalEnq, wonEnq, intakePending,
-      pipeline, book, orderBook, pendingQuotes, totalClients, convertedClients, lostClientsRes,
+      bookValues, pendingQuotes, totalClients, convertedClients, lostClientsRes,
     ] = await Promise.all([
       db.select({ c: COUNT }).from(enquiries).where(and(eq(enquiries.status, 'new'), isNull(enquiries.deleted_at))),
       db.select({ c: COUNT }).from(enquiries).where(and(eq(enquiries.status, 'sent'), isNull(enquiries.deleted_at))),
@@ -33,13 +33,26 @@ dashboardRouter.get(
       db.select({ c: COUNT }).from(enquiries).where(isNull(enquiries.deleted_at)),
       db.select({ c: COUNT }).from(enquiries).where(and(inArray(enquiries.status, ['approved', 'payment_received', 'mobilization_scheduled', 'job_active', 'confirmed', 'completed']), isNull(enquiries.deleted_at))),
       db.select({ c: COUNT }).from(enquiries).where(and(eq(enquiries.status, 'intake_pending'), isNull(enquiries.deleted_at))),
-      db.select({ s: sql<number>`coalesce(sum(${quotations.total_amount}),0)::float` }).from(quotations).where(eq(quotations.status, 'approved')),
-      db
-        .select({ s: sql<number>`coalesce(sum(${quotations.total_amount}),0)::float` })
-        .from(quotations)
-        .innerJoin(enquiries, eq(quotations.enquiry_id, enquiries.id))
-        .where(and(eq(quotations.status, 'approved'), notInArray(enquiries.status, ['lost', 'inactive', 'completed']), isNull(enquiries.deleted_at))),
-      db.select({ c: COUNT }).from(enquiries).where(and(inArray(enquiries.status, ['approved', 'payment_received', 'mobilization_scheduled', 'job_active']), isNull(enquiries.deleted_at))),
+      // Value KPIs keyed off the ENQUIRY stage, using the single finalized quotation
+      // per enquiry (the winning variant: approved -> sent -> accepted). Filtering on
+      // quotation.status='approved' alone missed quotes once sent/won, freezing these.
+      //   Pipeline Value  = quotes out, awaiting client decision (not won, not lost)
+      //   Order Book      = value of WON orders in execution (not yet completed)
+      //   Quotation Book  = value of every live quotation (anything not lost/inactive)
+      db.execute(sql`
+        with finalized as (
+          select distinct on (q.enquiry_id) q.enquiry_id, q.total_amount, e.status as estatus
+          from quotations q
+          join enquiries e on e.id = q.enquiry_id
+          where q.status in ('approved','sent','accepted') and e.deleted_at is null
+          order by q.enquiry_id, q.created_at desc
+        )
+        select
+          coalesce(sum(total_amount) filter (where estatus in ('sent','follow_up','negotiation')),0)::float as pipeline_value,
+          coalesce(sum(total_amount) filter (where estatus in ('approved','payment_received','mobilization_scheduled','job_active','confirmed')),0)::float as order_book_value,
+          coalesce(sum(total_amount) filter (where estatus not in ('lost','inactive')),0)::float as quotation_book_value
+        from finalized
+      `),
       db.select({ c: COUNT }).from(enquiries).where(and(inArray(enquiries.status, ['sent', 'follow_up', 'negotiation']), isNull(enquiries.deleted_at))),
       // total clients
       db.select({ c: COUNT }).from(clients).where(isNull(clients.deleted_at)),
@@ -65,6 +78,9 @@ dashboardRouter.get(
     const lostClients = Number(
       ((lostClientsRes as unknown as { rows?: Array<{ c: number }> })?.rows?.[0]?.c) ?? 0,
     );
+    const bv = (bookValues as unknown as {
+      rows?: Array<{ pipeline_value: number; order_book_value: number; quotation_book_value: number }>;
+    })?.rows?.[0];
 
     res.json({
       new_enquiries: newEnq[0]?.c ?? 0,
@@ -75,9 +91,9 @@ dashboardRouter.get(
       total_enquiries: totalEnq[0]?.c ?? 0,
       won_enquiries: wonEnq[0]?.c ?? 0,
       intake_pending: intakePending[0]?.c ?? 0,
-      pipeline_value: pipeline[0]?.s ?? 0,
-      quotation_book_value: book[0]?.s ?? 0,
-      order_book: orderBook[0]?.c ?? 0,
+      pipeline_value: bv?.pipeline_value ?? 0,
+      quotation_book_value: bv?.quotation_book_value ?? 0,
+      order_book: bv?.order_book_value ?? 0,
       pending_quotes: pendingQuotes[0]?.c ?? 0,
       total_clients: totalClients[0]?.c ?? 0,
       converted_clients: convertedClients[0]?.c ?? 0,

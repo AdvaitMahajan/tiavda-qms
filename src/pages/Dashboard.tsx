@@ -116,6 +116,7 @@ const STAT_CARD_DEFS = [
     gradient: "linear-gradient(90deg,#0E7490,#22D3EE)",
     iconBg: "#CFFAFE",
     iconColor: "#0E7490",
+    isCurrency: true,
     link: `/enquiries?status=${ORDER_QS}`,
   },
   {
@@ -243,6 +244,7 @@ function useStatCards() {
         conversion,
         pipeline_value: Math.round(d.pipeline_value),
         quotation_book_value: Math.round(d.quotation_book_value),
+        order_book: Math.round(d.order_book),
       } as Record<string, number>;
     },
     refetchInterval: 20_000,

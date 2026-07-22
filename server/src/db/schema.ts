@@ -510,6 +510,45 @@ export const site_visits = pgTable('site_visits', {
   updated_at: timestamp('updated_at', { withTimezone: true, mode: 'string' }).notNull().defaultNow(),
 });
 
+// ─── city rate matrix (columns = cities, rows = activities, cells = values) ──
+export const rate_matrix_cities = pgTable('rate_matrix_cities', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  org_id: uuid('org_id').notNull(),
+  city: text('city').notNull(),
+  state: text('state'),
+  is_active: boolean('is_active').notNull().default(true),
+  sort_order: integer('sort_order').notNull().default(0),
+  created_at: timestamp('created_at', { withTimezone: true, mode: 'string' }).notNull().defaultNow(),
+  updated_at: timestamp('updated_at', { withTimezone: true, mode: 'string' }).notNull().defaultNow(),
+});
+
+export const rate_matrix_rows = pgTable('rate_matrix_rows', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  org_id: uuid('org_id').notNull(),
+  label: text('label').notNull(),
+  /** Engine rate key to override; null => custom line item appended by the builder. */
+  rate_key: text('rate_key'),
+  /** How qty is derived: lump_sum | per_bore | soil_meters | rock_meters | spt | uds … */
+  basis: text('basis').notNull().default('lump_sum'),
+  unit: text('unit'),
+  applies_to: text('applies_to').notNull().default('both'), // si | boq | both
+  is_active: boolean('is_active').notNull().default(true),
+  sort_order: integer('sort_order').notNull().default(0),
+  created_at: timestamp('created_at', { withTimezone: true, mode: 'string' }).notNull().defaultNow(),
+  updated_at: timestamp('updated_at', { withTimezone: true, mode: 'string' }).notNull().defaultNow(),
+});
+
+export const rate_matrix_cells = pgTable('rate_matrix_cells', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  org_id: uuid('org_id').notNull(),
+  row_id: uuid('row_id').notNull(),
+  city_id: uuid('city_id').notNull(),
+  /** null = not configured ("TBD") — the builder leaves it unpriced and warns. */
+  value: numericNumber('value', { precision: 12, scale: 2 }),
+  created_at: timestamp('created_at', { withTimezone: true, mode: 'string' }).notNull().defaultNow(),
+  updated_at: timestamp('updated_at', { withTimezone: true, mode: 'string' }).notNull().defaultNow(),
+});
+
 // ─── organizations (tenants) ─────────────────────────────────────────────────
 export const organizations = pgTable('organizations', {
   id: uuid('id').primaryKey().defaultRandom(),

@@ -7,6 +7,7 @@ import { useRole } from "@/hooks/useRole";
 import { cardStyle, SettingsCardHeader, PremiumInput } from "@/components/settings/SettingsComponents";
 import { collectBoqRateKeys } from "@/lib/templateRegistry";
 import { DEFAULT_TEMPLATES } from "@/lib/templateDefaults";
+import { RateMatrixGrid } from "@/components/settings/RateMatrixGrid";
 
 const BOQ_RATES = collectBoqRateKeys(DEFAULT_TEMPLATES);
 
@@ -56,6 +57,7 @@ const DEFAULTS: Record<string, string> = {
 };
 
 const TABS = [
+  { id: "matrix", label: "City Rate Matrix", color: "#B45309" },
   { id: "original", label: "Original SI", color: "#1565C0" },
   { id: "boq1", label: "BOQ Type 1", color: "#00897B" },
   { id: "boq2", label: "BOQ Type 2", color: "#6A1B9A" },
@@ -361,6 +363,8 @@ export default function QuotationConfigPage() {
       </div>
 
       {/* ── TAB: Original SI ── */}
+      {activeTab === "matrix" && <RateMatrixGrid />}
+
       {activeTab === "original" && (
         <>
           <div style={cardStyle}>

@@ -22,6 +22,7 @@ import { cronRouter } from '../modules/cron/cron.routes';
 import { publicRouter } from '../modules/public/public.routes';
 import { intakeTokensRouter } from '../modules/intake-tokens/intake-tokens.routes';
 import { adminRouter } from '../modules/admin/admin.routes';
+import { cityRatesRouter } from '../modules/city-rates/city-rates.routes';
 
 /**
  * Root API router. Domain routers are mounted here as they are implemented.
@@ -35,6 +36,7 @@ apiRouter.use('/clients', clientsRouter);
 apiRouter.use('/intake-tokens', intakeTokensRouter);
 apiRouter.use('/profiles', profilesRouter);
 apiRouter.use('/rate-matrix', rateMatrixRouter);
+apiRouter.use('/city-rates', cityRatesRouter);
 apiRouter.use('/settings', settingsRouter);
 apiRouter.use('/notifications', notificationsRouter);
 apiRouter.use('/enquiries', enquiriesRouter);

@@ -14,6 +14,8 @@ import {
   type LineItem as SectionedLineItem,
   type DiscountConfig,
   type SiteConditions,
+  type CityCustomRow,
+  type RateBasis,
 } from "@/lib/quotationEngine";
 import { DEFAULT_CONSULTANCY_ITEMS } from "@/lib/consultancyEngine";
 import QuotationPDF from "@/components/QuotationPDF";
@@ -61,6 +63,19 @@ type Enquiry = {
   client_id: string;
   status: string;
 };
+
+/** Response of GET /city-rates/resolve — see server/src/modules/city-rates. */
+type CityRateResolution = {
+  matched: "city" | "state" | "none";
+  city: string | null;
+  state?: string | null;
+  overrides: Record<string, number>;
+  bases: Record<string, string>;
+  customRows: CityCustomRow[];
+  unpriced: string[];
+};
+
+const MOBILISATION_RATE_KEY = "rate_mobilisation_per_bore";
 
 type Client = {
   id: string;
@@ -264,6 +279,10 @@ export default function QuotationBuilder() {
   const [rates, setRates] = useState<Record<string, number>>({});
   const [confirmRecalc, setConfirmRecalc] = useState(false);
 
+  // City Rate Matrix, resolved for this enquiry's site city. `overrides` win over
+  // the global app_settings rates; `customRows` are appended as extra line items.
+  const [cityRates, setCityRates] = useState<CityRateResolution | null>(null);
+
   // Lump sum mode
   const [isLumpSum, setIsLumpSum] = useState(false);
   const [lumpSumAmount, setLumpSumAmount] = useState("");
@@ -348,18 +367,40 @@ export default function QuotationBuilder() {
       for (const key of RATE_KEYS) {
         fetchedRates[key] = parseFloat(settingsMap[key]) || 0;
       }
-      setRates(fetchedRates);
+
+      // City Rate Matrix overrides the global rates for this site's city. Rows the
+      // matrix manages are authoritative even when unpriced (they come back as 0),
+      // so a missing city can't silently fall back to another city's price.
+      const resolved = await apiClient
+        .get<CityRateResolution>("/city-rates/resolve", { city: enq.site_city ?? "", state: "" })
+        .catch(() => null);
+      setCityRates(resolved);
+      const effectiveRates = { ...fetchedRates, ...(resolved?.overrides ?? {}) };
+      setRates(effectiveRates);
       setGstRate(parseFloat(settingsMap.gst_rate) || 0);
+
+      if (resolved && resolved.unpriced.length > 0) {
+        toast.warning(
+          resolved.matched === "none"
+            ? `No rate matrix entry for ${enq.site_city}. ${resolved.unpriced.join(", ")} are unpriced — enter them manually.`
+            : `${resolved.unpriced.join(", ")} not priced for ${resolved.city} — enter manually.`,
+          { duration: 8000 },
+        );
+      }
 
       // GST type (CGST+SGST vs IGST) is chosen with the manual toggle and
       // preserved on saved quotations via gst_type. (The old rate-matrix
       // city→state auto-detect was removed along with the Rate Matrix module.)
 
       const extended = parseExtendedData(enq.remarks);
-      const B = enq.num_bores ?? 3;
-      const D = enq.expected_depth_m ? Number(enq.expected_depth_m) : 10;
+      // Nothing is assumed: if the enquiry didn't capture bores/depth/distance, they
+      // start blank (0) so no line quantities are invented — the estimator must enter
+      // them. soilFraction stays a 70/30 split hint since it only affects the soil↔rock
+      // apportionment once real bores/depth exist, and never fabricates a quantity.
+      const B = enq.num_bores ?? 0;
+      const D = enq.expected_depth_m ? Number(enq.expected_depth_m) : 0;
       const sf = extended.soilFraction ?? 0.7;
-      const dk = extended.distanceKm ?? 50;
+      const dk = extended.distanceKm ?? 0;
 
       // Fetch latest completed site visit
       const visits = await apiClient.get<any[]>("/site-visits", { enquiry_id: enquiryId });
@@ -424,9 +465,11 @@ export default function QuotationBuilder() {
             depthPerBore: D,
             soilFraction: sf,
             distanceKm: dk,
-            rates: fetchedRates,
+            rates: effectiveRates,
             variant: "standard",
             siteConditions: initialConditions,
+            mobilisationBasis: (resolved?.bases?.[MOBILISATION_RATE_KEY] as RateBasis) ?? undefined,
+            cityCustomRows: resolved?.customRows?.filter((r) => r.applies_to !== "boq"),
           });
           setItems(generated.map((it) => ({ ...it, id: uid() })));
         }
@@ -442,8 +485,12 @@ export default function QuotationBuilder() {
     for (const [k, v] of Object.entries(allSettings)) {
       if (k.startsWith("boq_")) boqRates[k] = parseFloat(v) || 0;
     }
+    // City matrix wins over the global BOQ rates for any boq_* key it manages.
+    for (const [k, v] of Object.entries(cityRates?.overrides ?? {})) {
+      if (k.startsWith("boq_")) boqRates[k] = v;
+    }
     return boqRates;
-  }, [allSettings]);
+  }, [allSettings, cityRates]);
 
   const doRecalculate = useCallback(() => {
     if (!enquiry) return;
@@ -483,12 +530,14 @@ export default function QuotationBuilder() {
       variant: "standard",
       siteConditions,
       costOverrides,
+      mobilisationBasis: (cityRates?.bases?.[MOBILISATION_RATE_KEY] as RateBasis) ?? undefined,
+      cityCustomRows: cityRates?.customRows?.filter((r) => r.applies_to !== "boq"),
     });
     setItems(generated.map((it) => ({ ...it, id: uid() })));
     setManuallyEdited(false);
     setConfirmRecalc(false);
     toast.success("Line items recalculated from parameters");
-  }, [enquiry, isBoq, currentTemplate, buildBoqRates, numBores, depthPerBore, soilFraction, distanceKm, rates, siteConditions, costOverrides]);
+  }, [enquiry, isBoq, currentTemplate, buildBoqRates, numBores, depthPerBore, soilFraction, distanceKm, rates, siteConditions, costOverrides, cityRates]);
 
   const handleRecalculate = () => {
     if (manuallyEdited) {
@@ -945,6 +994,28 @@ export default function QuotationBuilder() {
               {fromVersionId && (
                 <span style={{ marginLeft: "8px", background: "rgba(255,143,0,0.3)", color: "#FFB300", padding: "1px 8px", borderRadius: "12px", fontSize: "13px", fontWeight: 600 }}>
                   Revision
+                </span>
+              )}
+              {isSI && cityRates && (
+                <span
+                  title={
+                    cityRates.matched === "none"
+                      ? "No City Rate Matrix entry for this city — matrix-managed rates are ₹0 and must be entered manually."
+                      : `Rates from the City Rate Matrix${cityRates.matched === "state" ? ` (matched on state ${cityRates.state})` : ""}.`
+                  }
+                  style={{
+                    marginLeft: "8px",
+                    background: cityRates.matched === "none" ? "rgba(185,28,28,0.35)" : "rgba(21,103,58,0.4)",
+                    color: cityRates.matched === "none" ? "#FCA5A5" : "#86EFAC",
+                    padding: "1px 8px",
+                    borderRadius: "12px",
+                    fontSize: "13px",
+                    fontWeight: 600,
+                  }}
+                >
+                  {cityRates.matched === "none"
+                    ? "No city rates"
+                    : `Rates: ${cityRates.city}${cityRates.matched === "state" ? " (state)" : ""}`}
                 </span>
               )}
             </p>

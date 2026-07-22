@@ -164,15 +164,17 @@ export function buildTemplateLineItems(
 
   for (const section of template.sections) {
     for (const item of section.items) {
-      // QRO items carry no auto quantity; otherwise compute from boreholes when a
-      // driver + params are present, falling back to the item's default quantity.
-      const qty = item.is_qro
-        ? (item.defaultQty ?? 0)
-        : item.qtyDriver && params
-          ? computeDriverQty(item.qtyDriver, params)
-          : (item.defaultQty ?? 0);
+      // Nothing is hardcoded. Quantities come ONLY from the borehole drivers (which
+      // are themselves blank until bores/depth are entered); non-driven and QRO lines
+      // start at 0 for the estimator to fill in. Rates come ONLY from Quotation Config
+      // — an unconfigured rate is ₹0 (forces a deliberate entry), never a code default.
+      // The templates' defaultQty/defaultRate remain as documentation only; they are
+      // intentionally not used so a fresh BOQ never carries invented figures.
+      const qty = !item.is_qro && item.qtyDriver && params
+        ? computeDriverQty(item.qtyDriver, params)
+        : 0;
       const settingsRate = item.rateKey && rates ? rates[item.rateKey] : undefined;
-      const rate = settingsRate !== undefined && settingsRate > 0 ? settingsRate : (item.defaultRate ?? 0);
+      const rate = settingsRate !== undefined && settingsRate > 0 ? settingsRate : 0;
       items.push({
         id: crypto.randomUUID(),
         section: section.key,

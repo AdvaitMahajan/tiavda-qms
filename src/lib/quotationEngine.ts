@@ -65,6 +65,18 @@ function round2(n: number): number {
   return Math.round(n * 100) / 100;
 }
 
+/** How a City Rate Matrix row derives its quantity. Mirrors templateRegistry's QtyDriver. */
+export type RateBasis = 'lump_sum' | 'per_bore' | 'soil_meters' | 'rock_meters' | 'per_metre_total';
+
+export interface CityCustomRow {
+  label: string;
+  basis: string;
+  unit: string | null;
+  rate: number;
+  /** 'si' | 'boq' | 'both' — which quotation formats this row belongs in. */
+  applies_to?: string;
+}
+
 export function buildLineItems(params: {
   numBores: number;
   depthPerBore: number;
@@ -74,6 +86,10 @@ export function buildLineItems(params: {
   variant: Variant;
   siteConditions?: SiteConditions;
   costOverrides?: Record<string, number>;
+  /** City Rate Matrix: how the mobilisation row is charged (default keeps legacy per-bore). */
+  mobilisationBasis?: RateBasis;
+  /** City Rate Matrix: custom activities (no engine rate key) appended as line items. */
+  cityCustomRows?: CityCustomRow[];
   /** @deprecated Use siteConditions instead */
   extendedData?: { waterAvailable?: boolean; safetyRequirements?: string };
 }): LineItem[] {
@@ -84,6 +100,8 @@ export function buildLineItems(params: {
     distanceKm = 50,
     rates,
     variant,
+    mobilisationBasis = 'per_bore',
+    cityCustomRows = [],
   } = params;
 
   const rockFraction = round2(1 - soilFraction);
@@ -95,15 +113,31 @@ export function buildLineItems(params: {
 
   const items: LineItem[] = [];
 
+  // Quantity for a City Rate Matrix basis.
+  const qtyForBasis = (basis: string): number => {
+    switch (basis) {
+      case "lump_sum": return 1;
+      case "per_bore": return B;
+      case "soil_meters": return round2(B * soilDepth);
+      case "rock_meters": return round2(B * rockDepth);
+      case "per_metre_total": return round2(B * D);
+      default: return 1;
+    }
+  };
+
   // ── Section A: Field Work ──
+  // Mobilisation basis is configurable via the City Rate Matrix: the client's sheet
+  // quotes it as a flat per-city amount (lump sum), while the legacy default charged
+  // it per bore. Default stays per-bore so existing behaviour is unchanged.
   const mobRate = r(rates, "rate_mobilisation_per_bore");
+  const mobQty = qtyForBasis(mobilisationBasis);
   items.push({
     section: "A",
     description: "Mobilisation & De-mobilisation",
-    unit: "per bore",
-    qty: B,
+    unit: mobilisationBasis === "lump_sum" ? "Lump sum" : "per bore",
+    qty: mobQty,
     rate: mobRate,
-    amount: round2(B * mobRate),
+    amount: round2(mobQty * mobRate),
   });
 
   if (B > 1) {
@@ -323,6 +357,21 @@ export function buildLineItems(params: {
     rate: boringLogRate,
     amount: round2(B * boringLogRate),
   });
+
+  // ── City Rate Matrix: custom activities (rows with no engine rate key) ──
+  // Appended to Field Work so city-specific extras (e.g. "Barricading", "Ferry
+  // charges") price automatically from the matrix.
+  for (const row of cityCustomRows) {
+    const qty = qtyForBasis(row.basis);
+    items.push({
+      section: "A",
+      description: row.label,
+      unit: row.unit || (row.basis === "lump_sum" ? "Lump sum" : "Nos"),
+      qty,
+      rate: row.rate,
+      amount: round2(qty * row.rate),
+    });
+  }
 
   return items;
 }

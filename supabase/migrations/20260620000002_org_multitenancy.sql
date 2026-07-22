@@ -76,7 +76,15 @@ BEGIN
     RETURNING id INTO default_org;
   END IF;
 
-  UPDATE public.profiles                SET org_id = default_org WHERE org_id IS NULL;
+  -- Platform owner FIRST, so the org backfill below can skip them. (Re-running this
+  -- migration must never re-adopt the org-less owner into a client org, nor promote
+  -- a client's super_admin to platform owner.)
+  UPDATE public.profiles SET is_platform_admin = true  WHERE email = 'advait.mahajan95@gmail.com';
+  UPDATE public.profiles SET is_platform_admin = false WHERE email <> 'advait.mahajan95@gmail.com';
+
+  -- Org users get the default org; the platform owner intentionally stays org-less.
+  UPDATE public.profiles                SET org_id = default_org
+   WHERE org_id IS NULL AND is_platform_admin = false;
   UPDATE public.clients                 SET org_id = default_org WHERE org_id IS NULL;
   UPDATE public.intake_tokens           SET org_id = default_org WHERE org_id IS NULL;
   UPDATE public.intake_submissions      SET org_id = default_org WHERE org_id IS NULL;
@@ -95,8 +103,7 @@ BEGIN
   UPDATE public.site_visits             SET org_id = default_org WHERE org_id IS NULL;
   UPDATE public.app_settings            SET org_id = default_org WHERE org_id IS NULL;
 
-  -- existing super_admin(s) become platform admins (the owner) AND belong to the default org
-  UPDATE public.profiles SET is_platform_admin = true WHERE role = 'super_admin';
+  -- (platform-owner assignment is done above, before the org backfill)
 END
 $backfill$;
 

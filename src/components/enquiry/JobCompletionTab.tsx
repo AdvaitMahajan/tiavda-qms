@@ -3,6 +3,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { apiClient } from "@/lib/apiClient";
 import { uploadToStorage, getSignedUrl } from "@/lib/storage";
 import { useAuth } from "@/hooks/useAuth";
+import { sendClientTouchpoint } from "@/lib/clientTouchpoints";
 import { formatCurrency } from "@/lib/utils";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -122,6 +123,30 @@ export function JobCompletionTab({ enquiryId }: { enquiryId: string }) {
           metadata: { trigger: "job_completed" },
         });
         toast.success("All stages complete! Enquiry marked as completed. 🎉");
+
+        // Client touchpoint: thank-you / report-delivered. Best-effort; inert
+        // until Brevo/WATI credentials are provisioned.
+        try {
+          const enq = await apiClient.get<{ ref_number: string; client_id: string }>(`/enquiries/${enquiryId}`);
+          const client = await apiClient.get<{
+            id: string; name: string; email: string | null; email_bounced: boolean | null;
+            whatsapp_number: string | null; whatsapp_invalid: boolean | null;
+          }>(`/clients/${enq.client_id}`);
+          const clientName = client?.name ?? "Client";
+          await sendClientTouchpoint({
+            enquiryId,
+            client,
+            subject: `Project Completed — ${enq.ref_number}`,
+            emailTemplate: "job_completed",
+            emailParams: { client_name: clientName, ref_number: enq.ref_number },
+            waTemplate: "qms_job_completed",
+            waParams: [
+              { name: "client_name", value: clientName },
+              { name: "ref_number", value: enq.ref_number },
+            ],
+            sentBy: user?.id,
+          });
+        } catch { /* touchpoint is best-effort */ }
       } catch (e) {
         toast.error("All stages done, but the enquiry could not be marked completed: " + (e as Error).message);
       }

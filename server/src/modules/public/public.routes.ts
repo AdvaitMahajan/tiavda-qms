@@ -222,7 +222,55 @@ publicRouter.post(
   '/mob-confirmation/confirm',
   asyncHandler(async (req, res) => {
     const { token } = z.object({ token: z.string().min(1) }).parse(req.body);
-    await rpc('confirm_mobilisation', { p_token: token }, res);
+    const { data, error } = await supabaseAdmin.rpc('confirm_mobilisation', { p_token: token });
+    if (error) throw badRequest(error.message);
+
+    // Best-effort client acknowledgement (thank-you) once genuinely confirmed.
+    // Never blocks or fails the confirmation response; inert until creds exist.
+    try {
+      if (data && (data as { status?: string }).status === 'confirmed') {
+        const { data: tok } = await supabaseAdmin
+          .from('mob_confirmation_tokens')
+          .select('client_id, enquiry_id, mobilisation_id')
+          .eq('token', token)
+          .maybeSingle();
+        if (tok) {
+          const [{ data: client }, { data: enq }, { data: mob }] = await Promise.all([
+            supabaseAdmin.from('clients').select('name, email, email_bounced, whatsapp_number, whatsapp_invalid').eq('id', tok.client_id).maybeSingle(),
+            supabaseAdmin.from('enquiries').select('ref_number, site_city').eq('id', tok.enquiry_id).maybeSingle(),
+            supabaseAdmin.from('mobilisation').select('mobilisation_date').eq('id', tok.mobilisation_id).maybeSingle(),
+          ]);
+          const ref = enq?.ref_number ?? '';
+          const city = enq?.site_city ?? '';
+          const dateStr = mob?.mobilisation_date
+            ? new Date(mob.mobilisation_date as string).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })
+            : '';
+          const clientName = client?.name ?? 'Client';
+          if (client?.email && !client.email_bounced) {
+            await sendEmail({
+              to: client.email,
+              template: 'mobilisation_acknowledged',
+              params: { client_name: clientName, ref_number: ref, date: dateStr, city },
+            });
+          }
+          if (client?.whatsapp_number && !client.whatsapp_invalid) {
+            await sendWhatsApp({
+              phone_number: client.whatsapp_number,
+              template_name: 'qms_mobilisation_acknowledged',
+              parameters: [
+                { name: 'client_name', value: clientName },
+                { name: 'ref_number', value: ref },
+                { name: 'date', value: dateStr },
+              ],
+            });
+          }
+        }
+      }
+    } catch {
+      /* acknowledgement is best-effort */
+    }
+
+    res.json(data);
   }),
 );
 

@@ -8,6 +8,7 @@ import { AssigneeDropdown } from "@/components/AssigneeDropdown";
 import { toast } from "sonner";
 import { formatCurrency } from "@/lib/utils";
 import { sendNotification } from "@/lib/notifications";
+import { sendClientTouchpoint } from "@/lib/clientTouchpoints";
 import { pdf } from "@react-pdf/renderer";
 import QuotationPDF from "@/components/QuotationPDF";
 import ConsultancyPDF from "@/components/ConsultancyPDF";
@@ -937,6 +938,45 @@ export default function EnquiryDetail() {
 
       // Cancel pending follow-ups
       await cancelPendingFollowUps(enquiry.id);
+
+      // Client touchpoints: a thank-you / order confirmation, plus the advance
+      // payment request (parity with the Kanban "Mark Won" path so a deal won from
+      // the detail page messages the client the same way). Best-effort; inert until
+      // Brevo/WATI credentials are provisioned.
+      const clientName = client?.name ?? "Client";
+      const hasTotal = Number(finalizedQuote.total_amount) > 0;
+      const totalFmt = formatCurrency(Number(finalizedQuote.total_amount));
+      const advFmt = hasTotal ? formatCurrency(Math.round(Number(finalizedQuote.total_amount) * 0.5)) : undefined;
+      await sendClientTouchpoint({
+        enquiryId: enquiry.id,
+        client,
+        subject: `Order Confirmed — ${enquiry.ref_number}`,
+        emailTemplate: "order_confirmed",
+        emailParams: { client_name: clientName, ref_number: enquiry.ref_number, total_amount: totalFmt, advance_amount: advFmt },
+        waTemplate: "qms_order_confirmed",
+        waParams: [
+          { name: "client_name", value: clientName },
+          { name: "ref_number", value: enquiry.ref_number },
+          { name: "total_amount", value: totalFmt },
+        ],
+        sentBy: user?.id,
+      });
+      if (advFmt) {
+        await sendClientTouchpoint({
+          enquiryId: enquiry.id,
+          client,
+          subject: `Advance Payment Request — ${enquiry.ref_number}`,
+          emailTemplate: "payment_request",
+          emailParams: { client_name: clientName, ref_number: enquiry.ref_number, amount: advFmt },
+          waTemplate: "qms_payment_request",
+          waParams: [
+            { name: "client_name", value: clientName },
+            { name: "ref_number", value: enquiry.ref_number },
+            { name: "amount", value: advFmt },
+          ],
+          sentBy: user?.id,
+        });
+      }
 
       toast.success("Deal marked as Won! Payment record and job tracker created.");
       setWonModalOpen(false);

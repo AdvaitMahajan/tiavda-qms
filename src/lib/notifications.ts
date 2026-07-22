@@ -36,6 +36,11 @@ export interface NotificationParams {
     week_ending: string; new_enquiries: number; quotations_sent: number; revenue: string;
     status_counts: Record<string, number>; overdue_follow_ups: number; pending_payments: number;
   };
+  // Client-facing lifecycle touchpoints (mirror server email-templates.ts).
+  order_confirmed: { client_name: string; ref_number: string; total_amount: string; advance_amount?: string };
+  payment_received: { client_name: string; ref_number: string; amount: string; payment_type: string; balance?: string };
+  mobilisation_acknowledged: { client_name: string; ref_number: string; date: string; city: string };
+  job_completed: { client_name: string; ref_number: string };
 }
 
 export type NotificationTemplate = keyof NotificationParams;

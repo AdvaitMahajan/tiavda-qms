@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useQueryClient, useMutation } from "@tanstack/react-query";
 import { apiClient } from "@/lib/apiClient";
 import type { Tables } from "@/integrations/supabase/types";
-import { sendNotification } from "@/lib/notifications";
+import { sendClientTouchpoint } from "@/lib/clientTouchpoints";
 import { formatCurrency } from "@/lib/utils";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -110,9 +110,33 @@ export function EnquiryKanban({ rows, isLoading, showClosed }: Props) {
         // Mark the winning quotation accepted so the quote status mirrors the deal.
         await apiClient.patch(`/quotations/${wonQuote.id}`, { status: "accepted" });
 
-        // Auto-create the advance when the winning quote has a real total.
-        if (Number(wonQuote.total_amount) > 0) {
-          const advanceAmount = Math.round(Number(wonQuote.total_amount) * 0.5 * 100) / 100;
+        // Fetch the client once for the confirmation + payment touchpoints.
+        const enq = await apiClient.get<Tables<"enquiries">>(`/enquiries/${id}`);
+        const client = await apiClient.get<Tables<"clients">>(`/clients/${enq.client_id}`);
+        const ref = enq.ref_number;
+        const clientName = client?.name ?? "Client";
+        const hasTotal = Number(wonQuote.total_amount) > 0;
+        const totalFmt = formatCurrency(Number(wonQuote.total_amount));
+        const advanceAmount = hasTotal ? Math.round(Number(wonQuote.total_amount) * 0.5 * 100) / 100 : 0;
+        const advFmt = hasTotal ? formatCurrency(advanceAmount) : undefined;
+
+        // Thank-you / order confirmation — always sent on Won.
+        await sendClientTouchpoint({
+          enquiryId: id,
+          client,
+          subject: `Order Confirmed — ${ref}`,
+          emailTemplate: "order_confirmed",
+          emailParams: { client_name: clientName, ref_number: ref, total_amount: totalFmt, advance_amount: advFmt },
+          waTemplate: "qms_order_confirmed",
+          waParams: [
+            { name: "client_name", value: clientName },
+            { name: "ref_number", value: ref },
+            { name: "total_amount", value: totalFmt },
+          ],
+        });
+
+        // Auto-create + request the advance when the winning quote has a real total.
+        if (hasTotal && advFmt) {
           await apiClient.post("/payments", {
             enquiry_id: id,
             quotation_id: wonQuote.id,
@@ -120,52 +144,19 @@ export function EnquiryKanban({ rows, isLoading, showClosed }: Props) {
             amount_requested: advanceAmount,
             status: "pending_request",
           });
-
-          // Auto-send advance payment request to client
-          const enq = await apiClient.get<Tables<"enquiries">>(`/enquiries/${id}`);
-          const client = await apiClient.get<Tables<"clients">>(`/clients/${enq.client_id}`);
-          const ref = enq.ref_number;
-          const amt = new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(advanceAmount);
-
-          if (client?.email && !client.email_bounced) {
-            void sendNotification({
-              to: client.email,
-              template: "payment_request",
-              params: { client_name: client.name, ref_number: ref, amount: amt },
-            });
-            await apiClient.post("/communications", {
-              enquiry_id: id,
-              client_id: enq.client_id,
-              channel: "email",
-              direction: "outbound",
-              subject: `Advance Payment Request — ${ref}`,
-              body: `Advance payment of ${amt} requested automatically on Won status`,
-              status: "sent",
-            });
-          }
-
-          if (client?.whatsapp_number && !client.whatsapp_invalid) {
-            void apiClient
-              .post("/integrations/whatsapp", {
-                phone_number: client.whatsapp_number,
-                template_name: "qms_payment_request",
-                parameters: [
-                  { name: "client_name", value: client.name },
-                  { name: "ref_number", value: ref },
-                  { name: "amount", value: amt },
-                ],
-              })
-              .catch(() => {});
-            await apiClient.post("/communications", {
-              enquiry_id: id,
-              client_id: enq.client_id,
-              channel: "whatsapp",
-              direction: "outbound",
-              subject: `Advance Payment Request — ${ref}`,
-              body: `Advance payment of ${amt} requested via WhatsApp`,
-              status: "sent",
-            });
-          }
+          await sendClientTouchpoint({
+            enquiryId: id,
+            client,
+            subject: `Advance Payment Request — ${ref}`,
+            emailTemplate: "payment_request",
+            emailParams: { client_name: clientName, ref_number: ref, amount: advFmt },
+            waTemplate: "qms_payment_request",
+            waParams: [
+              { name: "client_name", value: clientName },
+              { name: "ref_number", value: ref },
+              { name: "amount", value: advFmt },
+            ],
+          });
         }
 
         // get-or-create the job completion tracker (idempotent server-side)

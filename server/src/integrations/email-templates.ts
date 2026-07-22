@@ -91,6 +91,11 @@ export interface TemplateParams {
     week_ending: string; new_enquiries: number; quotations_sent: number; revenue: string;
     status_counts: Record<string, number>; overdue_follow_ups: number; pending_payments: number;
   };
+  // Client-facing lifecycle touchpoints.
+  order_confirmed: { client_name: string; ref_number: string; total_amount: string; advance_amount?: string };
+  payment_received: { client_name: string; ref_number: string; amount: string; payment_type: string; balance?: string };
+  mobilisation_acknowledged: { client_name: string; ref_number: string; date: string; city: string };
+  job_completed: { client_name: string; ref_number: string };
 }
 
 export type TemplateKey = keyof TemplateParams;
@@ -325,6 +330,82 @@ const TEMPLATES: { [K in TemplateKey]: (p: TemplateParams[K]) => RenderedEmail }
         ${p.notes ? `<p style="background:#FFFBEB;padding:10px 14px;border-radius:6px;font-size:13px;color:#78350F;"><strong>Notes:</strong> ${esc(p.notes)}</p>` : ''}
         ${button(p.form_url, '📋 Fill Site Visit Report', BRAND.green)}
         <p style="text-align:center;font-size:12px;color:#94A3B8;">Click the button above after your visit to submit your observations directly into the system.</p>`,
+    }),
+  }),
+
+  order_confirmed: (p) => ({
+    subject: `Thank You — Order Confirmed — ${p.ref_number}`,
+    html: layout({
+      heading: COMPANY_NAME,
+      subheading: 'Order Confirmed',
+      accent: BRAND.green,
+      body: `
+        <p style="font-size:16px;">Dear ${esc(p.client_name)},</p>
+        <p>Thank you for choosing <strong>${esc(COMPANY_NAME)}</strong> for your geotechnical investigation. We are delighted to confirm your order for project <strong style="font-family:monospace;">${esc(p.ref_number)}</strong>.</p>
+        <div style="background:${BRAND.surface};border:1px solid ${BRAND.border};border-radius:8px;padding:18px 20px;margin:22px 0;">
+          <table style="width:100%;border-collapse:collapse;">
+            ${detailRow('Project', `<span style="font-family:monospace;">${esc(p.ref_number)}</span>`)}
+            ${detailRow('Order Value', esc(p.total_amount))}
+            ${p.advance_amount ? detailRow('Advance Due', esc(p.advance_amount)) : ''}
+          </table>
+        </div>
+        <p>Our team will now proceed with the next steps. ${p.advance_amount ? 'A separate advance payment request follows this message.' : ''}</p>
+        <p style="margin-top:28px;">Warm regards,<br/><strong>The Team</strong></p>`,
+    }),
+  }),
+
+  payment_received: (p) => ({
+    subject: `Payment Received — Thank You — ${p.ref_number}`,
+    html: layout({
+      heading: COMPANY_NAME,
+      subheading: 'Payment Receipt',
+      accent: BRAND.green,
+      body: `
+        <p style="font-size:16px;">Dear ${esc(p.client_name)},</p>
+        <p>Thank you — we gratefully acknowledge receipt of your ${esc(p.payment_type.toLowerCase())} payment for project <strong style="font-family:monospace;">${esc(p.ref_number)}</strong>.</p>
+        <div style="background:${BRAND.surface};border:1px solid ${BRAND.border};border-radius:8px;padding:18px 20px;margin:22px 0;">
+          <table style="width:100%;border-collapse:collapse;">
+            ${detailRow('Amount Received', esc(p.amount))}
+            ${detailRow('Towards', esc(p.payment_type))}
+            ${p.balance ? detailRow('Balance Outstanding', esc(p.balance)) : ''}
+          </table>
+        </div>
+        <p style="font-size:14px;color:${BRAND.muted};">This email serves as your acknowledgement of payment. Please retain it for your records.</p>
+        <p style="margin-top:28px;">Warm regards,<br/><strong>The Team</strong></p>`,
+    }),
+  }),
+
+  mobilisation_acknowledged: (p) => ({
+    subject: `Mobilisation Confirmed — Thank You — ${p.ref_number}`,
+    html: layout({
+      heading: COMPANY_NAME,
+      subheading: 'Mobilisation Confirmed',
+      accent: BRAND.green,
+      body: `
+        <p style="font-size:16px;">Dear ${esc(p.client_name)},</p>
+        <p>Thank you for confirming the mobilisation for project <strong style="font-family:monospace;">${esc(p.ref_number)}</strong>. Our team is scheduled and will arrive as planned.</p>
+        <div style="background:${BRAND.surface};border:1px solid ${BRAND.border};border-radius:8px;padding:18px 20px;margin:22px 0;">
+          <table style="width:100%;border-collapse:collapse;">
+            ${detailRow('Date', esc(p.date))}
+            ${detailRow('Location', esc(p.city))}
+          </table>
+        </div>
+        <p style="font-size:14px;color:${BRAND.muted};">Please ensure site access is available on the scheduled date. We look forward to working with you.</p>
+        <p style="margin-top:28px;">Warm regards,<br/><strong>The Team</strong></p>`,
+    }),
+  }),
+
+  job_completed: (p) => ({
+    subject: `Project Completed — Thank You — ${p.ref_number}`,
+    html: layout({
+      heading: COMPANY_NAME,
+      subheading: 'Project Completed',
+      accent: BRAND.green,
+      body: `
+        <p style="font-size:16px;">Dear ${esc(p.client_name)},</p>
+        <p>We are pleased to inform you that your geotechnical investigation for project <strong style="font-family:monospace;">${esc(p.ref_number)}</strong> is now complete and the report has been delivered.</p>
+        <p>It has been a pleasure working with you. Thank you for trusting <strong>${esc(COMPANY_NAME)}</strong> with your project — we would be glad to assist you again in the future.</p>
+        <p style="margin-top:28px;">Warm regards,<br/><strong>The Team</strong></p>`,
     }),
   }),
 

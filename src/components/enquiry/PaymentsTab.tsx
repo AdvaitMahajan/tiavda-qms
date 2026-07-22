@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiClient } from "@/lib/apiClient";
 import { uploadToStorage, getSignedUrl } from "@/lib/storage";
 import { sendNotification } from "@/lib/notifications";
+import { sendClientTouchpoint } from "@/lib/clientTouchpoints";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { useAuth } from "@/hooks/useAuth";
 import { useRole } from "@/hooks/useRole";
@@ -277,6 +278,36 @@ export function PaymentsTab({ enquiryId, onStatusChange }: { enquiryId: string; 
       if (user?.id && !targetUsers.includes(user.id)) {
         await apiClient.post("/notifications", { ...notifPayload, user_id: user.id });
       }
+
+      // Client touchpoint: receipt / thank-you acknowledging the payment.
+      // Best-effort; inert until Brevo/WATI credentials are provisioned.
+      const received = parseFloat(recAmount) || 0;
+      const balanceNum = Math.max(0, (expectedTotal || 0) - (totalReceived + received));
+      const typeLabel = showReceive.payment_type === "final" ? "Final"
+        : showReceive.payment_type === "advance" ? "Advance"
+        : (showReceive.payment_type || "Payment");
+      const ref = enquiry?.ref_number ?? enquiryId;
+      const clientName = client?.name ?? "Client";
+      await sendClientTouchpoint({
+        enquiryId,
+        client,
+        subject: `Payment Received — ${ref}`,
+        emailTemplate: "payment_received",
+        emailParams: {
+          client_name: clientName,
+          ref_number: ref,
+          amount: amt,
+          payment_type: typeLabel,
+          balance: balanceNum > 0 ? formatCurrency(balanceNum) : undefined,
+        },
+        waTemplate: "qms_payment_received",
+        waParams: [
+          { name: "client_name", value: clientName },
+          { name: "ref_number", value: ref },
+          { name: "amount", value: amt },
+        ],
+        sentBy: user?.id,
+      });
     },
     onSuccess: () => {
       toast.success("Payment marked as received!");

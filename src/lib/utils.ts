@@ -35,3 +35,14 @@ export function relativeTime(d: string): string {
   if (diffHr < 24) return `${diffHr} hour${diffHr > 1 ? "s" : ""} ago`;
   return `${diffDay} day${diffDay > 1 ? "s" : ""} ago`;
 }
+
+/**
+ * How a client is identified across the app: the COMPANY is the business
+ * identity we show on enquiry/client screens. Falls back to the contact
+ * person's name for legacy records created before company was mandatory.
+ */
+export function clientDisplayName(
+  c?: { company?: string | null; name?: string | null } | null,
+): string {
+  return c?.company?.trim() || c?.name?.trim() || "Unknown";
+}

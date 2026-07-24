@@ -2,6 +2,7 @@ import { useState, useMemo } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiClient } from "@/lib/apiClient";
+import { clientDisplayName } from "@/lib/utils";
 import type { Tables } from "@/integrations/supabase/types";
 import { toast } from "sonner";
 import { Search, Users, Plus, Phone, Mail, MapPin, UserPlus, Link2, CheckCircle2, XCircle, Activity } from "lucide-react";
@@ -103,7 +104,7 @@ export default function Clients() {
     if (segment !== "all") result = result.filter((c) => segmentByClient.get(c.id) === segment);
     if (search.trim()) {
       const q = search.toLowerCase();
-      result = result.filter((c) => c.name.toLowerCase().includes(q) || c.phone.toLowerCase().includes(q) || c.city.toLowerCase().includes(q));
+      result = result.filter((c) => c.name.toLowerCase().includes(q) || (c.company ?? "").toLowerCase().includes(q) || c.phone.toLowerCase().includes(q) || c.city.toLowerCase().includes(q));
     }
     return result;
   }, [clients, search, segment, segmentByClient]);
@@ -111,6 +112,7 @@ export default function Clients() {
   const validateForm = (): boolean => {
     const errs: Record<string, string> = {};
     if (!form.name.trim()) errs.name = "Name is required";
+    if (!form.company.trim()) errs.company = "Company name is required";
     if (!form.phone.trim()) errs.phone = "Phone is required";
     else if (!validateIndianMobile(form.phone)) errs.phone = "Enter a valid Indian mobile number";
     if (!form.city.trim()) errs.city = "City is required";
@@ -306,11 +308,13 @@ export default function Clients() {
                         color: "white", fontFamily: "Sora, sans-serif", fontWeight: 700, fontSize: "14px",
                         background: avatarGradient(c.name), flexShrink: 0,
                       }}>
-                        {c.name[0]?.toUpperCase() ?? "?"}
+                        {clientDisplayName(c)[0]?.toUpperCase() ?? "?"}
                       </div>
                       <div>
-                        <div style={{ fontWeight: 600, fontSize: "14px", color: "#0A1929" }}>{c.name}</div>
-                        <div style={{ fontSize: "13px", color: "#546E7A" }}>{c.company || c.city}</div>
+                        <div style={{ fontWeight: 600, fontSize: "14px", color: "#0A1929" }}>{clientDisplayName(c)}</div>
+                        <div style={{ fontSize: "13px", color: "#546E7A" }}>
+                          {[c.company ? c.name : null, c.city].filter(Boolean).join(" · ")}
+                        </div>
                       </div>
                     </div>
                   </td>
@@ -397,7 +401,7 @@ export default function Clients() {
             <Field label="Phone Number" required value={form.phone} onChange={(v) => updateForm({ phone: v })} error={formErrors.phone}
               onBlur={() => { if (form.phone) updateForm({ phone: normalizePhone(form.phone) }); }} />
             <Field label="Email" value={form.email} onChange={(v) => updateForm({ email: v })} type="email" />
-            <Field label="Company Name" value={form.company} onChange={(v) => updateForm({ company: v })} />
+            <Field label="Company Name" required value={form.company} onChange={(v) => updateForm({ company: v })} error={formErrors.company} />
             <Field label="City" required value={form.city} onChange={(v) => updateForm({ city: v })} error={formErrors.city} />
             <Field label="State" value={form.state} onChange={(v) => updateForm({ state: v })} />
             <Field label="Pincode" value={form.pincode} onChange={(v) => updateForm({ pincode: v })} />

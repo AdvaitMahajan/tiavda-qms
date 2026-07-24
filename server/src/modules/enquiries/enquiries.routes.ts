@@ -136,7 +136,7 @@ enquiriesRouter.get(
     if (embed.includes('client')) {
       const clientIds = [...new Set(rows.map((r) => r.client_id))];
       const cs = await db
-        .select({ id: clients.id, name: clients.name, phone: clients.phone })
+        .select({ id: clients.id, name: clients.name, company: clients.company, phone: clients.phone })
         .from(clients)
         .where(inArray(clients.id, clientIds));
       clientMap = new Map(cs.map((c) => [c.id, c]));

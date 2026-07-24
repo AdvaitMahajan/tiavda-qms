@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiClient } from "@/lib/apiClient";
 import type { Tables } from "@/integrations/supabase/types";
-import { formatCurrency, formatDate } from "@/lib/utils";
+import { formatCurrency, formatDate, clientDisplayName } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
@@ -74,7 +74,7 @@ function useMobilisationData() {
           status: e.status,
           site_city: e.site_city,
           client_id: e.client_id,
-          client_name: e.client?.name ?? "Unknown",
+          client_name: clientDisplayName(e.client),
           client_phone: e.client?.phone ?? "",
           quote_amount: e.quote_total ?? null,
           confirmed_date: e.confirmed_date,

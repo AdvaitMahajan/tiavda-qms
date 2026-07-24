@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiClient } from "@/lib/apiClient";
+import { clientDisplayName } from "@/lib/utils";
 import type { Tables } from "@/integrations/supabase/types";
 import { toast } from "sonner";
 import { createIntakeToken, getIntakeUrl } from "@/lib/intakeTokenUtils";
@@ -47,7 +48,7 @@ function ClientCombobox({
   value,
   onChange,
 }: {
-  clients: { id: string; name: string; city: string; phone: string }[];
+  clients: { id: string; name: string; company?: string | null; city: string; phone: string }[];
   value: string;
   onChange: (id: string) => void;
 }) {
@@ -67,7 +68,7 @@ function ClientCombobox({
             minHeight: "42px",
           }}
         >
-          {selected ? `${selected.name} — ${selected.city}` : "Search or select a client..."}
+          {selected ? `${clientDisplayName(selected)} — ${selected.city}` : "Search or select a client..."}
           <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
         </button>
       </ComboPopoverTrigger>
@@ -80,7 +81,7 @@ function ClientCombobox({
               {clients.map((c) => (
                 <CommandItem
                   key={c.id}
-                  value={`${c.name} ${c.city} ${c.phone}`}
+                  value={`${c.company ?? ""} ${c.name} ${c.city} ${c.phone}`}
                   onSelect={() => {
                     onChange(c.id);
                     setOpen(false);
@@ -90,7 +91,7 @@ function ClientCombobox({
                     className={cn("mr-2 h-4 w-4", value === c.id ? "opacity-100" : "opacity-0")}
                   />
                   <div>
-                    <div className="font-medium">{c.name}</div>
+                    <div className="font-medium">{clientDisplayName(c)}</div>
                     <div className="text-[13px] text-muted-foreground">{c.city} &middot; {c.phone}</div>
                   </div>
                 </CommandItem>
@@ -192,13 +193,13 @@ export function AddLeadDialog({ open, onOpenChange }: { open: boolean; onOpenCha
                   type="email"
                   value={leadForm.email}
                   onChange={(e) => setLeadForm((p) => ({ ...p, email: e.target.value }))}
-                  placeholder="Optional"
+                  placeholder="Company name"
                   className="h-11"
                   style={{ fontSize: "14px" }}
                 />
               </div>
               <div>
-                <label className="block text-[13px] font-medium mb-2" style={{ color: "#64748B" }}>Company</label>
+                <label className="block text-[13px] font-medium mb-2" style={{ color: "#64748B" }}>Company <span style={{ color: "#C62828" }}>*</span></label>
                 <Input
                   value={leadForm.company}
                   onChange={(e) => setLeadForm((p) => ({ ...p, company: e.target.value }))}
@@ -295,8 +296,8 @@ export function AddLeadDialog({ open, onOpenChange }: { open: boolean; onOpenCha
               try {
                 const { clientMode, clientId, name, phone, email, company, serviceType, source, city, requirement } = leadForm;
 
-                if (clientMode === "new" && (!name.trim() || !phone.trim())) {
-                  throw new Error("Client name and phone are required.");
+                if (clientMode === "new" && (!name.trim() || !phone.trim() || !company.trim())) {
+                  throw new Error("Client name, company name and phone are required.");
                 }
                 if (clientMode === "existing" && !clientId) {
                   throw new Error("Please select a client.");

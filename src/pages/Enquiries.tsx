@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiClient } from "@/lib/apiClient";
-import { formatCurrency, relativeTime } from "@/lib/utils";
+import { formatCurrency, relativeTime, clientDisplayName } from "@/lib/utils";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -98,7 +98,7 @@ function useEnquiries() {
       const enquiries = await apiClient.get<EnquiryListItem[]>("/enquiries", { embed: "client,quote" });
       return enquiries.map((e) => ({
         ...e,
-        client_name: e.client?.name ?? "Unknown",
+        client_name: clientDisplayName(e.client),
         phone: e.client?.phone ?? "",
         quote_amount: e.quote_total ?? null,
       })) as unknown as EnquiryRow[];

@@ -5,7 +5,7 @@ import { apiClient } from "@/lib/apiClient";
 import type { Tables } from "@/integrations/supabase/types";
 import { sendNotification } from "@/lib/notifications";
 import { toast } from "sonner";
-import { cn, formatDate, relativeTime } from "@/lib/utils";
+import { cn, formatDate, relativeTime, clientDisplayName } from "@/lib/utils";
 import { createIntakeToken } from "@/lib/intakeTokenUtils";
 import {
   Phone, Mail, MapPin, AlertTriangle, Link2, Copy, Check,
@@ -159,6 +159,7 @@ export default function ClientDetail() {
   const handleEditSave = async () => {
     const errs: Record<string, string> = {};
     if (!editForm.name?.trim()) errs.name = "Required";
+    if (!editForm.company?.trim()) errs.company = "Required";
     if (!editForm.phone?.trim()) errs.phone = "Required";
     else if (!validateIndianMobile(editForm.phone)) errs.phone = "Invalid number";
     if (!editForm.city?.trim()) errs.city = "Required";
@@ -252,19 +253,19 @@ export default function ClientDetail() {
         <div style={{ display: "flex", alignItems: "center", gap: "16px", marginTop: "16px" }}>
           <div style={{
             width: "56px", height: "56px", borderRadius: "50%",
-            background: avatarGradient(client.name),
+            background: avatarGradient(clientDisplayName(client)),
             display: "flex", alignItems: "center", justifyContent: "center",
             fontFamily: "Sora, sans-serif", fontWeight: 700, fontSize: "22px", color: "white",
             flexShrink: 0, border: "3px solid rgba(255,255,255,0.2)",
           }}>
-            {client.name[0]?.toUpperCase() ?? "?"}
+            {clientDisplayName(client)[0]?.toUpperCase() ?? "?"}
           </div>
           <div>
             <div style={{ fontFamily: "Sora, sans-serif", fontWeight: 700, fontSize: "26px", color: "white" }}>
-              {client.name}
+              {clientDisplayName(client)}
             </div>
             {client.company && (
-              <div style={{ color: "rgba(255,255,255,0.6)", fontSize: "13px", marginTop: "2px" }}>{client.company}</div>
+              <div style={{ color: "rgba(255,255,255,0.6)", fontSize: "13px", marginTop: "2px" }}>{client.name}</div>
             )}
           </div>
         </div>
@@ -634,7 +635,7 @@ export default function ClientDetail() {
             <EditField label="Phone Number" required value={editForm.phone} onChange={(v) => setEditForm((p) => ({ ...p, phone: v }))} error={editErrors.phone}
               onBlur={() => { if (editForm.phone) setEditForm((p) => ({ ...p, phone: normalizePhone(editForm.phone) })); }} />
             <EditField label="Email" value={editForm.email} onChange={(v) => setEditForm((p) => ({ ...p, email: v }))} type="email" />
-            <EditField label="Company Name" value={editForm.company} onChange={(v) => setEditForm((p) => ({ ...p, company: v }))} />
+            <EditField label="Company Name" required value={editForm.company} onChange={(v) => setEditForm((p) => ({ ...p, company: v }))} error={editErrors.company} />
             <EditField label="GST Number" value={editForm.gst_number} onChange={(v) => setEditForm((p) => ({ ...p, gst_number: v.toUpperCase() }))} placeholder="e.g. 27AABCT1332L1ZD" />
             <EditField label="City" required value={editForm.city} onChange={(v) => setEditForm((p) => ({ ...p, city: v }))} error={editErrors.city} />
             <EditField label="State" value={editForm.state} onChange={(v) => setEditForm((p) => ({ ...p, state: v }))} />

@@ -3,6 +3,7 @@ import { apiClient } from "@/lib/apiClient";
 import { sendNotification } from "@/lib/notifications";
 import { useAuth } from "@/hooks/useAuth";
 import { AssigneeDropdown } from "@/components/AssigneeDropdown";
+import { MOBILISING_ROLES } from "@/lib/permissions";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -453,7 +454,7 @@ export function MobilisationSection({ enquiryId, enquiry, onStatusChange }: { en
             <div className="space-y-4 mt-2">
               <div><Label>Mobilisation Date *</Label><Input type="date" value={mobDate} onChange={(e) => setMobDate(e.target.value)} /></div>
               <div><Label>Time</Label><Input type="time" value={mobTime} onChange={(e) => setMobTime(e.target.value)} /></div>
-              <div><Label>Team Lead</Label><AssigneeDropdown value={teamLeadId} onChange={setTeamLeadId} filterRole="mobilization_lead" /></div>
+              <div><Label>Team Lead</Label><AssigneeDropdown value={teamLeadId} onChange={setTeamLeadId} filterRoles={MOBILISING_ROLES} /></div>
               <div><Label>Team Description</Label><Textarea value={team} onChange={(e) => setTeam(e.target.value)} /></div>
               <div><Label>Equipment Notes</Label><Textarea value={equipment} onChange={(e) => setEquipment(e.target.value)} /></div>
               <div><Label>Site Contact Name</Label><Input value={contactName} onChange={(e) => setContactName(e.target.value)} /></div>

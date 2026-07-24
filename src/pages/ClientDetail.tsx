@@ -668,15 +668,15 @@ export default function ClientDetail() {
   );
 }
 
-function EditField({ label, required, value, onChange, error, type = "text", onBlur }: {
-  label: string; required?: boolean; value: string; onChange: (v: string) => void; error?: string; type?: string; onBlur?: () => void;
+function EditField({ label, required, value, onChange, error, type = "text", onBlur, placeholder }: {
+  label: string; required?: boolean; value: string; onChange: (v: string) => void; error?: string; type?: string; onBlur?: () => void; placeholder?: string;
 }) {
   return (
     <div>
       <label className="mb-1.5 block" style={{ fontSize: "12px", fontWeight: 600, color: "#546E7A", textTransform: "uppercase", letterSpacing: "0.05em" }}>
         {label} {required && <span style={{ color: "#C62828" }}>*</span>}
       </label>
-      <Input type={type} value={value || ""} onChange={(e) => onChange(e.target.value)} onBlur={onBlur} style={{ borderColor: "#E0E7EF", borderRadius: "10px", fontSize: "14px" }} />
+      <Input type={type} value={value || ""} onChange={(e) => onChange(e.target.value)} onBlur={onBlur} placeholder={placeholder} style={{ borderColor: "#E0E7EF", borderRadius: "10px", fontSize: "14px" }} />
       {error && <p className="mt-1 text-[13px]" style={{ color: "#C62828" }}>{error}</p>}
     </div>
   );

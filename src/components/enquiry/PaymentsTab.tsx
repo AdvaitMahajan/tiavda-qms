@@ -4,7 +4,7 @@ import { apiClient } from "@/lib/apiClient";
 import { uploadToStorage, getSignedUrl } from "@/lib/storage";
 import { sendNotification } from "@/lib/notifications";
 import { sendClientTouchpoint } from "@/lib/clientTouchpoints";
-import { formatCurrency, formatDate } from "@/lib/utils";
+import { formatCurrency, formatDate, downloadBlob } from "@/lib/utils";
 import { useAuth } from "@/hooks/useAuth";
 import { useRole } from "@/hooks/useRole";
 import { toast } from "sonner";
@@ -409,14 +409,7 @@ export function PaymentsTab({ enquiryId, onStatusChange }: { enquiryId: string; 
         />
       ).toBlob();
 
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `${invNum}.pdf`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
+      downloadBlob(blob, `${invNum}.pdf`);
       toast.success("Invoice PDF downloaded");
     } catch (err: any) {
       console.error("Invoice generation error:", err);

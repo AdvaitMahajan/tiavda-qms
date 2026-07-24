@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiClient } from "@/lib/apiClient";
-import { formatCurrency, relativeTime, clientDisplayName } from "@/lib/utils";
+import { formatCurrency, relativeTime, clientDisplayName, downloadBlob } from "@/lib/utils";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -142,12 +142,7 @@ function exportCSV(rows: EnquiryRow[]) {
     ),
   ];
   const blob = new Blob([csvRows.join("\n")], { type: "text/csv" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = `enquiries-${new Date().toISOString().slice(0, 10)}.csv`;
-  a.click();
-  URL.revokeObjectURL(url);
+  downloadBlob(blob, `enquiries-${new Date().toISOString().slice(0, 10)}.csv`);
 }
 
 export default function Enquiries() {

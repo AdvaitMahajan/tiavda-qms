@@ -654,7 +654,7 @@ export default function QuotationBuilder() {
         const lsAmount = parseFloat(lumpSumAmount) || 0;
         saveItems = [{ section: "A", description: `Lump Sum — ${enquiry.service_type === "soil_investigation" ? "Soil Investigation" : "Consultancy"}`, unit: "LS", qty: 1, rate: lsAmount, amount: lsAmount }];
         const gstAmt = round2(lsAmount * gstRate / 100);
-        saveTotals = { subtotal: lsAmount, gstAmount: gstAmt, grandTotal: lsAmount + gstAmt, discountAmount: 0, sections: { A: lsAmount } };
+        saveTotals = { subtotal: lsAmount, netAmount: lsAmount, gstAmount: gstAmt, grandTotal: lsAmount + gstAmt, discountAmount: 0, sections: { A: lsAmount } };
       } else {
         saveItems = items.map(({ id, ...rest }) => rest);
       }
@@ -726,7 +726,7 @@ export default function QuotationBuilder() {
         const lsAmt = parseFloat(lumpSumAmount) || 0;
         previewItems = [{ section: "A", description: `Lump Sum — ${enquiry.service_type === "soil_investigation" ? "Soil Investigation" : "Consultancy"}`, unit: "LS", qty: 1, rate: lsAmt, amount: lsAmt }];
         const gstAmt = round2(lsAmt * gstRate / 100);
-        previewTotals = { subtotal: lsAmt, gstAmount: gstAmt, grandTotal: lsAmt + gstAmt, discountAmount: 0, sections: { A: lsAmt } };
+        previewTotals = { subtotal: lsAmt, netAmount: lsAmt, gstAmount: gstAmt, grandTotal: lsAmt + gstAmt, discountAmount: 0, sections: { A: lsAmt } };
       } else {
         previewItems = items.map(({ id, ...rest }) => rest);
       }

@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { apiClient } from "@/lib/apiClient";
-import { formatCurrency, formatDate } from "@/lib/utils";
+import { formatCurrency, formatDate, downloadBlob } from "@/lib/utils";
 import {
   Wallet, TrendingUp, AlertTriangle, Clock, CheckCircle2, IndianRupee, Search, Download,
 } from "lucide-react";
@@ -146,12 +146,7 @@ export default function Accounts() {
     ].map(cell).join(","));
     const csv = [headers.join(","), ...lines].join("\r\n");
     const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `payments-ledger-${monthKey(new Date())}.csv`;
-    document.body.appendChild(a); a.click(); a.remove();
-    URL.revokeObjectURL(url);
+    downloadBlob(blob, `payments-ledger-${monthKey(new Date())}.csv`);
   };
 
   return (

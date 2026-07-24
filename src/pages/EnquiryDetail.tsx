@@ -6,7 +6,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useRole } from "@/hooks/useRole";
 import { AssigneeDropdown } from "@/components/AssigneeDropdown";
 import { toast } from "sonner";
-import { formatCurrency, clientDisplayName } from "@/lib/utils";
+import { formatCurrency, clientDisplayName, downloadBlob } from "@/lib/utils";
 import { sendNotification } from "@/lib/notifications";
 import { sendClientTouchpoint } from "@/lib/clientTouchpoints";
 import { pdf } from "@react-pdf/renderer";
@@ -342,14 +342,7 @@ function VariantCard({
                   }
                   try {
                     const blob = await downloadFromStorage("quotation-pdfs", path);
-                    const url = URL.createObjectURL(blob);
-                    const a = document.createElement("a");
-                    a.href = url;
-                    a.download = path.split("/").pop() || "quotation.pdf";
-                    document.body.appendChild(a);
-                    a.click();
-                    a.remove();
-                    URL.revokeObjectURL(url);
+                    downloadBlob(blob, path.split("/").pop() || "quotation.pdf");
                   } catch (error) {
                     console.error("Download error:", error);
                     toast.error("Failed to download PDF — please regenerate it");

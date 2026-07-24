@@ -46,3 +46,24 @@ export function clientDisplayName(
 ): string {
   return c?.company?.trim() || c?.name?.trim() || "Unknown";
 }
+
+/**
+ * Trigger a browser download for a Blob.
+ *
+ * The object URL is revoked on a LATER tick — never in the same tick as
+ * click(). Revoking immediately can abort the transfer before the browser has
+ * finished writing the file, which is what produced empty/corrupt PDF and CSV
+ * downloads.
+ */
+export function downloadBlob(blob: Blob, filename: string): void {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.rel = "noopener";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  // Generous window so slow disks / large files still complete.
+  setTimeout(() => URL.revokeObjectURL(url), 60_000);
+}

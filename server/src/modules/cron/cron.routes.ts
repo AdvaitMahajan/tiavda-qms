@@ -25,6 +25,8 @@ cronRouter.use(requireCron);
 
 cronRouter.post('/daily', asyncHandler(async (_req, res) => res.json(await runDaily())));
 cronRouter.post('/weekly', asyncHandler(async (_req, res) => res.json(await runWeekly())));
+// Daily follow-up digest — schedule this at 11:00 (Asia/Kolkata).
+cronRouter.post('/followup-digest', asyncHandler(async (_req, res) => res.json(await runFollowUpDigest())));
 
 // ── Per-org helpers (caches are per cron invocation) ─────────────────────────
 type NotifPayload = { type: string; title: string; body: string; enquiry_id?: string | null; link?: string | null };
@@ -64,6 +66,104 @@ function makeOrgHelpers() {
   }
 
   return { orgSettings, orgAdminIds, notifyAdmins };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+/**
+ * Daily follow-up digest — ONE email per org listing every follow-up still
+ * pending today (plus anything overdue), with the client/company and contact
+ * details, sent to the staff chosen in Settings. Intended for an 11:00 IST
+ * schedule. Unlike the per-follow-up reminder it does not touch reminder_sent,
+ * so the digest keeps listing an item until it is actually actioned.
+ */
+async function runFollowUpDigest(): Promise<Record<string, unknown>> {
+  const today = new Date().toISOString().split('T')[0]!;
+  const results: Record<string, unknown> = { date: today };
+  const appUrl = env.APP_URL || 'https://qms.globalgeoconsultancy.com';
+  const { orgSettings } = makeOrgHelpers();
+
+  try {
+    const { data: dueRaw } = await sb
+      .from('follow_ups')
+      .select('id, org_id, enquiry_id, scheduled_date, notes, assigned_to, enquiries(ref_number, site_city, clients(name, company, phone, email))')
+      .lte('scheduled_date', today)
+      .eq('outcome', 'pending')
+      .order('scheduled_date', { ascending: true });
+    const due = (dueRaw ?? []) as any[];
+
+    // Group by org.
+    const byOrg = new Map<string, Array<Record<string, unknown>>>();
+    for (const fu of due) {
+      const org = fu.org_id as string | null;
+      const enq = fu.enquiries as any;
+      if (!org || !enq) continue;
+      const client = enq.clients as any;
+      const list = byOrg.get(org) ?? [];
+      list.push({
+        ref_number: enq.ref_number ?? '—',
+        client_name: client?.name ?? 'Client',
+        company: client?.company ?? null,
+        phone: client?.phone ?? null,
+        email: client?.email ?? null,
+        site_city: enq.site_city ?? null,
+        scheduled_date: fu.scheduled_date,
+        notes: fu.notes ?? null,
+        is_overdue: String(fu.scheduled_date) < today,
+        assigned_to: (fu.assigned_to as string | null) ?? null,
+      });
+      byOrg.set(org, list);
+    }
+
+    // Resolve assignee uuids to names once per run.
+    const assigneeIds = [
+      ...new Set(
+        [...byOrg.values()].flat().map((i) => i.assigned_to as string | null).filter((v): v is string => !!v),
+      ),
+    ];
+    const nameById = new Map<string, string>();
+    if (assigneeIds.length) {
+      const { data: profs } = await sb.from('profiles').select('id, full_name, email').in('id', assigneeIds);
+      for (const p of profs ?? []) {
+        nameById.set(p.id as string, (p.full_name as string) || String(p.email ?? '').split('@')[0] || 'Staff');
+      }
+    }
+
+    const sent: Array<Record<string, unknown>> = [];
+    for (const [org, items] of byOrg) {
+      const settings = await orgSettings(org);
+      if (settings.auto_followup_digest === 'false') {
+        sent.push({ org, skipped: 'disabled' });
+        continue;
+      }
+      // Recipients: the staff picked in Settings, else fall back to admin_email.
+      const recipients = (settings.followup_digest_recipients ?? settings.admin_email ?? '')
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean);
+      if (recipients.length === 0) {
+        sent.push({ org, skipped: 'no_recipients' });
+        continue;
+      }
+
+      const withNames = items.map((i) => ({
+        ...i,
+        assigned_to: i.assigned_to ? nameById.get(i.assigned_to as string) ?? null : null,
+      })) as never;
+
+      const r = await sendEmail({
+        to: recipients,
+        orgId: org,
+        template: 'followup_digest',
+        params: { date: today, items: withNames, app_url: appUrl },
+      });
+      sent.push({ org, recipients: recipients.length, items: items.length, ok: !('error' in (r ?? {})) });
+    }
+
+    results.followup_digest = { orgs: byOrg.size, sent };
+  } catch (err) {
+    results.followup_digest = { error: (err as Error).message };
+  }
+  return results;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
 import { apiClient } from "@/lib/apiClient";
 import { useAuth } from "@/hooks/useAuth";
 import { useSettings } from "@/hooks/useSettings";
@@ -28,6 +29,7 @@ const AUTOMATION_KEYS = [
   "auto_followup_no_response", "auto_followup_no_response_days",
   "auto_payment_reminder", "auto_payment_reminder_days",
   "weekly_summary_email", "weekly_summary_day",
+  "auto_followup_digest", "followup_digest_recipients",
 ] as const;
 
 const DEFAULTS: Record<string, string> = {
@@ -39,6 +41,7 @@ const DEFAULTS: Record<string, string> = {
   auto_followup_no_response: "true", auto_followup_no_response_days: "4",
   auto_payment_reminder: "false", auto_payment_reminder_days: "2",
   weekly_summary_email: "false", weekly_summary_day: "Monday",
+  auto_followup_digest: "true", followup_digest_recipients: "",
 };
 
 // ─── Main component ───────────────────────────────────────────────────────────
@@ -241,7 +244,7 @@ IFSC: ${s.bank_ifsc || "—"}${s.bank_upi ? `\nUPI: ${s.bank_upi}` : ""}`}
                 description="Receive a weekly email every Monday morning with your pipeline overview and pending actions"
                 enabled={s.weekly_summary_email !== "false"}
                 onToggle={(v) => saveOne("weekly_summary_email", v ? "true" : "false")}
-                isLast={true}
+                isLast={false}
               >
                 {s.weekly_summary_email !== "false" && (
                   <div style={{ display: "flex", alignItems: "center", gap: "8px", marginTop: "10px" }}>
@@ -256,6 +259,22 @@ IFSC: ${s.bank_ifsc || "—"}${s.bank_upi ? `\nUPI: ${s.bank_upi}` : ""}`}
                       ))}
                     </select>
                   </div>
+                )}
+              </AutoRuleRow>
+
+              <AutoRuleRow
+                name="Daily follow-up digest email (11:00 AM)"
+                description="One email every morning listing all follow-ups due today (and anything overdue) with client, company and contact details"
+                enabled={s.auto_followup_digest !== "false"}
+                onToggle={(v) => saveOne("auto_followup_digest", v ? "true" : "false")}
+                isLast={true}
+              >
+                {s.auto_followup_digest !== "false" && (
+                  <DigestRecipientPicker
+                    value={s.followup_digest_recipients || ""}
+                    onChange={(v) => saveOne("followup_digest_recipients", v)}
+                    fallbackEmail={s.admin_email}
+                  />
                 )}
               </AutoRuleRow>
             </div>
@@ -397,6 +416,85 @@ IFSC: ${s.bank_ifsc || "—"}${s.bank_upi ? `\nUPI: ${s.bank_upi}` : ""}`}
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+/**
+ * Chooses which staff receive the daily follow-up digest. Stores a
+ * comma-separated list of email addresses (what the cron job sends to), so a
+ * recipient keeps working even if their profile is later deactivated.
+ */
+function DigestRecipientPicker({
+  value,
+  onChange,
+  fallbackEmail,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  fallbackEmail?: string;
+}) {
+  const { data: staff = [], isLoading } = useQuery({
+    queryKey: ["digest-staff"],
+    queryFn: () =>
+      apiClient.get<Array<{ id: string; full_name: string | null; email: string; role: string; is_active: boolean }>>(
+        "/profiles",
+        { is_active: true },
+      ),
+  });
+
+  const selected = value.split(",").map((e) => e.trim()).filter(Boolean);
+  const toggle = (email: string) => {
+    const next = selected.includes(email) ? selected.filter((e) => e !== email) : [...selected, email];
+    onChange(next.join(","));
+  };
+
+  return (
+    <div style={{ marginTop: "10px" }}>
+      <div style={{ fontSize: "13px", color: "#546E7A", marginBottom: "8px" }}>
+        Send to {selected.length > 0 ? `${selected.length} selected` : "— nobody selected"}
+        {selected.length === 0 && fallbackEmail ? ` (will fall back to Admin Email: ${fallbackEmail})` : ""}
+      </div>
+      {isLoading ? (
+        <div style={{ fontSize: "13px", color: "#94A3B8" }}>Loading staff…</div>
+      ) : staff.length === 0 ? (
+        <div style={{ fontSize: "13px", color: "#94A3B8" }}>No active staff found.</div>
+      ) : (
+        <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
+          {staff.map((p) => {
+            const isOn = selected.includes(p.email);
+            return (
+              <button
+                key={p.id}
+                type="button"
+                onClick={() => toggle(p.email)}
+                style={{
+                  display: "flex", alignItems: "center", gap: "6px",
+                  padding: "6px 12px", borderRadius: "999px", fontSize: "13px", fontWeight: 500,
+                  cursor: "pointer",
+                  border: isOn ? "1.5px solid #1565C0" : "1.5px solid #E0E7EF",
+                  background: isOn ? "#EBF2FF" : "#FFFFFF",
+                  color: isOn ? "#1565C0" : "#546E7A",
+                }}
+                title={p.email}
+              >
+                <span
+                  style={{
+                    width: 14, height: 14, borderRadius: 4, flexShrink: 0,
+                    border: isOn ? "none" : "1.5px solid #CBD5E1",
+                    background: isOn ? "#1565C0" : "transparent",
+                    color: "white", fontSize: 10, lineHeight: "14px", textAlign: "center",
+                  }}
+                >
+                  {isOn ? "✓" : ""}
+                </span>
+                {p.full_name || p.email.split("@")[0]}
+                <span style={{ color: "#94A3B8", fontSize: 12 }}>{ROLE_LABELS[p.role as UserRole] ?? p.role}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }

@@ -92,6 +92,15 @@ export interface TemplateParams {
     status_counts: Record<string, number>; overdue_follow_ups: number; pending_payments: number;
   };
   // Client-facing lifecycle touchpoints.
+  followup_digest: {
+    date: string;
+    items: Array<{
+      ref_number: string; client_name: string; company?: string | null; phone?: string | null;
+      email?: string | null; site_city?: string | null; scheduled_date: string;
+      notes?: string | null; is_overdue?: boolean; assigned_to?: string | null;
+    }>;
+    app_url?: string;
+  };
   order_confirmed: { client_name: string; ref_number: string; total_amount: string; advance_amount?: string };
   payment_received: { client_name: string; ref_number: string; amount: string; payment_type: string; balance?: string };
   mobilisation_acknowledged: { client_name: string; ref_number: string; date: string; city: string };
@@ -332,6 +341,55 @@ const TEMPLATES: { [K in TemplateKey]: (p: TemplateParams[K]) => RenderedEmail }
         <p style="text-align:center;font-size:12px;color:#94A3B8;">Click the button above after your visit to submit your observations directly into the system.</p>`,
     }),
   }),
+
+  followup_digest: (p) => {
+    const overdue = p.items.filter((i) => i.is_overdue).length;
+    const rows = p.items
+      .map((i) => {
+        const contact = [i.phone, i.email].filter(Boolean).join(' · ');
+        const who = [i.client_name, i.company].filter(Boolean).join(' — ');
+        return `<tr>
+          <td style="padding:10px 12px;border-bottom:1px solid #E2E8F0;vertical-align:top;">
+            <div style="font-family:monospace;font-weight:600;color:${BRAND.navy};">${esc(i.ref_number)}</div>
+            ${i.is_overdue ? `<span style="display:inline-block;margin-top:4px;background:#FEF2F2;color:${BRAND.red};font-size:11px;font-weight:700;padding:1px 7px;border-radius:10px;">OVERDUE</span>` : ''}
+          </td>
+          <td style="padding:10px 12px;border-bottom:1px solid #E2E8F0;vertical-align:top;">
+            <div style="font-weight:600;">${esc(who)}</div>
+            ${contact ? `<div style="color:${BRAND.muted};font-size:12px;margin-top:2px;">${esc(contact)}</div>` : ''}
+            ${i.site_city ? `<div style="color:${BRAND.muted};font-size:12px;">${esc(i.site_city)}</div>` : ''}
+          </td>
+          <td style="padding:10px 12px;border-bottom:1px solid #E2E8F0;vertical-align:top;white-space:nowrap;">${esc(i.scheduled_date)}</td>
+          <td style="padding:10px 12px;border-bottom:1px solid #E2E8F0;vertical-align:top;">
+            ${i.notes ? esc(i.notes) : `<span style="color:${BRAND.muted};">—</span>`}
+            ${i.assigned_to ? `<div style="color:${BRAND.muted};font-size:12px;margin-top:2px;">Assigned: ${esc(i.assigned_to)}</div>` : ''}
+          </td>
+        </tr>`;
+      })
+      .join('');
+
+    return {
+      subject: `Follow-ups for ${p.date} — ${p.items.length} pending${overdue ? ` (${overdue} overdue)` : ''}`,
+      html: layout({
+        heading: 'Follow-ups Due',
+        subheading: p.date,
+        body: `
+          <p style="font-size:16px;">You have <strong>${p.items.length}</strong> follow-up${p.items.length === 1 ? '' : 's'} to action today${overdue ? `, of which <strong style="color:${BRAND.red};">${overdue}</strong> ${overdue === 1 ? 'is' : 'are'} overdue` : ''}.</p>
+          <table style="width:100%;border-collapse:collapse;margin:18px 0;font-size:13px;">
+            <thead>
+              <tr style="background:${BRAND.surface};color:${BRAND.muted};text-align:left;">
+                <th style="padding:9px 12px;font-size:12px;text-transform:uppercase;letter-spacing:.04em;">Reference</th>
+                <th style="padding:9px 12px;font-size:12px;text-transform:uppercase;letter-spacing:.04em;">Client / Company</th>
+                <th style="padding:9px 12px;font-size:12px;text-transform:uppercase;letter-spacing:.04em;">Due</th>
+                <th style="padding:9px 12px;font-size:12px;text-transform:uppercase;letter-spacing:.04em;">Notes</th>
+              </tr>
+            </thead>
+            <tbody>${rows}</tbody>
+          </table>
+          ${p.app_url ? button(`${p.app_url}/follow-ups`, 'Open Follow-ups') : ''}
+          <p style="font-size:12px;color:${BRAND.muted};">You are receiving this because you are on the follow-up digest list. Update recipients in Settings.</p>`,
+      }),
+    };
+  },
 
   order_confirmed: (p) => ({
     subject: `Thank You — Order Confirmed — ${p.ref_number}`,

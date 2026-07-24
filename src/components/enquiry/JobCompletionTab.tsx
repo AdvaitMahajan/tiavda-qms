@@ -42,14 +42,16 @@ export function JobCompletionTab({ enquiryId }: { enquiryId: string }) {
   const [reminders, setReminders] = useState<JobReminder[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const fetchData = useCallback(async () => {
-    setLoading(true);
+  const fetchData = useCallback(async (opts?: { silent?: boolean }) => {
+    // Skeleton on first load only; refreshes after an action stay silent so the
+    // section (and any open form) is not unmounted by the `loading` early return.
+    if (!opts?.silent) setLoading(true);
     let jc = await apiClient.get<JobCompletion | null>("/job-completion", { enquiry_id: enquiryId });
     if (!jc) jc = await apiClient.post<JobCompletion>("/job-completion", { enquiry_id: enquiryId });
     setJob(jc);
     const rem = await apiClient.get<JobReminder[]>("/job-completion/reminders", { enquiry_id: enquiryId });
     setReminders(rem ?? []);
-    setLoading(false);
+    if (!opts?.silent) setLoading(false);
   }, [enquiryId]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
@@ -85,7 +87,7 @@ export function JobCompletionTab({ enquiryId }: { enquiryId: string }) {
         }
       }
     }
-    fetchData();
+    fetchData({ silent: true });
   };
 
   const handleMarkDone = async (stage: StageConfig) => {
@@ -153,7 +155,7 @@ export function JobCompletionTab({ enquiryId }: { enquiryId: string }) {
     } else {
       toast.success(`${stage.title} marked as done!`);
     }
-    fetchData();
+    fetchData({ silent: true });
   };
 
   const handleReportUpload = async (file: File) => {

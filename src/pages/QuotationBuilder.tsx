@@ -89,6 +89,16 @@ type Client = {
 const round2 = (n: number) => Math.round(n * 100) / 100;
 const uid = () => crypto.randomUUID();
 
+/**
+ * Quantities are entered manually on every quotation — only RATES prefill
+ * (Quotation Config, with the City Rate Matrix overriding the rows it manages).
+ * So freshly generated line items start at qty 0; the "Recalculate" button
+ * remains the explicit, opt-in way to derive quantities from boreholes × depth.
+ */
+function withBlankQuantities<T extends { qty: number; amount: number }>(items: T[]): T[] {
+  return items.map((it) => ({ ...it, qty: 0, amount: 0 }));
+}
+
 const inputStyle = (focused: boolean) => ({
   width: "100%",
   padding: "8px 12px",
@@ -471,7 +481,7 @@ export default function QuotationBuilder() {
             mobilisationBasis: (resolved?.bases?.[MOBILISATION_RATE_KEY] as RateBasis) ?? undefined,
             cityCustomRows: resolved?.customRows?.filter((r) => r.applies_to !== "boq"),
           });
-          setItems(generated.map((it) => ({ ...it, id: uid() })));
+          setItems(withBlankQuantities(generated).map((it) => ({ ...it, id: uid() })));
         }
       }
 
@@ -492,8 +502,11 @@ export default function QuotationBuilder() {
     return boqRates;
   }, [allSettings, cityRates]);
 
-  const doRecalculate = useCallback(() => {
+  const doRecalculate = useCallback((opts?: { blank?: boolean }) => {
     if (!enquiry) return;
+    // opts.blank => regenerate rows with manual (zero) quantities, used when the
+    // template changes. Without it this derives quantities from boreholes.
+    const blank = opts?.blank === true;
     // BOQ templates: rebuild quantities from boreholes using the shared drivers,
     // but PRESERVE manually-entered quantities for non-driven items (e.g. the
     // selective lab tests, which have no driver) so recalculation doesn't zero them.
@@ -515,10 +528,10 @@ export default function QuotationBuilder() {
         }
         return f;
       });
-      setItems(merged);
+      setItems(blank ? withBlankQuantities(merged) : merged);
       setManuallyEdited(false);
       setConfirmRecalc(false);
-      toast.success("Quantities recalculated from boreholes (manual lab quantities preserved)");
+      if (!blank) toast.success("Quantities recalculated from boreholes (manual lab quantities preserved)");
       return;
     }
     const generated = buildLineItems({
@@ -533,10 +546,10 @@ export default function QuotationBuilder() {
       mobilisationBasis: (cityRates?.bases?.[MOBILISATION_RATE_KEY] as RateBasis) ?? undefined,
       cityCustomRows: cityRates?.customRows?.filter((r) => r.applies_to !== "boq"),
     });
-    setItems(generated.map((it) => ({ ...it, id: uid() })));
+    setItems((blank ? withBlankQuantities(generated) : generated).map((it) => ({ ...it, id: uid() })));
     setManuallyEdited(false);
     setConfirmRecalc(false);
-    toast.success("Line items recalculated from parameters");
+    if (!blank) toast.success("Line items recalculated from parameters");
   }, [enquiry, isBoq, currentTemplate, buildBoqRates, numBores, depthPerBore, soilFraction, distanceKm, rates, siteConditions, costOverrides, cityRates]);
 
   const handleRecalculate = () => {
@@ -550,15 +563,15 @@ export default function QuotationBuilder() {
   const doTemplateSwitch = (newType: string) => {
     setTemplateType(newType);
     if (newType === TEMPLATE_IDS.ORIGINAL_SI) {
-      doRecalculate();
+      doRecalculate({ blank: true });
     } else {
       const tmpl = getTemplateById(newType);
       if (tmpl) {
-        setItems(buildTemplateLineItems(tmpl, buildBoqRates(), {
+        setItems(withBlankQuantities(buildTemplateLineItems(tmpl, buildBoqRates(), {
           numBores,
           depthPerBore,
           soilFraction: soilFraction / 100,
-        }));
+        })));
         setManuallyEdited(false);
       }
     }
@@ -1803,7 +1816,7 @@ export default function QuotationBuilder() {
                 Cancel
               </button>
               <button
-                onClick={doRecalculate}
+                onClick={() => doRecalculate()}
                 style={{
                   padding: "8px 16px",
                   background: "#1565C0",

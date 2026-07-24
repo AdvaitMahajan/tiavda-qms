@@ -6,7 +6,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useRole } from "@/hooks/useRole";
 import { AssigneeDropdown } from "@/components/AssigneeDropdown";
 import { toast } from "sonner";
-import { formatCurrency } from "@/lib/utils";
+import { formatCurrency, clientDisplayName } from "@/lib/utils";
 import { sendNotification } from "@/lib/notifications";
 import { sendClientTouchpoint } from "@/lib/clientTouchpoints";
 import { pdf } from "@react-pdf/renderer";
@@ -496,9 +496,12 @@ export default function EnquiryDetail() {
   const [contactPhone, setContactPhone] = useState("");
   const [savingContact, setSavingContact] = useState(false);
 
-  const fetchAll = useCallback(async () => {
+  const fetchAll = useCallback(async (opts?: { silent?: boolean }) => {
     if (!id) return;
-    setLoading(true);
+    // Only the initial load shows the page spinner. Post-action refreshes stay
+    // silent — flipping `loading` remounts the whole page (early return below),
+    // closing open dialogs and resetting tab state.
+    if (!opts?.silent) setLoading(true);
     try {
       const enq = await apiClient.get<Enquiry>(`/enquiries/${id}`);
       setEnquiry(enq);
@@ -511,7 +514,7 @@ export default function EnquiryDetail() {
     } catch {
       setEnquiry(null);
     } finally {
-      setLoading(false);
+      if (!opts?.silent) setLoading(false);
     }
   }, [id]);
 
@@ -534,7 +537,7 @@ export default function EnquiryDetail() {
       });
       setEditingContact(false);
       toast.success("Contact person updated");
-      fetchAll();
+      fetchAll({ silent: true });
     } catch (err: any) {
       toast.error(err.message || "Failed to update contact");
     } finally {
@@ -594,7 +597,7 @@ export default function EnquiryDetail() {
       });
     } catch (e) { toast.error("Failed to save: " + (e as Error).message); return; }
     toast.success("Line items updated — please regenerate the PDF.");
-    fetchAll();
+    fetchAll({ silent: true });
   };
 
   const generatePdf = async (q: Quotation) => {
@@ -700,7 +703,7 @@ export default function EnquiryDetail() {
       toast.error("PDF generation failed: " + (err.message || "Unknown error"));
     } finally {
       setPdfLoading(null);
-      fetchAll();
+      fetchAll({ silent: true });
     }
   };
 
@@ -722,7 +725,7 @@ export default function EnquiryDetail() {
       toast.success(`Variant ${approveTarget.variant} approved successfully!`);
       const approvedId = approveTarget.id;
       setApproveTarget(null);
-      await fetchAll();
+      await fetchAll({ silent: true });
       const updatedQ = await apiClient.get<Quotation>(`/quotations/${approvedId}`);
       if (updatedQ) generatePdf(updatedQ);
     } catch (err: any) {
@@ -859,7 +862,7 @@ export default function EnquiryDetail() {
       }
 
       setSendModalOpen(false);
-      fetchAll();
+      fetchAll({ silent: true });
     } catch (err: any) {
       toast.error(err.message || "Failed to send quotation");
     } finally {
@@ -886,7 +889,7 @@ export default function EnquiryDetail() {
       toast.success("Enquiry marked as lost.");
       setLostModalOpen(false);
       setLostReason("");
-      fetchAll();
+      fetchAll({ silent: true });
     } catch (err: any) {
       toast.error(err.message || "Failed to mark as lost");
     } finally {
@@ -980,7 +983,7 @@ export default function EnquiryDetail() {
 
       toast.success("Deal marked as Won! Payment record and job tracker created.");
       setWonModalOpen(false);
-      fetchAll();
+      fetchAll({ silent: true });
     } catch (err: any) {
       toast.error(err.message || "Failed to mark as won");
     } finally {
@@ -1004,7 +1007,7 @@ export default function EnquiryDetail() {
         to_status: "follow_up",
       });
       toast.success("Enquiry reactivated — moved to Follow Up.");
-      fetchAll();
+      fetchAll({ silent: true });
     } catch (err: any) {
       toast.error(err.message || "Failed to reactivate");
     } finally {
@@ -1113,7 +1116,10 @@ export default function EnquiryDetail() {
           </p>
           {client ? (
             <div className="space-y-2">
-              <p className="text-base font-semibold" style={{ color: "#0A1929" }}>{client.name}</p>
+              <p className="text-base font-semibold" style={{ color: "#0A1929" }}>{clientDisplayName(client)}</p>
+              {client.company && (
+                <p className="text-sm" style={{ color: "#546E7A" }}>{client.name}</p>
+              )}
               {client.phone && (
                 <div className="flex items-center gap-2">
                   <Phone style={{ width: "13px", height: "13px", color: "#546E7A", flexShrink: 0 }} />

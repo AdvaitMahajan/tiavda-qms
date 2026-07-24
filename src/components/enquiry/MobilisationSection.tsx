@@ -40,8 +40,11 @@ export function MobilisationSection({ enquiryId, enquiry, onStatusChange }: { en
   const [reproposeDate, setReproposeDate] = useState("");
   const [reproposing, setReproposing] = useState(false);
 
-  const fetchMob = useCallback(async () => {
-    setLoading(true);
+  const fetchMob = useCallback(async (opts?: { silent?: boolean }) => {
+    // Only the first load shows the skeleton. Background polls/refreshes must stay
+    // silent: flipping `loading` unmounts this subtree (see the early return below),
+    // which would close any dialog the user has open mid-edit.
+    if (!opts?.silent) setLoading(true);
 
     // Surface the client's pre-consent to demobilization/re-mobilization charges
     // captured at intake (BRD legal/liability field) so the team can act on it.
@@ -70,17 +73,18 @@ export function MobilisationSection({ enquiryId, enquiry, onStatusChange }: { en
       const token = await apiClient.get<ConfirmToken | null>(`/mobilisation/${data.id}/confirmation-token`);
       setConfirmToken(token);
     }
-    setLoading(false);
+    if (!opts?.silent) setLoading(false);
   }, [enquiryId]);
 
   useEffect(() => { fetchMob(); }, [fetchMob]);
 
   // Poll for drive-folder status / confirmation updates (replaces realtime).
+  // Paused while a dialog is open so a refresh can never disturb an in-progress edit.
   useEffect(() => {
-    if (!enquiryId) return;
-    const interval = setInterval(() => { fetchMob(); }, 10_000);
+    if (!enquiryId || showForm || showRepropose) return;
+    const interval = setInterval(() => { fetchMob({ silent: true }); }, 10_000);
     return () => clearInterval(interval);
-  }, [enquiryId, fetchMob]);
+  }, [enquiryId, fetchMob, showForm, showRepropose]);
 
   const handleSave = async () => {
     if (!mobDate) { toast.error("Mobilisation date is required"); return; }
@@ -138,7 +142,7 @@ export function MobilisationSection({ enquiryId, enquiry, onStatusChange }: { en
     toast.success("Mobilisation scheduled. Google Drive folder will be created automatically.");
     setShowForm(false);
     setSaving(false);
-    fetchMob();
+    fetchMob({ silent: true });
     onStatusChange?.();
 
     // Fire-and-forget: create Google Drive folder + notify client
@@ -282,7 +286,7 @@ export function MobilisationSection({ enquiryId, enquiry, onStatusChange }: { en
         metadata: { confirmed_by: "team_lead_accepted_alternate", date: confirmToken.alternate_date },
       });
       toast.success("Accepted the client's proposed date — mobilisation confirmed.");
-      fetchMob();
+      fetchMob({ silent: true });
     } catch {
       toast.error("Failed to accept proposed date");
     } finally {
@@ -308,7 +312,7 @@ export function MobilisationSection({ enquiryId, enquiry, onStatusChange }: { en
       toast.success("New date sent to client for confirmation.");
       setShowRepropose(false);
       setReproposeDate("");
-      fetchMob();
+      fetchMob({ silent: true });
     } catch {
       toast.error("Failed to send new date");
     } finally {
@@ -464,7 +468,7 @@ export function MobilisationSection({ enquiryId, enquiry, onStatusChange }: { en
                       });
                     }
                     toast.success("Confirmed on behalf of client");
-                    fetchMob();
+                    fetchMob({ silent: true });
                   } catch {
                     toast.error("Failed to override");
                   } finally {

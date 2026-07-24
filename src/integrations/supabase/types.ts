@@ -826,6 +826,10 @@ export type Database = {
           site_contact_phone: string | null
           team_description: string | null
           team_lead_id: string | null
+          team_lead_status: string
+          team_lead_responded_at: string | null
+          team_lead_proposed_date: string | null
+          team_lead_note: string | null
           updated_at: string
         }
         Insert: {
@@ -850,6 +854,10 @@ export type Database = {
           site_contact_phone?: string | null
           team_description?: string | null
           team_lead_id?: string | null
+          team_lead_status?: string
+          team_lead_responded_at?: string | null
+          team_lead_proposed_date?: string | null
+          team_lead_note?: string | null
           updated_at?: string
         }
         Update: {
@@ -874,6 +882,10 @@ export type Database = {
           site_contact_phone?: string | null
           team_description?: string | null
           team_lead_id?: string | null
+          team_lead_status?: string
+          team_lead_responded_at?: string | null
+          team_lead_proposed_date?: string | null
+          team_lead_note?: string | null
           updated_at?: string
         }
         Relationships: [

@@ -40,6 +40,13 @@ export function MobilisationSection({ enquiryId, enquiry, onStatusChange }: { en
   const [reproposeDate, setReproposeDate] = useState("");
   const [reproposing, setReproposing] = useState(false);
 
+  // Internal acknowledgement by the assigned team member (separate from the
+  // client's confirmation): accept the date, or request a reschedule.
+  const [showTlReschedule, setShowTlReschedule] = useState(false);
+  const [tlProposedDate, setTlProposedDate] = useState("");
+  const [tlNote, setTlNote] = useState("");
+  const [tlSaving, setTlSaving] = useState(false);
+
   const fetchMob = useCallback(async (opts?: { silent?: boolean }) => {
     // Only the first load shows the skeleton. Background polls/refreshes must stay
     // silent: flipping `loading` unmounts this subtree (see the early return below),
@@ -86,6 +93,117 @@ export function MobilisationSection({ enquiryId, enquiry, onStatusChange }: { en
     return () => clearInterval(interval);
   }, [enquiryId, fetchMob, showForm, showRepropose]);
 
+  /** Notify every admin/super-admin in the org so the scheduler can review. */
+  const notifyAdmins = useCallback(
+    async (payload: { type: string; title: string; body: string }) => {
+      try {
+        const [admins, supers] = await Promise.all([
+          apiClient.get<Array<{ id: string }>>("/profiles", { role: "admin" }).catch(() => []),
+          apiClient.get<Array<{ id: string }>>("/profiles", { role: "super_admin" }).catch(() => []),
+        ]);
+        const ids = [...new Set([...admins, ...supers].map((p) => p.id))];
+        await Promise.all(
+          ids.map((uid) =>
+            apiClient
+              .post("/notifications", { ...payload, user_id: uid, enquiry_id: enquiryId, link: `/enquiries/${enquiryId}` })
+              .catch(() => {}),
+          ),
+        );
+      } catch {
+        /* notifying admins is best-effort */
+      }
+    },
+    [enquiryId],
+  );
+
+  /** Assigned member accepts the scheduled date. */
+  const handleTeamLeadAccept = async () => {
+    if (!mob) return;
+    setTlSaving(true);
+    try {
+      await apiClient.patch(`/mobilisation/${mob.id}`, {
+        team_lead_status: "accepted",
+        team_lead_responded_at: new Date().toISOString(),
+        team_lead_proposed_date: null,
+        team_lead_note: null,
+      });
+      await apiClient.post(`/enquiries/${enquiryId}/events`, {
+        event_type: "mobilisation_team_accepted",
+        metadata: { date: mob.mobilisation_date, by: "team_lead" },
+      });
+      await notifyAdmins({
+        type: "mobilisation_team_accepted",
+        title: `Mobilisation accepted — ${enquiry?.ref_number ?? ""}`,
+        body: `${teamLeadName ?? "The assigned team member"} accepted the mobilisation on ${mob.mobilisation_date}.`,
+      });
+      toast.success("Schedule accepted. The admin has been notified.");
+      fetchMob({ silent: true });
+    } catch (e) {
+      toast.error((e as Error).message || "Could not accept the schedule");
+    } finally {
+      setTlSaving(false);
+    }
+  };
+
+  /** Assigned member requests a reschedule, proposing a new date. */
+  const handleTeamLeadRequestReschedule = async () => {
+    if (!mob || !tlProposedDate) { toast.error("Please propose a new date"); return; }
+    setTlSaving(true);
+    try {
+      await apiClient.patch(`/mobilisation/${mob.id}`, {
+        team_lead_status: "reschedule_requested",
+        team_lead_responded_at: new Date().toISOString(),
+        team_lead_proposed_date: tlProposedDate,
+        team_lead_note: tlNote || null,
+      });
+      await apiClient.post(`/enquiries/${enquiryId}/events`, {
+        event_type: "mobilisation_reschedule_requested",
+        metadata: { new_date: tlProposedDate, by: "team_lead", reason: tlNote || null },
+      });
+      await notifyAdmins({
+        type: "mobilisation_reschedule_requested",
+        title: `Reschedule requested — ${enquiry?.ref_number ?? ""}`,
+        body: `${teamLeadName ?? "The assigned team member"} requested ${tlProposedDate} instead of ${mob.mobilisation_date}${tlNote ? ` — ${tlNote}` : ""}.`,
+      });
+      toast.success("Reschedule requested. The admin has been notified.");
+      setShowTlReschedule(false);
+      setTlProposedDate("");
+      setTlNote("");
+      fetchMob({ silent: true });
+    } catch (e) {
+      toast.error((e as Error).message || "Could not request a reschedule");
+    } finally {
+      setTlSaving(false);
+    }
+  };
+
+  /** Admin applies the member's proposed date (re-issues the client confirmation). */
+  const handleApplyProposedDate = async () => {
+    if (!mob?.team_lead_proposed_date) return;
+    const newDate = mob.team_lead_proposed_date;
+    setTlSaving(true);
+    try {
+      await apiClient.patch(`/mobilisation/${mob.id}`, {
+        mobilisation_date: newDate,
+        team_lead_status: "accepted",
+        team_lead_responded_at: new Date().toISOString(),
+        client_confirmed: false,
+        client_confirmed_at: null,
+      });
+      await issueAndSendConfirmation(newDate);
+      await apiClient.post(`/enquiries/${enquiryId}/events`, {
+        event_type: "mobilisation_rescheduled",
+        metadata: { new_date: newDate, by: "admin_applied_team_request" },
+      });
+      toast.success(`Mobilisation moved to ${newDate}. Client re-notified.`);
+      fetchMob({ silent: true });
+    } catch (e) {
+      toast.error((e as Error).message || "Could not apply the proposed date");
+    } finally {
+      setTlSaving(false);
+    }
+  };
+
   const handleSave = async () => {
     if (!mobDate) { toast.error("Mobilisation date is required"); return; }
     setSaving(true);
@@ -111,8 +229,8 @@ export function MobilisationSection({ enquiryId, enquiry, onStatusChange }: { en
       await apiClient.post("/notifications", {
         user_id: teamLeadId,
         type: "assignment",
-        title: `Team Lead for ${enquiry.ref_number}`,
-        body: `You have been assigned as team lead for mobilisation on ${dateStr} at ${enquiry.site_city}`,
+        title: `Mobilisation scheduled — ${enquiry.ref_number}`,
+        body: `You are the team lead for mobilisation on ${dateStr} at ${enquiry.site_city}. Please open the enquiry to accept the date or request a reschedule.`,
         enquiry_id: enquiry.id,
         link: `/enquiries/${enquiry.id}`,
       });
@@ -378,6 +496,98 @@ export function MobilisationSection({ enquiryId, enquiry, onStatusChange }: { en
             <span>No demobilization-charges consent on record for this enquiry. Confirm liability terms before mobilizing.</span>
           </div>
         )}
+        {/* Assigned team member's acknowledgement (internal, separate from the client) */}
+        <div className="mt-3 space-y-2">
+          <div style={{ borderTop: "1px solid #E0E7EF", paddingTop: "10px" }}>
+            <p className="text-[12px] font-semibold uppercase tracking-wide mb-2" style={{ color: "#546E7A" }}>
+              Team Confirmation{teamLeadName ? ` — ${teamLeadName}` : ""}
+            </p>
+
+            {mob.team_lead_status === "accepted" ? (
+              <div className="flex items-center gap-2">
+                <CheckCircle2 className="h-4 w-4" style={{ color: "#15673A" }} />
+                <span className="text-[13px] font-semibold" style={{ color: "#15673A" }}>
+                  Accepted by the assigned team member
+                </span>
+              </div>
+            ) : mob.team_lead_status === "reschedule_requested" ? (
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <AlertTriangle className="h-4 w-4" style={{ color: "#92400E" }} />
+                  <span className="text-[13px] font-semibold" style={{ color: "#92400E" }}>
+                    Reschedule requested
+                  </span>
+                </div>
+                <div className="text-[13px] p-2 rounded-lg" style={{ background: "#FEF3C7" }}>
+                  <p>
+                    <strong>Proposed:</strong>{" "}
+                    {mob.team_lead_proposed_date
+                      ? new Date(mob.team_lead_proposed_date).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })
+                      : "—"}
+                  </p>
+                  {mob.team_lead_note && <p className="mt-1">{mob.team_lead_note}</p>}
+                </div>
+                {/* Only the scheduler acts on the request. */}
+                {user?.id !== mob.team_lead_id && (
+                  <button
+                    onClick={handleApplyProposedDate}
+                    disabled={tlSaving || !mob.team_lead_proposed_date}
+                    className="flex items-center gap-1.5 text-[13px] font-semibold px-3 py-1.5 rounded-lg transition-all disabled:opacity-50"
+                    style={{ background: "linear-gradient(135deg,#15673A,#22C55E)", color: "white" }}
+                  >
+                    <CheckCircle2 className="h-3 w-3" />
+                    {tlSaving ? "Applying…" : "Apply Proposed Date"}
+                  </button>
+                )}
+              </div>
+            ) : user?.id && user.id === mob.team_lead_id ? (
+              // The assigned member is viewing: let them respond.
+              <div className="space-y-2">
+                <p className="text-[13px]" style={{ color: "#546E7A" }}>
+                  You are assigned to this mobilisation. Please accept the date or request a reschedule.
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    onClick={handleTeamLeadAccept}
+                    disabled={tlSaving}
+                    className="flex items-center gap-1.5 text-[13px] font-semibold px-3 py-1.5 rounded-lg transition-all disabled:opacity-50"
+                    style={{ background: "linear-gradient(135deg,#15673A,#22C55E)", color: "white" }}
+                  >
+                    <CheckCircle2 className="h-3 w-3" />
+                    {tlSaving ? "Saving…" : "Accept Schedule"}
+                  </button>
+                  <button
+                    onClick={() => { setShowTlReschedule((v) => !v); setTlProposedDate(""); setTlNote(""); }}
+                    className="flex items-center gap-1.5 text-[13px] font-semibold px-3 py-1.5 rounded-lg transition-all"
+                    style={{ border: "1.5px solid #92400E", color: "#92400E", background: "transparent" }}
+                  >
+                    <CalendarDays className="h-3 w-3" />
+                    Request Reschedule
+                  </button>
+                </div>
+                {showTlReschedule && (
+                  <div className="space-y-2 p-2 rounded-lg" style={{ background: "#F8FAFC", border: "1px solid #E0E7EF" }}>
+                    <Label className="text-[12px]">Proposed date</Label>
+                    <Input type="date" value={tlProposedDate} onChange={(e) => setTlProposedDate(e.target.value)} />
+                    <Label className="text-[12px]">Reason (optional)</Label>
+                    <Textarea rows={2} value={tlNote} onChange={(e) => setTlNote(e.target.value)} placeholder="Why the date needs to change" />
+                    <Button size="sm" onClick={handleTeamLeadRequestReschedule} disabled={tlSaving || !tlProposedDate}>
+                      {tlSaving ? "Sending…" : "Send Request"}
+                    </Button>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="flex items-center gap-2">
+                <Clock className="h-4 w-4" style={{ color: "#92400E" }} />
+                <span className="text-[13px]" style={{ color: "#92400E" }}>
+                  Awaiting response from {teamLeadName ?? "the assigned team member"}
+                </span>
+              </div>
+            )}
+          </div>
+        </div>
+
         {/* Client Confirmation Status */}
         <div className="mt-3 space-y-2">
           <div style={{ borderTop: "1px solid #E0E7EF", paddingTop: "10px" }}>

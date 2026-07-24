@@ -8,7 +8,7 @@ import { toast } from "sonner";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Home, Building2, Factory, Landmark, HelpCircle, CheckCircle, AlertTriangle,
-  Minus, Plus, Loader2, ArrowLeft, Upload, X, FileIcon,
+  Loader2, ArrowLeft, Upload, X, FileIcon,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -43,6 +43,8 @@ type FormData = {
   electricity_available: string;
   security_arrangement: string;
   permissions_obtained: string;
+  labour_accommodation_available: string;
+  labour_accommodation_permission: string;
   water_quantity: string;
   safety_required: boolean;
   safety_requirements: string;
@@ -80,7 +82,8 @@ const initialForm: FormData = {
   soil_type_hint: "",
   distance_km: "",
   site_access: "", site_access_types: [], water_available: "", electricity_available: "",
-  security_arrangement: "", permissions_obtained: "", water_quantity: "",
+  security_arrangement: "", permissions_obtained: "",
+  labour_accommodation_available: "", labour_accommodation_permission: "", water_quantity: "",
   safety_required: false, safety_requirements: "",
   architect_name: "", architect_phone: "", architect_address: "",
   rcc_consultant_name: "", rcc_consultant_phone: "", rcc_consultant_address: "",
@@ -125,36 +128,6 @@ function extractCoordsFromMapsUrl(url: string): { lat: number; lng: number } | n
 
 function getPublicClientDebugContext() {
   return { client: PUBLIC_SUPABASE_CLIENT_NAME };
-}
-
-function Stepper({ value, onChange, min, max }: { value: number; onChange: (v: number) => void; min: number; max: number }) {
-  return (
-    <div className="flex items-center gap-3">
-      <button
-        type="button"
-        onClick={() => onChange(Math.max(min, value - 1))}
-        disabled={value <= min}
-        className="flex h-9 w-9 items-center justify-center rounded-xl transition-all disabled:opacity-40"
-        style={{ border: "1.5px solid #E0E7EF", background: "#FAFBFC" }}
-        onMouseEnter={(e) => { if (value > min) (e.currentTarget as HTMLElement).style.background = "#F0F4F8"; }}
-        onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = "#FAFBFC"; }}
-      >
-        <Minus className="h-4 w-4" style={{ color: "#546E7A" }} />
-      </button>
-      <span className="w-10 text-center font-mono text-lg font-semibold" style={{ color: "#0A1929" }}>{value}</span>
-      <button
-        type="button"
-        onClick={() => onChange(Math.min(max, value + 1))}
-        disabled={value >= max}
-        className="flex h-9 w-9 items-center justify-center rounded-xl transition-all disabled:opacity-40"
-        style={{ border: "1.5px solid #E0E7EF", background: "#FAFBFC" }}
-        onMouseEnter={(e) => { if (value < max) (e.currentTarget as HTMLElement).style.background = "#F0F4F8"; }}
-        onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = "#FAFBFC"; }}
-      >
-        <Plus className="h-4 w-4" style={{ color: "#546E7A" }} />
-      </button>
-    </div>
-  );
 }
 
 function ProgressIndicator({ current, completed }: { current: number; completed: number[] }) {
@@ -317,6 +290,14 @@ export default function Intake() {
       if (form.electricity_available) extendedData.electricity_available = form.electricity_available === "yes";
       if (form.security_arrangement) extendedData.security_arrangement = form.security_arrangement === "yes";
       if (form.permissions_obtained) extendedData.permissions_obtained = form.permissions_obtained === "yes";
+      if (form.labour_accommodation_available) {
+        const hasSpace = form.labour_accommodation_available === "yes";
+        extendedData.labour_accommodation_available = hasSpace;
+        // Permission only applies when space exists; otherwise leave it unanswered.
+        if (hasSpace && form.labour_accommodation_permission) {
+          extendedData.labour_accommodation_permission = form.labour_accommodation_permission === "yes";
+        }
+      }
       if (form.contact_person.trim()) extendedData.contact_person = form.contact_person.trim();
       if (form.gst_number.trim()) extendedData.gst_number = form.gst_number.trim();
       extendedData.safety_required = form.safety_required;
@@ -473,41 +454,25 @@ export default function Intake() {
                 <CheckCircle style={{ width: "36px", height: "36px", color: "white" }} />
               </div>
             </div>
-            <h2 className="mb-2 font-bold text-2xl" style={{ fontFamily: "Sora, sans-serif", color: "#0A1929" }}>
-              Submitted Successfully!
+            {/* Clients have no login and take no further action here — this is a
+                closing thank-you only, deliberately with no navigation. */}
+            <h2 className="mb-3 font-bold text-2xl" style={{ fontFamily: "Sora, sans-serif", color: "#0A1929" }}>
+              Thank you
             </h2>
-            <p className="mb-1 text-sm" style={{ color: "#546E7A" }}>Your Reference Number:</p>
+            <p className="text-sm" style={{ color: "#546E7A", lineHeight: 1.6 }}>
+              We&rsquo;ve received your project details.
+            </p>
+            <p className="mt-5 mb-1 text-[13px]" style={{ color: "#90A4AE" }}>Your reference number</p>
             <p
-              className="text-3xl font-bold gradient-text"
+              className="text-2xl font-bold gradient-text"
               style={{ fontFamily: "JetBrains Mono, monospace" }}
             >
               {refNumber}
             </p>
-            <p className="mt-4 text-sm" style={{ color: "#546E7A" }}>Our team will contact you shortly.</p>
-            {isAdmin && (
-              <div className="mt-6 flex gap-3 justify-center flex-wrap">
-                <button
-                  onClick={() => navigate("/dashboard")}
-                  className="px-4 py-2.5 rounded-xl text-sm font-semibold transition-all"
-                  style={{ background: "linear-gradient(135deg,#0A1929,#1565C0)", color: "white", boxShadow: "0 4px 12px rgba(10,25,41,0.3)" }}
-                  onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.transform = "translateY(-1px)"; }}
-                  onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.transform = "translateY(0)"; }}
-                >
-                  Go to Dashboard
-                </button>
-                {submittedEnquiryId && (
-                  <button
-                    onClick={() => navigate("/enquiries/" + submittedEnquiryId)}
-                    className="px-4 py-2.5 rounded-xl text-sm font-semibold transition-all"
-                    style={{ border: "1.5px solid #1565C0", color: "#1565C0", background: "transparent" }}
-                    onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = "#EBF2FF"; }}
-                    onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = "transparent"; }}
-                  >
-                    View Enquiry
-                  </button>
-                )}
-              </div>
-            )}
+            <p className="mt-5 text-sm" style={{ color: "#546E7A", lineHeight: 1.6 }}>
+              Our team will review everything and reach out to you shortly.
+              You can safely close this page.
+            </p>
           </div>
         </div>
       </div>
@@ -789,13 +754,35 @@ export default function Intake() {
                         <label className="mb-2 block" style={{ fontSize: "12px", fontWeight: 600, color: "#546E7A", textTransform: "uppercase", letterSpacing: "0.05em" }}>
                           Floors above ground
                         </label>
-                        <Stepper value={form.num_floors} onChange={(v) => updateForm({ num_floors: v })} min={0} max={50} />
+                        <Input
+                          type="number"
+                          min={0}
+                          placeholder="e.g. 12"
+                          value={form.num_floors === 0 ? "" : String(form.num_floors)}
+                          onChange={(e) => {
+                            const raw = e.target.value;
+                            const parsed = parseInt(raw, 10);
+                            updateForm({ num_floors: raw === "" || isNaN(parsed) ? 0 : Math.max(0, parsed) });
+                          }}
+                          style={{ borderColor: "#E0E7EF", borderRadius: "10px" }}
+                        />
                       </div>
                       <div>
                         <label className="mb-2 block" style={{ fontSize: "12px", fontWeight: 600, color: "#546E7A", textTransform: "uppercase", letterSpacing: "0.05em" }}>
                           Basement floors
                         </label>
-                        <Stepper value={form.basement_floors} onChange={(v) => updateForm({ basement_floors: v })} min={0} max={10} />
+                        <Input
+                          type="number"
+                          min={0}
+                          placeholder="e.g. 2"
+                          value={form.basement_floors === 0 ? "" : String(form.basement_floors)}
+                          onChange={(e) => {
+                            const raw = e.target.value;
+                            const parsed = parseInt(raw, 10);
+                            updateForm({ basement_floors: raw === "" || isNaN(parsed) ? 0 : Math.max(0, parsed) });
+                          }}
+                          style={{ borderColor: "#E0E7EF", borderRadius: "10px" }}
+                        />
                       </div>
                       <div>
                         <label className="mb-1.5 block" style={{ fontSize: "12px", fontWeight: 600, color: "#546E7A", textTransform: "uppercase", letterSpacing: "0.05em" }}>
@@ -814,7 +801,18 @@ export default function Intake() {
                         <label className="mb-2 block" style={{ fontSize: "12px", fontWeight: 600, color: "#546E7A", textTransform: "uppercase", letterSpacing: "0.05em" }}>
                           Number of Podiums
                         </label>
-                        <Stepper value={form.num_podiums} onChange={(v) => updateForm({ num_podiums: v })} min={0} max={10} />
+                        <Input
+                          type="number"
+                          min={0}
+                          placeholder="e.g. 1"
+                          value={form.num_podiums === 0 ? "" : String(form.num_podiums)}
+                          onChange={(e) => {
+                            const raw = e.target.value;
+                            const parsed = parseInt(raw, 10);
+                            updateForm({ num_podiums: raw === "" || isNaN(parsed) ? 0 : Math.max(0, parsed) });
+                          }}
+                          style={{ borderColor: "#E0E7EF", borderRadius: "10px" }}
+                        />
                       </div>
                       <div>
                         <label className="mb-2 block" style={{ fontSize: "12px", fontWeight: 600, color: "#546E7A", textTransform: "uppercase", letterSpacing: "0.05em" }}>
@@ -934,6 +932,7 @@ export default function Intake() {
                         ["electricity_available", "Electricity Available"],
                         ["security_arrangement", "Security Arrangement"],
                         ["permissions_obtained", "Permissions Obtained"],
+                        ["labour_accommodation_available", "Space for Labour Accommodation"],
                       ] as const).map(([key, label]) => (
                         <div key={key}>
                           <label className="mb-1.5 block" style={{ fontSize: "12px", fontWeight: 600, color: "#546E7A", textTransform: "uppercase", letterSpacing: "0.05em" }}>
@@ -964,6 +963,43 @@ export default function Intake() {
                         </div>
                       ))}
                     </div>
+
+                    {/* Only meaningful once space is confirmed available. */}
+                    {form.labour_accommodation_available === "yes" && (
+                      <div>
+                        <label className="mb-1.5 block" style={{ fontSize: "12px", fontWeight: 600, color: "#546E7A", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                          Is permission confirmed for labour accommodation?
+                        </label>
+                        <div className="flex gap-2" style={{ maxWidth: "50%" }}>
+                          {["yes", "no"].map((v) => {
+                            const isSelected = form.labour_accommodation_permission === v;
+                            return (
+                              <button
+                                key={v}
+                                type="button"
+                                onClick={() =>
+                                  updateForm({
+                                    labour_accommodation_permission:
+                                      form.labour_accommodation_permission === v ? "" : v,
+                                  })
+                                }
+                                className="flex-1 rounded-xl py-2 text-sm font-medium capitalize transition-all"
+                                style={{
+                                  border: isSelected ? "none" : "1.5px solid #E0E7EF",
+                                  background: isSelected
+                                    ? v === "yes" ? "linear-gradient(135deg,#00897B,#26A69A)" : "linear-gradient(135deg,#C62828,#E53935)"
+                                    : "#FFFFFF",
+                                  color: isSelected ? "white" : "#0A1929",
+                                }}
+                              >
+                                {v}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+
                     <div>
                       <label className="mb-1.5 block" style={{ fontSize: "12px", fontWeight: 600, color: "#546E7A", textTransform: "uppercase", letterSpacing: "0.05em" }}>
                         Water Quantity on Site

@@ -233,6 +233,9 @@ export const enquiries = pgTable('enquiries', {
   site_access: text('site_access'),
   site_access_types: jsonb('site_access_types'),
   permissions_obtained: boolean('permissions_obtained'),
+  // Labour accommodation: space on site, and (only when space exists) confirmed permission.
+  labour_accommodation_available: boolean('labour_accommodation_available'),
+  labour_accommodation_permission: boolean('labour_accommodation_permission'),
   safety_required: boolean('safety_required'),
   safety_requirements: text('safety_requirements'),
   demobilization_consent: boolean('demobilization_consent'),

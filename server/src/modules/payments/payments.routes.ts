@@ -4,7 +4,7 @@ import { desc, eq } from 'drizzle-orm';
 import { db, requireOrgId } from '../../db';
 import { payments } from '../../db/schema';
 import { authenticate } from '../../middleware/auth';
-import { requireEditor, requireFeature } from '../../middleware/roles';
+import { requireBilling, requireFeature } from '../../middleware/roles';
 import { asyncHandler, getParam } from '../../lib/http';
 import { notFound } from '../../lib/errors';
 
@@ -53,7 +53,7 @@ paymentsRouter.get(
 
 paymentsRouter.post(
   '/',
-  requireEditor,
+  requireBilling,
   asyncHandler(async (req, res) => {
     const body = createSchema.parse(req.body);
     const rows = await db.insert(payments).values({ ...body, org_id: requireOrgId() }).returning();
@@ -63,7 +63,7 @@ paymentsRouter.post(
 
 paymentsRouter.patch(
   '/:id',
-  requireEditor,
+  requireBilling,
   asyncHandler(async (req, res) => {
     const body = updateSchema.parse(req.body);
     const rows = await db.update(payments).set(body).where(eq(payments.id, getParam(req, 'id'))).returning();

@@ -4,7 +4,7 @@ import { asc, eq } from 'drizzle-orm';
 import { db, requireOrgId } from '../../db';
 import { rate_matrix } from '../../db/schema';
 import { authenticate, getAuth } from '../../middleware/auth';
-import { requireEditor, requireFeature } from '../../middleware/roles';
+import { requireQuoting, requireFeature } from '../../middleware/roles';
 import { asyncHandler, getParam } from '../../lib/http';
 import { notFound } from '../../lib/errors';
 
@@ -42,7 +42,7 @@ rateMatrixRouter.get(
 
 rateMatrixRouter.post(
   '/',
-  requireEditor,
+  requireQuoting,
   asyncHandler(async (req, res) => {
     const auth = getAuth(req);
     const body = createSchema.parse(req.body);
@@ -56,7 +56,7 @@ rateMatrixRouter.post(
 
 rateMatrixRouter.patch(
   '/:id',
-  requireEditor,
+  requireQuoting,
   asyncHandler(async (req, res) => {
     const body = updateSchema.parse(req.body);
     const rows = await db
@@ -71,7 +71,7 @@ rateMatrixRouter.patch(
 
 rateMatrixRouter.delete(
   '/:id',
-  requireEditor,
+  requireQuoting,
   asyncHandler(async (req, res) => {
     const rows = await db
       .delete(rate_matrix)

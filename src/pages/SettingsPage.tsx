@@ -13,6 +13,7 @@ import {
   AutoRuleRow, InlineNumberConfig, TestButton,
 } from "@/components/settings/SettingsComponents";
 import { TeamManagement } from "@/components/settings/TeamManagement";
+import { TeamDirectory } from "@/components/settings/TeamDirectory";
 import { ROLE_LABELS, ROLE_COLORS, type UserRole } from "@/lib/permissions";
 
 // ─── Setting keys for this page ──────────────────────────────────────────────
@@ -279,6 +280,9 @@ IFSC: ${s.bank_ifsc || "—"}${s.bank_upi ? `\nUPI: ${s.bank_upi}` : ""}`}
               </AutoRuleRow>
             </div>
           </div>
+
+          {/* ── Team Directory (contacts; logins may not exist yet) ── */}
+          <TeamDirectory />
 
           {/* ── Team Management ── */}
           <TeamManagement />

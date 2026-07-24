@@ -12,6 +12,17 @@ export const isEditor = (role: Role): boolean => role === 'super_admin' || role 
 export const isNotViewer = (role: Role): boolean => role !== 'viewer';
 export const isSuperAdmin = (role: Role): boolean => role === 'super_admin';
 
+/**
+ * Capability groups for the operations roles. Each is a strict SUPERSET of the
+ * editor set, so super_admin/admin never lose access they already had — adding
+ * a role can only widen permissions, never narrow them.
+ */
+export const canQuote = (role: Role): boolean => isEditor(role) || role === 'planning';
+export const canBill = (role: Role): boolean =>
+  isEditor(role) || role === 'accounts' || role === 'reporting';
+export const canMobilise = (role: Role): boolean =>
+  isEditor(role) || role === 'mobilization_lead' || role === 'execution_head' || role === 'execution';
+
 export function requireRole(...allowed: Role[]): RequestHandler {
   return (req: Request, _res: Response, next: NextFunction) => {
     if (!req.auth) return next(unauthorized());
@@ -25,6 +36,20 @@ export function requireRole(...allowed: Role[]): RequestHandler {
 export const requireEditor: RequestHandler = (req, _res, next) => {
   if (!req.auth) return next(unauthorized());
   if (!isEditor(req.auth.role)) return next(forbidden('Requires admin privileges'));
+  next();
+};
+
+/** Quotations, rate matrix and pricing config. */
+export const requireQuoting: RequestHandler = (req, _res, next) => {
+  if (!req.auth) return next(unauthorized());
+  if (!canQuote(req.auth.role)) return next(forbidden('Requires quotation privileges'));
+  next();
+};
+
+/** Payments, invoicing and final billing. */
+export const requireBilling: RequestHandler = (req, _res, next) => {
+  if (!req.auth) return next(unauthorized());
+  if (!canBill(req.auth.role)) return next(forbidden('Requires billing privileges'));
   next();
 };
 

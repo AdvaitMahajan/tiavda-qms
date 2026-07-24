@@ -4,7 +4,7 @@ import { and, asc, eq, ilike } from 'drizzle-orm';
 import { db, requireOrgId } from '../../db';
 import { rate_matrix_cities, rate_matrix_rows, rate_matrix_cells } from '../../db/schema';
 import { authenticate } from '../../middleware/auth';
-import { requireEditor, requireFeature } from '../../middleware/roles';
+import { requireQuoting, requireFeature } from '../../middleware/roles';
 import { asyncHandler, getParam } from '../../lib/http';
 import { notFound } from '../../lib/errors';
 
@@ -128,7 +128,7 @@ cityRatesRouter.get(
 // ── Cities (columns) ──
 cityRatesRouter.post(
   '/cities',
-  requireEditor,
+  requireQuoting,
   asyncHandler(async (req, res) => {
     const body = z
       .object({ city: z.string().min(1), state: z.string().nullish(), sort_order: z.number().int().optional() })
@@ -143,7 +143,7 @@ cityRatesRouter.post(
 
 cityRatesRouter.patch(
   '/cities/:id',
-  requireEditor,
+  requireQuoting,
   asyncHandler(async (req, res) => {
     const body = z
       .object({
@@ -161,7 +161,7 @@ cityRatesRouter.patch(
 
 cityRatesRouter.delete(
   '/cities/:id',
-  requireEditor,
+  requireQuoting,
   asyncHandler(async (req, res) => {
     await db.delete(rate_matrix_cities).where(eq(rate_matrix_cities.id, getParam(req, 'id')));
     res.json({ success: true });
@@ -171,7 +171,7 @@ cityRatesRouter.delete(
 // ── Rows (activities) ──
 cityRatesRouter.post(
   '/rows',
-  requireEditor,
+  requireQuoting,
   asyncHandler(async (req, res) => {
     const body = z
       .object({
@@ -193,7 +193,7 @@ cityRatesRouter.post(
 
 cityRatesRouter.patch(
   '/rows/:id',
-  requireEditor,
+  requireQuoting,
   asyncHandler(async (req, res) => {
     const body = z
       .object({
@@ -214,7 +214,7 @@ cityRatesRouter.patch(
 
 cityRatesRouter.delete(
   '/rows/:id',
-  requireEditor,
+  requireQuoting,
   asyncHandler(async (req, res) => {
     await db.delete(rate_matrix_rows).where(eq(rate_matrix_rows.id, getParam(req, 'id')));
     res.json({ success: true });
@@ -224,7 +224,7 @@ cityRatesRouter.delete(
 // ── Cell (row x city value); value null clears it back to "TBD" ──
 cityRatesRouter.put(
   '/cells',
-  requireEditor,
+  requireQuoting,
   asyncHandler(async (req, res) => {
     const body = z
       .object({ row_id: z.string().uuid(), city_id: z.string().uuid(), value: z.number().nullable() })

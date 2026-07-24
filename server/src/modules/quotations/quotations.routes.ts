@@ -4,7 +4,7 @@ import { and, asc, desc, eq, inArray, ne } from 'drizzle-orm';
 import { db, requireOrgId } from '../../db';
 import { enquiries, quotations } from '../../db/schema';
 import { authenticate, getAuth } from '../../middleware/auth';
-import { requireEditor, requireFeature } from '../../middleware/roles';
+import { requireQuoting, requireFeature } from '../../middleware/roles';
 import { asyncHandler, getParam } from '../../lib/http';
 import { badRequest, notFound } from '../../lib/errors';
 import { logEnquiryEvent } from '../../lib/events';
@@ -93,7 +93,7 @@ quotationsRouter.get(
 // RLS parity: quotations writes require is_editor.
 quotationsRouter.post(
   '/',
-  requireEditor,
+  requireQuoting,
   asyncHandler(async (req, res) => {
     const body = createSchema.parse(req.body);
     const rows = await db.insert(quotations).values({ ...body, org_id: requireOrgId() }).returning();
@@ -103,7 +103,7 @@ quotationsRouter.post(
 
 quotationsRouter.patch(
   '/:id',
-  requireEditor,
+  requireQuoting,
   asyncHandler(async (req, res) => {
     const body = updateSchema.parse(req.body);
     const rows = await db.update(quotations).set(body).where(eq(quotations.id, getParam(req, 'id'))).returning();
@@ -115,7 +115,7 @@ quotationsRouter.patch(
 // Supersede a set of quotations (used by the builder before inserting a new version).
 quotationsRouter.post(
   '/supersede',
-  requireEditor,
+  requireQuoting,
   asyncHandler(async (req, res) => {
     const { ids } = z.object({ ids: z.array(z.string().uuid()).min(1) }).parse(req.body);
     const rows = await db
@@ -137,7 +137,7 @@ quotationsRouter.post(
  */
 quotationsRouter.post(
   '/:id/approve',
-  requireEditor,
+  requireQuoting,
   asyncHandler(async (req, res) => {
     const auth = getAuth(req);
     const quotationId = getParam(req, 'id');

@@ -5,8 +5,24 @@ import { forbidden, unauthorized } from '../lib/errors';
 import { supabaseAdmin } from '../lib/supabase';
 import { pool, tenantStore, schema } from '../db';
 
-export type Role = 'super_admin' | 'admin' | 'mobilization_lead' | 'viewer';
-const ROLES: Role[] = ['super_admin', 'admin', 'mobilization_lead', 'viewer'];
+export type Role =
+  | 'super_admin'
+  | 'admin'
+  | 'mobilization_lead'
+  // Operations roles (see 20260724000002_team_roles_and_directory).
+  | 'execution_head'
+  | 'execution'
+  | 'planning'
+  | 'reporting'
+  | 'accounts'
+  | 'viewer';
+// Any role not listed here is downgraded to 'viewer' below, so this MUST stay
+// in sync with the user_role enum.
+const ROLES: Role[] = [
+  'super_admin', 'admin', 'mobilization_lead',
+  'execution_head', 'execution', 'planning', 'reporting', 'accounts',
+  'viewer',
+];
 
 export interface AuthContext {
   userId: string;

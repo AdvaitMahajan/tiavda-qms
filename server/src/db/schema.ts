@@ -121,6 +121,26 @@ export const profiles = pgTable('profiles', {
   updated_at: timestamp('updated_at', { withTimezone: true, mode: 'string' }).notNull().defaultNow(),
 });
 
+// ─── team_members (operations contact directory) ─────────────────────────────
+// Holds the ops team before their logins exist; profile_id links a member to
+// their account once created.
+export const team_members = pgTable('team_members', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  org_id: uuid('org_id').notNull(),
+  full_name: text('full_name').notNull(),
+  phone: text('phone'),
+  email: text('email'),
+  responsibility: text('responsibility'),
+  app_role: text('app_role'),
+  city: text('city'),
+  profile_id: uuid('profile_id'),
+  is_active: boolean('is_active').notNull().default(true),
+  sort_order: integer('sort_order').notNull().default(0),
+  notes: text('notes'),
+  created_at: timestamp('created_at', { withTimezone: true, mode: 'string' }).notNull().defaultNow(),
+  updated_at: timestamp('updated_at', { withTimezone: true, mode: 'string' }).notNull().defaultNow(),
+});
+
 // ─── clients ─────────────────────────────────────────────────────────────────
 export const clients = pgTable('clients', {
   id: uuid('id').primaryKey().defaultRandom(),
@@ -367,6 +387,12 @@ export const mobilisation = pgTable('mobilisation', {
   admin_override: boolean('admin_override').notNull().default(false),
   admin_override_at: timestamp('admin_override_at', { withTimezone: true, mode: 'string' }),
   admin_override_by: uuid('admin_override_by'),
+  // Internal acknowledgement by the assigned team member (separate from the
+  // client-facing confirmation loop): pending | accepted | reschedule_requested.
+  team_lead_status: text('team_lead_status').notNull().default('pending'),
+  team_lead_responded_at: timestamp('team_lead_responded_at', { withTimezone: true, mode: 'string' }),
+  team_lead_proposed_date: date('team_lead_proposed_date'),
+  team_lead_note: text('team_lead_note'),
   notification_sent: boolean('notification_sent').default(false),
   notification_sent_at: timestamp('notification_sent_at', { withTimezone: true, mode: 'string' }),
   created_at: timestamp('created_at', { withTimezone: true, mode: 'string' }).notNull().defaultNow(),

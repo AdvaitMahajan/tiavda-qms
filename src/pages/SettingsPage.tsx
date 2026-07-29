@@ -12,7 +12,7 @@ import {
   cardStyle, SettingsCardHeader, PremiumInput, Toggle,
   AutoRuleRow, InlineNumberConfig, TestButton,
 } from "@/components/settings/SettingsComponents";
-import { TeamManagement } from "@/components/settings/TeamManagement";
+import { TeamManagement, type CreateLoginPrefill } from "@/components/settings/TeamManagement";
 import { TeamDirectory } from "@/components/settings/TeamDirectory";
 import { ROLE_LABELS, ROLE_COLORS, type UserRole } from "@/lib/permissions";
 
@@ -54,6 +54,8 @@ export default function SettingsPage() {
     BUNDLE_KEYS, DEFAULTS, AUTOMATION_KEYS,
   );
   const [signOutHover, setSignOutHover] = useState(false);
+  // Pre-fill passed from the Team Directory's "Create login" to Team Management.
+  const [createPrefill, setCreatePrefill] = useState<CreateLoginPrefill | null>(null);
 
   const handleSignOut = async () => {
     await signOut();
@@ -282,10 +284,10 @@ IFSC: ${s.bank_ifsc || "—"}${s.bank_upi ? `\nUPI: ${s.bank_upi}` : ""}`}
           </div>
 
           {/* ── Team Directory (contacts; logins may not exist yet) ── */}
-          <TeamDirectory />
+          <TeamDirectory onCreateLogin={setCreatePrefill} />
 
           {/* ── Team Management ── */}
-          <TeamManagement />
+          <TeamManagement prefill={createPrefill} onPrefillConsumed={() => setCreatePrefill(null)} />
         </div>
 
         {/* ────── RIGHT COLUMN ────── */}

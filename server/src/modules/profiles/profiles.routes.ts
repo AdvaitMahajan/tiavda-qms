@@ -9,7 +9,11 @@ import { isSuperAdmin } from '../../middleware/roles';
 import { asyncHandler, getParam } from '../../lib/http';
 import { forbidden, notFound } from '../../lib/errors';
 
-const ROLE = z.enum(['super_admin', 'admin', 'mobilization_lead', 'viewer']);
+const ROLE = z.enum([
+  'super_admin', 'admin', 'mobilization_lead',
+  'execution_head', 'execution', 'planning', 'reporting', 'accounts',
+  'viewer',
+]);
 
 const listQuery = z.object({
   is_active: z.coerce.boolean().optional(),

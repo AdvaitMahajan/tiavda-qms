@@ -2,9 +2,10 @@ import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiClient } from "@/lib/apiClient";
 import { toast } from "sonner";
-import { Users, Check, X, Pencil } from "lucide-react";
+import { Users, Check, X, Pencil, UserPlus } from "lucide-react";
 import { cardStyle, SettingsCardHeader } from "@/components/settings/SettingsComponents";
 import { ROLE_LABELS, ROLE_COLORS, type UserRole } from "@/lib/permissions";
+import type { CreateLoginPrefill } from "@/components/settings/TeamManagement";
 
 type TeamMember = {
   id: string;
@@ -24,14 +25,14 @@ type TeamMember = {
  * and they are invited from Team Management, at which point profile_id links
  * the two.
  */
-export function TeamDirectory() {
+export function TeamDirectory({ onCreateLogin }: { onCreateLogin?: (p: CreateLoginPrefill) => void } = {}) {
   const queryClient = useQueryClient();
   const [editingId, setEditingId] = useState<string | null>(null);
   const [emailDraft, setEmailDraft] = useState("");
   const [saving, setSaving] = useState(false);
 
   const { data: members = [], isLoading } = useQuery({
-    queryKey: ["team-members"],
+    queryKey: ["team-directory"],
     queryFn: () => apiClient.get<TeamMember[]>("/team-members"),
   });
 
@@ -46,7 +47,7 @@ export function TeamDirectory() {
       await apiClient.patch(`/team-members/${m.id}`, { email: email || null });
       toast.success(`Saved email for ${m.full_name}`);
       setEditingId(null);
-      queryClient.invalidateQueries({ queryKey: ["team-members"] });
+      queryClient.invalidateQueries({ queryKey: ["team-directory"] });
     } catch (e) {
       toast.error((e as Error).message || "Could not save");
     } finally {
@@ -143,14 +144,38 @@ export function TeamDirectory() {
                     )}
                   </div>
 
-                  <span
-                    style={{
-                      fontSize: "12px", fontWeight: 600, whiteSpace: "nowrap",
-                      color: m.profile_id ? "#15673A" : "#94A3B8",
-                    }}
-                  >
-                    {m.profile_id ? "Has login" : "No login yet"}
-                  </span>
+                  {m.profile_id ? (
+                    <span style={{ fontSize: "12px", fontWeight: 600, whiteSpace: "nowrap", color: "#15673A" }}>
+                      Has login
+                    </span>
+                  ) : onCreateLogin && m.email ? (
+                    <button
+                      onClick={() =>
+                        onCreateLogin({
+                          full_name: m.full_name,
+                          email: m.email!,
+                          role: (m.app_role && m.app_role in ROLE_LABELS ? m.app_role : "viewer") as UserRole,
+                          team_member_id: m.id,
+                        })
+                      }
+                      title="Create a login for this member"
+                      style={{
+                        display: "flex", alignItems: "center", gap: "4px", whiteSpace: "nowrap",
+                        padding: "5px 10px", borderRadius: "8px", fontSize: "12px", fontWeight: 600,
+                        cursor: "pointer", border: "none",
+                        background: "linear-gradient(135deg,#1565C0,#2979FF)", color: "white",
+                      }}
+                    >
+                      <UserPlus style={{ width: 12, height: 12 }} /> Create login
+                    </button>
+                  ) : (
+                    <span
+                      style={{ fontSize: "12px", fontWeight: 600, whiteSpace: "nowrap", color: "#94A3B8" }}
+                      title={m.email ? undefined : "Add an email first"}
+                    >
+                      No login yet
+                    </span>
+                  )}
                 </div>
               );
             })}

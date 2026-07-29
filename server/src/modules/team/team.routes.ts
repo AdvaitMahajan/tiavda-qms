@@ -4,12 +4,16 @@ import { asc } from 'drizzle-orm';
 import { db } from '../../db';
 import { profiles } from '../../db/schema';
 import { authenticate, getAuth } from '../../middleware/auth';
-import { requireEditor, isSuperAdmin } from '../../middleware/roles';
+import { requireEditor, requireSuperAdmin, isSuperAdmin } from '../../middleware/roles';
 import { asyncHandler, getParam } from '../../lib/http';
 import { badRequest, forbidden } from '../../lib/errors';
 import { supabaseAdmin } from '../../lib/supabase';
 
-const ROLE = z.enum(['super_admin', 'admin', 'mobilization_lead', 'viewer']);
+const ROLE = z.enum([
+  'super_admin', 'admin', 'mobilization_lead',
+  'execution_head', 'execution', 'planning', 'reporting', 'accounts',
+  'viewer',
+]);
 
 // Auth-admin operations (port of the invite-user edge function). Admins only;
 // granting super_admin requires a super_admin caller.
@@ -69,5 +73,21 @@ teamRouter.post(
     const { error } = await supabaseAdmin.auth.admin.updateUserById(getParam(req, 'id'), { password });
     if (error) throw badRequest(error.message);
     res.json({ success: true });
+  }),
+);
+
+// Change a user's login email. Super admin only — this rewrites the auth
+// identity, so it is deliberately more restricted than a role change.
+teamRouter.patch(
+  '/users/:id/email',
+  requireSuperAdmin,
+  asyncHandler(async (req, res) => {
+    const { email } = z.object({ email: z.string().email() }).parse(req.body);
+    const id = getParam(req, 'id');
+    const { error } = await supabaseAdmin.auth.admin.updateUserById(id, { email, email_confirm: true });
+    if (error) throw badRequest(error.message);
+    // Keep the profiles mirror in step with the auth email (service role → bypasses RLS).
+    await supabaseAdmin.from('profiles').update({ email }).eq('id', id);
+    res.json({ success: true, email });
   }),
 );

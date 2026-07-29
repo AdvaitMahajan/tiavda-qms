@@ -103,7 +103,18 @@ export const structure_type = pgEnum('structure_type', [
   'infrastructure',
   'other',
 ]);
-export const user_role = pgEnum('user_role', ['super_admin', 'admin', 'mobilization_lead', 'viewer']);
+export const user_role = pgEnum('user_role', [
+  'super_admin',
+  'admin',
+  'mobilization_lead',
+  // Operations roles (added in 20260724000002_team_roles_and_directory).
+  'execution_head',
+  'execution',
+  'planning',
+  'reporting',
+  'accounts',
+  'viewer',
+]);
 
 // ─── profiles ──────────────────────────────────────────────────────────────
 export const profiles = pgTable('profiles', {

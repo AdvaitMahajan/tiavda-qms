@@ -1,19 +1,35 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiClient } from "@/lib/apiClient";
 import { useAuth } from "@/hooks/useAuth";
 import { useRole } from "@/hooks/useRole";
 import { toast } from "sonner";
-import { Users, UserPlus, Shield, KeyRound } from "lucide-react";
+import { Users, UserPlus, Shield, KeyRound, Mail } from "lucide-react";
 import { cardStyle, SettingsCardHeader } from "@/components/settings/SettingsComponents";
 import { ROLE_LABELS, ROLE_COLORS, type UserRole } from "@/lib/permissions";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
 } from "@/components/ui/dialog";
 
-const ALL_ROLES: UserRole[] = ["super_admin", "admin", "mobilization_lead", "viewer"];
+// Every assignable role, in a sensible order (keys of ROLE_LABELS).
+const ALL_ROLES = Object.keys(ROLE_LABELS) as UserRole[];
 
-export function TeamManagement() {
+/** Pre-fill for the Create User dialog, e.g. when creating a login from the Team Directory. */
+export type CreateLoginPrefill = {
+  full_name: string;
+  email: string;
+  role: UserRole;
+  /** team_members row to link to the new profile once created. */
+  team_member_id?: string;
+};
+
+export function TeamManagement({
+  prefill,
+  onPrefillConsumed,
+}: {
+  prefill?: CreateLoginPrefill | null;
+  onPrefillConsumed?: () => void;
+} = {}) {
   const { user } = useAuth();
   const { canManageTeam, isSuperAdmin } = useRole();
   const queryClient = useQueryClient();
@@ -21,11 +37,27 @@ export function TeamManagement() {
   const [inviteOpen, setInviteOpen] = useState(false);
   const [inviteForm, setInviteForm] = useState({ email: "", full_name: "", password: "", role: "viewer" as UserRole });
   const [inviting, setInviting] = useState(false);
+  // team_members row to link after a create triggered from the Directory.
+  const [linkTeamMemberId, setLinkTeamMemberId] = useState<string | null>(null);
 
   const [resetOpen, setResetOpen] = useState(false);
   const [resetTarget, setResetTarget] = useState<{ id: string; email: string; name: string } | null>(null);
   const [resetPassword, setResetPassword] = useState("");
   const [resetting, setResetting] = useState(false);
+
+  const [emailOpen, setEmailOpen] = useState(false);
+  const [emailTarget, setEmailTarget] = useState<{ id: string; email: string; name: string } | null>(null);
+  const [newEmail, setNewEmail] = useState("");
+  const [savingEmail, setSavingEmail] = useState(false);
+
+  // Open the Create User dialog pre-filled (from the Team Directory).
+  useEffect(() => {
+    if (!prefill) return;
+    setInviteForm({ email: prefill.email, full_name: prefill.full_name, password: "", role: prefill.role });
+    setLinkTeamMemberId(prefill.team_member_id ?? null);
+    setInviteOpen(true);
+    onPrefillConsumed?.();
+  }, [prefill, onPrefillConsumed]);
 
   const { data: members = [], isLoading } = useQuery({
     queryKey: ["team-members"],
@@ -43,20 +75,48 @@ export function TeamManagement() {
     }
     setInviting(true);
     try {
-      await apiClient.post("/team/users", {
+      const created = await apiClient.post<{ user_id: string }>("/team/users", {
         email: inviteForm.email.trim(),
         full_name: inviteForm.full_name.trim(),
         password: inviteForm.password.trim(),
         role: inviteForm.role,
       });
+      // If this was launched from a Directory row, link that member to the new login.
+      if (linkTeamMemberId && created?.user_id) {
+        await apiClient
+          .patch(`/team-members/${linkTeamMemberId}`, { profile_id: created.user_id })
+          .catch(() => {});
+        queryClient.invalidateQueries({ queryKey: ["team-directory"] });
+      }
       toast.success(`Account created for ${inviteForm.email}`);
       setInviteOpen(false);
       setInviteForm({ email: "", full_name: "", password: "", role: "viewer" });
+      setLinkTeamMemberId(null);
       queryClient.invalidateQueries({ queryKey: ["team-members"] });
     } catch (err: any) {
       toast.error(err.message || "Failed to invite user");
     } finally {
       setInviting(false);
+    }
+  };
+
+  const handleChangeEmail = async () => {
+    if (!emailTarget || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(newEmail.trim())) {
+      toast.error("Enter a valid email address");
+      return;
+    }
+    setSavingEmail(true);
+    try {
+      await apiClient.patch(`/team/users/${emailTarget.id}/email`, { email: newEmail.trim() });
+      toast.success(`Email updated for ${emailTarget.name}`);
+      setEmailOpen(false);
+      setEmailTarget(null);
+      setNewEmail("");
+      queryClient.invalidateQueries({ queryKey: ["team-members"] });
+    } catch (err: any) {
+      toast.error(err.message || "Failed to update email");
+    } finally {
+      setSavingEmail(false);
     }
   };
 
@@ -220,6 +280,24 @@ export function TeamManagement() {
                           >
                             <KeyRound style={{ width: "10px", height: "10px" }} /> Reset
                           </button>
+                          {isSuperAdmin && (
+                            <button
+                              onClick={() => {
+                                setEmailTarget({ id: m.id, email: m.email, name: m.full_name || m.email });
+                                setNewEmail(m.email ?? "");
+                                setEmailOpen(true);
+                              }}
+                              title="Change email"
+                              style={{
+                                padding: "4px 8px", borderRadius: "6px", fontSize: "12px", fontWeight: 600,
+                                cursor: "pointer", border: "1px solid #E0E7EF",
+                                background: "#F3E8FF", color: "#6A1B9A",
+                                display: "flex", alignItems: "center", gap: "3px",
+                              }}
+                            >
+                              <Mail style={{ width: "10px", height: "10px" }} /> Email
+                            </button>
+                          )}
                           <button
                             onClick={() => handleToggleActive(m.id, m.is_active)}
                             style={{
@@ -356,6 +434,51 @@ export function TeamManagement() {
               style={{ background: "linear-gradient(135deg,#1565C0,#2979FF)", color: "white" }}
             >
               {resetting ? "Resetting…" : "Reset Password"}
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Change Email Dialog (super admin only) */}
+      <Dialog open={emailOpen} onOpenChange={(open) => { setEmailOpen(open); if (!open) { setEmailTarget(null); setNewEmail(""); } }}>
+        <DialogContent style={{ borderRadius: "20px", padding: "32px", boxShadow: "0 24px 64px rgba(0,0,0,0.2)" }}>
+          <DialogHeader>
+            <DialogTitle style={{ fontFamily: "Sora, sans-serif", color: "#0A1929", fontSize: "18px", fontWeight: 700, display: "flex", alignItems: "center", gap: "8px" }}>
+              <Mail style={{ width: "20px", height: "20px", color: "#6A1B9A" }} />
+              Change Login Email
+            </DialogTitle>
+            <DialogDescription style={{ color: "#546E7A", fontSize: "13px" }}>
+              Update the login email for <strong style={{ color: "#0A1929" }}>{emailTarget?.name}</strong>. They will sign in with the new address; the old one stops working.
+            </DialogDescription>
+          </DialogHeader>
+          <div style={{ display: "flex", flexDirection: "column", gap: "14px", marginTop: "8px" }}>
+            <div>
+              <label style={{ fontSize: "12px", fontWeight: 600, color: "#546E7A", textTransform: "uppercase", letterSpacing: "0.06em", display: "block", marginBottom: "6px" }}>New Email Address</label>
+              <input
+                type="email"
+                value={newEmail}
+                onChange={(e) => setNewEmail(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleChangeEmail()}
+                placeholder="name@company.com"
+                style={{ width: "100%", padding: "10px 14px", border: "1.5px solid #E0E7EF", borderRadius: "10px", fontSize: "14px", color: "#0A1929", background: "#FAFBFC", outline: "none" }}
+              />
+            </div>
+          </div>
+          <DialogFooter style={{ marginTop: "8px" }}>
+            <button
+              onClick={() => setEmailOpen(false)}
+              className="px-4 py-2 rounded-lg text-sm font-medium"
+              style={{ background: "#F0F4F8", color: "#546E7A", border: "1px solid #E0E7EF" }}
+            >
+              Cancel
+            </button>
+            <button
+              disabled={savingEmail}
+              onClick={handleChangeEmail}
+              className="px-4 py-2 rounded-lg text-sm font-semibold disabled:opacity-50"
+              style={{ background: "linear-gradient(135deg,#6A1B9A,#8E24AA)", color: "white" }}
+            >
+              {savingEmail ? "Saving…" : "Change Email"}
             </button>
           </DialogFooter>
         </DialogContent>

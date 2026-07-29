@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { asc, eq } from 'drizzle-orm';
 import { db, requireOrgId } from '../../db';
-import { team_members } from '../../db/schema';
+import { team_members, profiles } from '../../db/schema';
 import { authenticate } from '../../middleware/auth';
 import { requireEditor } from '../../middleware/roles';
 import { asyncHandler, getParam } from '../../lib/http';
@@ -42,11 +42,34 @@ const bodySchema = z.object({
 teamMembersRouter.get(
   '/',
   asyncHandler(async (_req, res) => {
+    const orgId = requireOrgId();
     const rows = await db
       .select()
       .from(team_members)
-      .where(eq(team_members.org_id, requireOrgId()))
+      .where(eq(team_members.org_id, orgId))
       .orderBy(asc(team_members.sort_order), asc(team_members.full_name));
+
+    // Self-heal the link: a member may have been given a login directly from
+    // Team Management (not via the "Create login" button), leaving profile_id
+    // null. If an org profile shares the member's email, adopt that link and
+    // persist it — so "Create login" turns into "Has login" no matter how the
+    // account was created.
+    const unlinked = rows.filter((r) => !r.profile_id && r.email);
+    if (unlinked.length) {
+      const orgProfiles = await db
+        .select({ id: profiles.id, email: profiles.email })
+        .from(profiles)
+        .where(eq(profiles.org_id, orgId));
+      const byEmail = new Map(orgProfiles.map((p) => [p.email.toLowerCase(), p.id]));
+      for (const r of unlinked) {
+        const pid = byEmail.get((r.email as string).toLowerCase());
+        if (pid) {
+          r.profile_id = pid;
+          await db.update(team_members).set({ profile_id: pid }).where(eq(team_members.id, r.id));
+        }
+      }
+    }
+
     res.json(rows);
   }),
 );

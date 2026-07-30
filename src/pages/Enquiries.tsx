@@ -165,11 +165,18 @@ export default function Enquiries() {
     if (wanted.some((s) => s === "lost" || s === "inactive" || s === "completed")) setShowClosed(true);
   }, [statusParam]);
 
+  // Deep-link city bucket from the dashboard Active-Jobs tiles: Mumbai / Pune / Other.
+  const cityParam = (searchParams.get("city") ?? "").trim().toLowerCase();
   const filtered = useMemo(() => {
     if (!rows) return [];
     let result = rows;
     if (statusFilter.length > 0) {
       result = result.filter((r) => statusFilter.includes(r.status));
+    }
+    if (cityParam === "mumbai" || cityParam === "pune") {
+      result = result.filter((r) => (r.site_city ?? "").trim().toLowerCase() === cityParam);
+    } else if (cityParam === "other") {
+      result = result.filter((r) => !["mumbai", "pune"].includes((r.site_city ?? "").trim().toLowerCase()));
     }
     if (search.trim()) {
       const q = search.toLowerCase();
@@ -181,7 +188,7 @@ export default function Enquiries() {
       );
     }
     return result;
-  }, [rows, search, statusFilter]);
+  }, [rows, search, statusFilter, cityParam]);
 
   const totalCount = rows?.length ?? 0;
   const pipelineCounts = useMemo(() => {

@@ -23,7 +23,7 @@ dashboardRouter.get(
 
     const [
       newEnq, sentQuotes, followToday, pendingPay, activeJobs, totalEnq, wonEnq, intakePending,
-      bookValues, pendingQuotes, totalClients, convertedClients, lostClientsRes,
+      bookValues, pendingQuotes, totalClients, convertedClients, lostClientsRes, activeByCityRes,
     ] = await Promise.all([
       db.select({ c: COUNT }).from(enquiries).where(and(eq(enquiries.status, 'new'), isNull(enquiries.deleted_at))),
       db.select({ c: COUNT }).from(enquiries).where(and(eq(enquiries.status, 'sent'), isNull(enquiries.deleted_at))),
@@ -73,6 +73,15 @@ dashboardRouter.get(
               and e.status not in ('lost', 'inactive')
           )
       `),
+      // Active jobs bucketed by city (free-text site_city → Mumbai / Pune / Other).
+      db.execute(sql`
+        select
+          count(*) filter (where lower(trim(site_city)) = 'mumbai')::int as mumbai,
+          count(*) filter (where lower(trim(site_city)) = 'pune')::int   as pune,
+          count(*) filter (where lower(trim(site_city)) not in ('mumbai','pune'))::int as other
+        from public.enquiries
+        where status in ('job_active','mobilization_scheduled') and deleted_at is null
+      `),
     ]);
 
     const lostClients = Number(
@@ -81,6 +90,9 @@ dashboardRouter.get(
     const bv = (bookValues as unknown as {
       rows?: Array<{ pipeline_value: number; order_book_value: number; quotation_book_value: number }>;
     })?.rows?.[0];
+    const abc = (activeByCityRes as unknown as {
+      rows?: Array<{ mumbai: number; pune: number; other: number }>;
+    })?.rows?.[0];
 
     res.json({
       new_enquiries: newEnq[0]?.c ?? 0,
@@ -88,6 +100,9 @@ dashboardRouter.get(
       followups_today: followToday[0]?.c ?? 0,
       pending_payments: pendingPay[0]?.c ?? 0,
       active_jobs: activeJobs[0]?.c ?? 0,
+      active_jobs_mumbai: abc?.mumbai ?? 0,
+      active_jobs_pune: abc?.pune ?? 0,
+      active_jobs_other: abc?.other ?? 0,
       total_enquiries: totalEnq[0]?.c ?? 0,
       won_enquiries: wonEnq[0]?.c ?? 0,
       intake_pending: intakePending[0]?.c ?? 0,

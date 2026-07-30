@@ -86,12 +86,28 @@ const STAT_CARD_DEFS = [
     link: "/accounts",
   },
   {
-    label: "Active Jobs",
+    label: "Active Jobs — Mumbai",
     icon: Briefcase,
     gradient: "linear-gradient(90deg,#00897B,#26A69A)",
     iconBg: "#E0F2F1",
     iconColor: "#00897B",
-    link: "/enquiries?status=job_active,mobilization_scheduled",
+    link: "/enquiries?status=job_active,mobilization_scheduled&city=Mumbai",
+  },
+  {
+    label: "Active Jobs — Pune",
+    icon: Briefcase,
+    gradient: "linear-gradient(90deg,#00897B,#26A69A)",
+    iconBg: "#E0F2F1",
+    iconColor: "#00897B",
+    link: "/enquiries?status=job_active,mobilization_scheduled&city=Pune",
+  },
+  {
+    label: "Active Jobs — Other",
+    icon: Briefcase,
+    gradient: "linear-gradient(90deg,#00897B,#26A69A)",
+    iconBg: "#E0F2F1",
+    iconColor: "#00897B",
+    link: "/enquiries?status=job_active,mobilization_scheduled&city=Other",
   },
   {
     label: "Conversion %",
@@ -185,7 +201,9 @@ const METRIC_KEY: Record<string, string> = {
   "Pipeline Value": "pipeline_value",
   "Order Book": "order_book",
   "Payments Pending": "pending_payments",
-  "Active Jobs": "active_jobs",
+  "Active Jobs — Mumbai": "active_jobs_mumbai",
+  "Active Jobs — Pune": "active_jobs_pune",
+  "Active Jobs — Other": "active_jobs_other",
 };
 
 /**
@@ -196,7 +214,8 @@ const METRIC_KEY: Record<string, string> = {
 const STAT_GROUPS = [
   { title: "Clients", labels: ["Total Clients", "Converted Clients", "Lost / Rejected", "Conversion %"] },
   { title: "Enquiries & Quotations", labels: ["New Enquiries", "Intake Pending", "Quotes Sent", "Pending Quotes", "Follow-ups Today"] },
-  { title: "Revenue & Delivery", labels: ["Quotation Book", "Pipeline Value", "Order Book", "Payments Pending", "Active Jobs"] },
+  { title: "Revenue & Delivery", labels: ["Quotation Book", "Pipeline Value", "Order Book", "Payments Pending"] },
+  { title: "Active Jobs by Location", labels: ["Active Jobs — Mumbai", "Active Jobs — Pune", "Active Jobs — Other"] },
 ] as const;
 
 const DEF_BY_LABEL = Object.fromEntries(STAT_CARD_DEFS.map((d) => [d.label, d])) as Record<
@@ -230,6 +249,7 @@ function useStatCards() {
       const d = await apiClient.get<{
         new_enquiries: number; sent_quotes: number; followups_today: number;
         pending_payments: number; active_jobs: number; total_enquiries: number;
+        active_jobs_mumbai: number; active_jobs_pune: number; active_jobs_other: number;
         won_enquiries: number; intake_pending: number; pipeline_value: number;
         quotation_book_value: number; order_book: number; pending_quotes: number;
         total_clients: number; converted_clients: number; lost_clients: number;

@@ -12,15 +12,27 @@ import * as schema from './schema';
  * FORCE) scopes the request to its tenant. The connection is reset+released when
  * the response finishes.
  */
+// Supabase's SESSION pooler (port 5432) hard-caps concurrent clients (default 15).
+// Our `max` MUST stay safely under that cap: if we try to open more, the pooler
+// rejects with `EMAXCONNSESSION` and the request 500s. Excess acquisitions above
+// `max` simply queue in node-postgres (up to connectionTimeoutMillis) instead of
+// failing. Configurable via DB_POOL_MAX; default 10 leaves headroom for the
+// occasional out-of-band connection (migrations, one-off scripts).
+const POOL_MAX = Math.max(2, Math.min(Number(process.env.DB_POOL_MAX) || 10, 14));
+
 export const pool = new Pool({
   connectionString: env.DATABASE_URL,
-  // Each request holds a connection for its lifetime (incl. external calls), so
-  // keep comfortable headroom over expected concurrency.
-  max: 20,
+  max: POOL_MAX,
   idleTimeoutMillis: 30_000,
   connectionTimeoutMillis: 10_000,
   // Supabase requires TLS; the pooler cert chain isn't in the local trust store.
   ssl: isProd ? { rejectUnauthorized: false } : { rejectUnauthorized: false },
+});
+
+// The pooler can drop idle connections; without this handler node-postgres would
+// emit an unhandled 'error' on the idle client and crash the process.
+pool.on('error', (err) => {
+  console.error('[pg pool] idle client error (recovered):', err.message);
 });
 
 type DB = NodePgDatabase<typeof schema>;

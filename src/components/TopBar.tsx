@@ -4,6 +4,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiClient } from "@/lib/apiClient";
 import { useAuth } from "@/hooks/useAuth";
 import { relativeTime } from "@/lib/utils";
+import { toast } from "sonner";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Bell, CalendarClock, UserPlus, CheckCircle, FolderX, UserCheck,
@@ -93,6 +94,41 @@ export function TopBar() {
     queryFn: () => apiClient.get<Notification[]>("/notifications", { limit: 20 }),
     enabled: !!user && open,
   });
+
+  // ── Live poll of recent notifications (drives the on-screen toasts) ──
+  const { data: recentNotifs = [] } = useQuery({
+    queryKey: ["notif-recent"],
+    queryFn: () => apiClient.get<Notification[]>("/notifications", { limit: 8 }),
+    enabled: !!user,
+    refetchInterval: 10_000,
+    refetchOnWindowFocus: true,
+  });
+
+  // Toast NEW notifications for 3s, then they auto-dismiss but remain under the
+  // bell (unread) until marked read. The first load is seeded silently so we
+  // never toast the backlog of already-existing notifications.
+  const seenRef = useRef<Set<string>>(new Set());
+  const seededRef = useRef(false);
+  useEffect(() => {
+    if (recentNotifs.length === 0) return;
+    if (!seededRef.current) {
+      recentNotifs.forEach((n) => seenRef.current.add(n.id));
+      seededRef.current = true;
+      return;
+    }
+    // API returns newest-first; toast oldest-first so the newest ends up on top.
+    const fresh = recentNotifs.filter((n) => !seenRef.current.has(n.id));
+    for (const n of [...fresh].reverse()) {
+      seenRef.current.add(n.id);
+      if (n.read) continue;
+      toast(n.title, {
+        description: n.body,
+        duration: 3000,
+        ...(n.link ? { action: { label: "View", onClick: () => navigate(n.link!) } } : {}),
+      });
+    }
+    if (fresh.length) queryClient.invalidateQueries({ queryKey: ["notif-count"] });
+  }, [recentNotifs, navigate, queryClient]);
 
   // ── Bounce the bell when the polled unread count increases ──
   const prevCountRef = useRef(0);

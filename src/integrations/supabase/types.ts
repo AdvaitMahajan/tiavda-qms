@@ -907,12 +907,15 @@ export type Database = {
       }
       notifications: {
         Row: {
+          ack_note: string | null
+          acknowledged_at: string | null
           body: string
           created_at: string
           enquiry_id: string | null
           id: string
           link: string | null
           read: boolean | null
+          requires_ack: boolean
           title: string
           type: string
           user_id: string

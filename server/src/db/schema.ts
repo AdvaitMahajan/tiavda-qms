@@ -478,6 +478,10 @@ export const notifications = pgTable('notifications', {
   body: text('body').notNull(),
   link: text('link'),
   read: boolean('read').default(false),
+  // Reminder acknowledgement (change request #4).
+  requires_ack: boolean('requires_ack').notNull().default(false),
+  acknowledged_at: timestamp('acknowledged_at', { withTimezone: true, mode: 'string' }),
+  ack_note: text('ack_note'),
   created_at: timestamp('created_at', { withTimezone: true, mode: 'string' }).notNull().defaultNow(),
 });
 

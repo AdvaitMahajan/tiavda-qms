@@ -14,6 +14,8 @@ export interface SendEmailInput {
   attachment_url?: string; // directly fetchable url (back-compat)
   /** Prepended to the rendered/overridden subject, e.g. "Company — Site Address". */
   subject_prefix?: string;
+  /** Reply-To address (e.g. the admin's email) so replies thread back to them. */
+  reply_to?: string;
   /** Org whose provisioned Brevo creds to use; defaults to the request's org. */
   orgId?: string | null;
 }
@@ -74,6 +76,7 @@ export async function sendEmail(input: SendEmailInput): Promise<SendEmailResult>
     subject,
     htmlContent: html_body,
   };
+  if (input.reply_to) payload.replyTo = { email: input.reply_to };
   if (attachment) payload.attachment = attachment;
 
   const res = await fetch('https://api.brevo.com/v3/smtp/email', {

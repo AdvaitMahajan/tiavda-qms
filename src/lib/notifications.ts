@@ -57,6 +57,8 @@ export interface SendNotificationOptions<T extends NotificationTemplate> {
   subject?: string;
   /** Prepended to the rendered subject, e.g. "Company — Site Address". */
   subjectPrefix?: string;
+  /** Reply-To address so replies thread back (e.g. admin on staff reminders). */
+  replyTo?: string;
 }
 
 export interface SendNotificationResult {
@@ -78,6 +80,7 @@ export async function sendNotification<T extends NotificationTemplate>(
       params: opts.params,
       ...(opts.subject ? { subject: opts.subject } : {}),
       ...(opts.subjectPrefix ? { subject_prefix: opts.subjectPrefix } : {}),
+      ...(opts.replyTo ? { reply_to: opts.replyTo } : {}),
       ...(opts.attachmentPath ? { attachment_path: opts.attachmentPath } : {}),
       ...(opts.attachmentBucket ? { attachment_bucket: opts.attachmentBucket } : {}),
     });

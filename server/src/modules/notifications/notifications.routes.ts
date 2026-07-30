@@ -1,10 +1,10 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { and, desc, eq, sql } from 'drizzle-orm';
+import { and, desc, eq, isNull, sql } from 'drizzle-orm';
 import { db, requireOrgId } from '../../db';
-import { notifications } from '../../db/schema';
+import { notifications, profiles } from '../../db/schema';
 import { authenticate, getAuth } from '../../middleware/auth';
-import { requireNotViewer } from '../../middleware/roles';
+import { requireNotViewer, requireEditor } from '../../middleware/roles';
 import { asyncHandler, getParam } from '../../lib/http';
 
 const createSchema = z.object({
@@ -14,6 +14,7 @@ const createSchema = z.object({
   body: z.string().min(1),
   enquiry_id: z.string().uuid().nullish(),
   link: z.string().nullish(),
+  requires_ack: z.boolean().optional(),
 });
 
 export const notificationsRouter = Router();
@@ -69,6 +70,48 @@ notificationsRouter.patch(
       .where(and(eq(notifications.id, getParam(req, 'id')), eq(notifications.user_id, auth.userId)))
       .returning();
     res.json(rows[0] ?? { success: true });
+  }),
+);
+
+// Acknowledge a reminder (optionally with a status note). Own notifications only.
+notificationsRouter.patch(
+  '/:id/ack',
+  asyncHandler(async (req, res) => {
+    const auth = getAuth(req);
+    const { note } = z.object({ note: z.string().nullish() }).parse(req.body);
+    const rows = await db
+      .update(notifications)
+      .set({ acknowledged_at: new Date().toISOString(), ack_note: note ?? null, read: true })
+      .where(and(eq(notifications.id, getParam(req, 'id')), eq(notifications.user_id, auth.userId)))
+      .returning();
+    res.json(rows[0] ?? { success: true });
+  }),
+);
+
+// Admin view: reminders across the org still awaiting acknowledgement, with the
+// recipient's name so an admin can see who hasn't responded and re-nudge.
+notificationsRouter.get(
+  '/pending-ack',
+  requireEditor,
+  asyncHandler(async (_req, res) => {
+    const rows = await db
+      .select({
+        id: notifications.id,
+        user_id: notifications.user_id,
+        title: notifications.title,
+        body: notifications.body,
+        enquiry_id: notifications.enquiry_id,
+        link: notifications.link,
+        created_at: notifications.created_at,
+        recipient_name: profiles.full_name,
+        recipient_email: profiles.email,
+      })
+      .from(notifications)
+      .leftJoin(profiles, eq(notifications.user_id, profiles.id))
+      .where(and(eq(notifications.requires_ack, true), isNull(notifications.acknowledged_at)))
+      .orderBy(desc(notifications.created_at))
+      .limit(100);
+    res.json(rows);
   }),
 );
 

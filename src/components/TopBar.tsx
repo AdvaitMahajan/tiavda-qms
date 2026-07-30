@@ -134,6 +134,17 @@ export function TopBar() {
     if (notif.link) navigate(notif.link);
   };
 
+  const handleAck = async (notif: Notification) => {
+    const note = window.prompt("Acknowledge this reminder — add a status update (optional):", "") ?? "";
+    try {
+      await apiClient.patch(`/notifications/${notif.id}/ack`, { note: note.trim() || null });
+      queryClient.invalidateQueries({ queryKey: ["notif-count"] });
+      refetchNotifs();
+    } catch {
+      /* best-effort */
+    }
+  };
+
   return (
     <header
       className="flex h-14 items-center justify-between px-6 bg-white"
@@ -299,6 +310,7 @@ export function TopBar() {
                           cfg={cfg}
                           IconComp={IconComp}
                           onClick={() => handleClickNotif(n)}
+                          onAck={() => handleAck(n)}
                         />
                       );
                     })
@@ -359,13 +371,16 @@ function NotifItem({
   cfg,
   IconComp,
   onClick,
+  onAck,
 }: {
   n: Notification;
   isUnread: boolean;
   cfg: { bg: string; color: string };
   IconComp: LucideIcon;
   onClick: () => void;
+  onAck: () => void;
 }) {
+  const needsAck = n.requires_ack && !n.acknowledged_at;
   const [hovered, setHovered] = useState(false);
 
   return (
@@ -428,6 +443,24 @@ function NotifItem({
         >
           {n.body}
         </div>
+        {needsAck && (
+          <button
+            onClick={(e) => { e.stopPropagation(); onAck(); }}
+            style={{
+              marginTop: 8, display: "inline-flex", alignItems: "center", gap: 4,
+              padding: "4px 10px", borderRadius: 8, fontSize: 12, fontWeight: 600,
+              cursor: "pointer", border: "none",
+              background: "linear-gradient(135deg,#15673A,#22C55E)", color: "white",
+            }}
+          >
+            Acknowledge
+          </button>
+        )}
+        {n.requires_ack && n.acknowledged_at && (
+          <div style={{ marginTop: 6, fontSize: 12, fontWeight: 600, color: "#15673A" }}>
+            ✓ Acknowledged{n.ack_note ? ` — ${n.ack_note}` : ""}
+          </div>
+        )}
       </div>
 
       {/* Right: dot + time */}

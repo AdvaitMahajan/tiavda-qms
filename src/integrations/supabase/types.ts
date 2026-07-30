@@ -609,6 +609,17 @@ export type Database = {
         Row: {
           created_at: string
           enquiry_id: string
+          field_work_completion_date: string | null
+          field_work_completed_actual: string | null
+          field_work_done: boolean
+          field_work_notes: string | null
+          samples_submitted: boolean
+          samples_submitted_at: string | null
+          samples_submitted_by: string | null
+          lab_assignee_id: string | null
+          lab_due_date: string | null
+          lab_processing_done: boolean
+          lab_completed_at: string | null
           final_bill_amount: number | null
           final_bill_date: string | null
           final_bill_done: boolean | null
@@ -1472,7 +1483,7 @@ export type Database = {
         | "industrial"
         | "infrastructure"
         | "other"
-      user_role: "super_admin" | "admin" | "mobilization_lead" | "viewer"
+      user_role: "super_admin" | "admin" | "mobilization_lead" | "execution_head" | "execution" | "planning" | "reporting" | "accounts" | "lab" | "viewer"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -1651,7 +1662,7 @@ export const Constants = {
         "infrastructure",
         "other",
       ],
-      user_role: ["super_admin", "admin", "mobilization_lead", "viewer"],
+      user_role: ["super_admin", "admin", "mobilization_lead", "execution_head", "execution", "planning", "reporting", "accounts", "lab", "viewer"],
     },
   },
 } as const

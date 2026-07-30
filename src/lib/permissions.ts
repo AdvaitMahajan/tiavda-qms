@@ -8,6 +8,7 @@ export type UserRole =
   | "planning"
   | "reporting"
   | "accounts"
+  | "lab"
   | "viewer";
 
 export const ROLE_LABELS: Record<UserRole, string> = {
@@ -19,6 +20,7 @@ export const ROLE_LABELS: Record<UserRole, string> = {
   planning: "Contract & Planning",
   reporting: "Report & Bill Preparation",
   accounts: "Accounts",
+  lab: "Lab Team",
   viewer: "Viewer",
 };
 
@@ -31,6 +33,7 @@ export const ROLE_COLORS: Record<UserRole, { bg: string; color: string; border: 
   planning: { bg: "#F3E8FF", color: "#6A1B9A", border: "#D8B4FE" },
   reporting: { bg: "#FEF3C7", color: "#92400E", border: "#FDE68A" },
   accounts: { bg: "#DCFCE7", color: "#15673A", border: "#86EFAC" },
+  lab: { bg: "#E0E7FF", color: "#3730A3", border: "#A5B4FC" },
   viewer: { bg: "#F0F4F8", color: "#546E7A", border: "#E0E7EF" },
 };
 
@@ -51,3 +54,7 @@ export const MOBILISING_ROLES: UserRole[] = [
   "execution_head",
   "execution",
 ];
+/** "Manager" — approves site expenses, receives delay alerts. */
+export const MANAGER_ROLES: UserRole[] = [...ADMIN_ROLES, "execution_head"];
+/** Lab Team — laboratory processing workflow. */
+export const LAB_ROLES: UserRole[] = [...ADMIN_ROLES, "lab"];

@@ -15,12 +15,13 @@ export type Role =
   | 'planning'
   | 'reporting'
   | 'accounts'
+  | 'lab'
   | 'viewer';
 // Any role not listed here is downgraded to 'viewer' below, so this MUST stay
 // in sync with the user_role enum.
 const ROLES: Role[] = [
   'super_admin', 'admin', 'mobilization_lead',
-  'execution_head', 'execution', 'planning', 'reporting', 'accounts',
+  'execution_head', 'execution', 'planning', 'reporting', 'accounts', 'lab',
   'viewer',
 ];
 

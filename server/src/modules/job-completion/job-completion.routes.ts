@@ -25,6 +25,18 @@ const updateSchema = z.object({
   final_bill_notes: z.string().nullable().optional(),
   final_bill_url: z.string().nullable().optional(),
   mobilisation_id: z.string().uuid().nullable().optional(),
+  // Field work + lab (#7/#8)
+  field_work_completion_date: z.string().nullable().optional(),
+  field_work_completed_actual: z.string().nullable().optional(),
+  field_work_done: z.boolean().optional(),
+  field_work_notes: z.string().nullable().optional(),
+  samples_submitted: z.boolean().optional(),
+  samples_submitted_at: z.string().nullable().optional(),
+  samples_submitted_by: z.string().uuid().nullable().optional(),
+  lab_assignee_id: z.string().uuid().nullable().optional(),
+  lab_due_date: z.string().nullable().optional(),
+  lab_processing_done: z.boolean().optional(),
+  lab_completed_at: z.string().nullable().optional(),
 });
 
 const reminderSchema = z.object({

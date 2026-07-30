@@ -11,7 +11,7 @@ import { supabaseAdmin } from '../../lib/supabase';
 
 const ROLE = z.enum([
   'super_admin', 'admin', 'mobilization_lead',
-  'execution_head', 'execution', 'planning', 'reporting', 'accounts',
+  'execution_head', 'execution', 'planning', 'reporting', 'accounts', 'lab',
   'viewer',
 ]);
 

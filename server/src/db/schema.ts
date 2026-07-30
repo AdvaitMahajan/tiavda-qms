@@ -113,6 +113,7 @@ export const user_role = pgEnum('user_role', [
   'planning',
   'reporting',
   'accounts',
+  'lab',
   'viewer',
 ]);
 
@@ -148,6 +149,25 @@ export const team_members = pgTable('team_members', {
   is_active: boolean('is_active').notNull().default(true),
   sort_order: integer('sort_order').notNull().default(0),
   notes: text('notes'),
+  created_at: timestamp('created_at', { withTimezone: true, mode: 'string' }).notNull().defaultNow(),
+  updated_at: timestamp('updated_at', { withTimezone: true, mode: 'string' }).notNull().defaultNow(),
+});
+
+// ─── site_expenses (mobilisation site expenses, manager-approved) ────────────
+export const site_expenses = pgTable('site_expenses', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  org_id: uuid('org_id').notNull(),
+  enquiry_id: uuid('enquiry_id').notNull(),
+  expense_head: text('expense_head').notNull().default('site_expenses'),
+  description: text('description'),
+  amount: numericNumber('amount', { precision: 12, scale: 2 }).notNull().default(0),
+  expense_date: date('expense_date'),
+  receipt_url: text('receipt_url'),
+  status: text('status').notNull().default('pending'), // pending | approved | rejected
+  submitted_by: uuid('submitted_by'),
+  approved_by: uuid('approved_by'),
+  approved_at: timestamp('approved_at', { withTimezone: true, mode: 'string' }),
+  decision_note: text('decision_note'),
   created_at: timestamp('created_at', { withTimezone: true, mode: 'string' }).notNull().defaultNow(),
   updated_at: timestamp('updated_at', { withTimezone: true, mode: 'string' }).notNull().defaultNow(),
 });
@@ -432,6 +452,19 @@ export const job_completion = pgTable('job_completion', {
   org_id: uuid('org_id').notNull(),
   enquiry_id: uuid('enquiry_id').notNull().unique(),
   mobilisation_id: uuid('mobilisation_id'),
+  // Field work completion (#7) — precedes site completion.
+  field_work_completion_date: date('field_work_completion_date'),
+  field_work_completed_actual: timestamp('field_work_completed_actual', { withTimezone: true, mode: 'string' }),
+  field_work_done: boolean('field_work_done').notNull().default(false),
+  field_work_notes: text('field_work_notes'),
+  samples_submitted: boolean('samples_submitted').notNull().default(false),
+  samples_submitted_at: timestamp('samples_submitted_at', { withTimezone: true, mode: 'string' }),
+  samples_submitted_by: uuid('samples_submitted_by'),
+  // Lab processing (#8).
+  lab_assignee_id: uuid('lab_assignee_id'),
+  lab_due_date: date('lab_due_date'),
+  lab_processing_done: boolean('lab_processing_done').notNull().default(false),
+  lab_completed_at: timestamp('lab_completed_at', { withTimezone: true, mode: 'string' }),
   site_completion_date: date('site_completion_date'),
   site_completed_actual: timestamp('site_completed_actual', { withTimezone: true, mode: 'string' }),
   site_done: boolean('site_done').default(false),

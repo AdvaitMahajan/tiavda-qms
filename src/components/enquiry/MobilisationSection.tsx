@@ -4,6 +4,7 @@ import { sendNotification } from "@/lib/notifications";
 import { useAuth } from "@/hooks/useAuth";
 import { AssigneeDropdown } from "@/components/AssigneeDropdown";
 import { MOBILISING_ROLES } from "@/lib/permissions";
+import { SiteExpensesSection } from "@/components/enquiry/SiteExpensesSection";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -588,6 +589,9 @@ export function MobilisationSection({ enquiryId, enquiry, onStatusChange }: { en
             )}
           </div>
         </div>
+
+        {/* Site Expenses (supervisor records, manager approves) */}
+        <SiteExpensesSection enquiryId={enquiryId} />
 
         {/* Client Confirmation Status */}
         <div className="mt-3 space-y-2">

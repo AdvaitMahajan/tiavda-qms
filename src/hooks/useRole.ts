@@ -3,6 +3,7 @@ import {
   ADMIN_ROLES,
   BILLING_ROLES,
   MOBILISING_ROLES,
+  MANAGER_ROLES,
   QUOTING_ROLES,
   type UserRole,
 } from "@/lib/permissions";
@@ -17,6 +18,7 @@ export function useRole() {
   const canQuote = QUOTING_ROLES.includes(role);
   const canBill = BILLING_ROLES.includes(role);
   const canMobilise = MOBILISING_ROLES.includes(role);
+  const canApproveExpense = MANAGER_ROLES.includes(role);
 
   return {
     role,
@@ -27,6 +29,7 @@ export function useRole() {
     canQuote,
     canBill,
     canMobilise,
+    canApproveExpense,
     canManageTeam: isAdmin,
     // Mobilisation/execution roles stay scoped to their own workflow (BRD §9).
     // The Mobilisation tab renders independently of these flags, so keeping

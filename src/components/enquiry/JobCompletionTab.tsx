@@ -4,6 +4,8 @@ import { apiClient } from "@/lib/apiClient";
 import { uploadToStorage, getSignedUrl } from "@/lib/storage";
 import { useAuth } from "@/hooks/useAuth";
 import { sendClientTouchpoint } from "@/lib/clientTouchpoints";
+import { AssigneeDropdown } from "@/components/AssigneeDropdown";
+import { LAB_ROLES } from "@/lib/permissions";
 import { formatCurrency } from "@/lib/utils";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -60,6 +62,25 @@ export function JobCompletionTab({ enquiryId }: { enquiryId: string }) {
     if (!job) return;
     await apiClient.patch(`/job-completion/${job.id}`, { [field]: value });
     setJob((prev) => prev ? { ...prev, [field]: value } : prev);
+  };
+
+  const patchJob = async (patch: Record<string, any>) => {
+    if (!job) return;
+    await apiClient.patch(`/job-completion/${job.id}`, patch);
+    setJob((prev) => (prev ? { ...prev, ...patch } : prev));
+  };
+
+  // Site Supervisor marks samples submitted → starts the lab 4-day window.
+  const handleSamplesSubmitted = async () => {
+    const now = new Date().toISOString();
+    const due = new Date(Date.now() + 4 * 86_400_000).toISOString().slice(0, 10);
+    await patchJob({ samples_submitted: true, samples_submitted_at: now, samples_submitted_by: user?.id ?? null, lab_due_date: due });
+    toast.success("Samples submitted — lab processing window started (4 days).");
+  };
+
+  const handleLabDone = async () => {
+    await patchJob({ lab_processing_done: true, lab_completed_at: new Date().toISOString() });
+    toast.success("Lab processing marked complete.");
   };
 
   const handleDateChange = async (stage: StageConfig, newDate: string) => {
@@ -180,6 +201,81 @@ export function JobCompletionTab({ enquiryId }: { enquiryId: string }) {
 
   return (
     <div className="space-y-6">
+      {/* ── Field Work Completion → Samples → Lab Processing (#7/#8) ── */}
+      <div style={{ border: "1px solid #E0E7EF", borderRadius: 12, padding: 16, background: "#FFFFFF" }}>
+        <p className="text-[12px] font-semibold uppercase tracking-wide mb-3" style={{ color: "#546E7A" }}>
+          Field Work &amp; Laboratory
+        </p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          {/* Field work completion date (Execution Team) */}
+          <div>
+            <label className="text-[13px] font-medium" style={{ color: "#0A1929" }}>Field Work Completion Date</label>
+            <Input
+              type="date"
+              value={(job.field_work_completion_date as string | null) ?? ""}
+              onChange={(e) => updateField("field_work_completion_date", e.target.value || null)}
+              className="mt-1"
+            />
+            <p className="text-[12px] mt-1" style={{ color: "#94A3B8" }}>
+              Set by the Execution Team. Starts a 3-day daily reminder to the Site Supervisor to submit samples.
+            </p>
+          </div>
+
+          {/* Samples submitted */}
+          <div>
+            <label className="text-[13px] font-medium" style={{ color: "#0A1929" }}>Sample Submission</label>
+            {job.samples_submitted ? (
+              <div className="mt-1 text-[13px]" style={{ color: "#15673A", fontWeight: 600 }}>
+                ✓ Submitted{job.samples_submitted_at ? ` on ${String(job.samples_submitted_at).slice(0, 10)}` : ""}
+              </div>
+            ) : (
+              <button
+                onClick={handleSamplesSubmitted}
+                disabled={!job.field_work_completion_date}
+                className="mt-1 text-[13px] font-semibold px-3 py-2 rounded-lg text-white disabled:opacity-40"
+                style={{ background: "linear-gradient(135deg,#1565C0,#2979FF)" }}
+                title={job.field_work_completion_date ? "" : "Set the field work completion date first"}
+              >
+                Mark samples submitted to lab
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Lab processing — appears once samples are submitted */}
+        {job.samples_submitted && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4 pt-4" style={{ borderTop: "1px solid #EEF2F6" }}>
+            <div>
+              <label className="text-[13px] font-medium" style={{ color: "#0A1929" }}>Lab Team member</label>
+              <div className="mt-1">
+                <AssigneeDropdown
+                  value={(job.lab_assignee_id as string | null) ?? null}
+                  onChange={(id) => updateField("lab_assignee_id", id)}
+                  filterRoles={LAB_ROLES}
+                />
+              </div>
+            </div>
+            <div>
+              <label className="text-[13px] font-medium" style={{ color: "#0A1929" }}>Lab Processing</label>
+              {job.lab_processing_done ? (
+                <div className="mt-1 text-[13px]" style={{ color: "#15673A", fontWeight: 600 }}>
+                  ✓ Complete{job.lab_completed_at ? ` on ${String(job.lab_completed_at).slice(0, 10)}` : ""}
+                </div>
+              ) : (
+                <div className="mt-1">
+                  <div className="text-[12px] mb-1" style={{ color: job.lab_due_date && String(job.lab_due_date) < new Date().toISOString().slice(0, 10) ? "#B91C1C" : "#94A3B8" }}>
+                    Due by {job.lab_due_date ? String(job.lab_due_date) : "—"} · alternate-day reminders to the Lab Team; a delay alerts Admin + Manager.
+                  </div>
+                  <button onClick={handleLabDone} className="text-[13px] font-semibold px-3 py-2 rounded-lg text-white" style={{ background: "#15673A" }}>
+                    Mark lab processing complete
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+
       {/* Progress bar */}
       <div className="flex items-center justify-center gap-0">
         {STAGES.map((stage, i) => {

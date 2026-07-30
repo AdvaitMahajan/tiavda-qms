@@ -22,7 +22,7 @@ teamMembersRouter.use(authenticate);
 
 const APP_ROLES = [
   'super_admin', 'admin', 'mobilization_lead',
-  'execution_head', 'execution', 'planning', 'reporting', 'accounts',
+  'execution_head', 'execution', 'planning', 'reporting', 'accounts', 'lab',
   'viewer',
 ] as const;
 

@@ -22,6 +22,8 @@ export const canBill = (role: Role): boolean =>
   isEditor(role) || role === 'accounts' || role === 'reporting';
 export const canMobilise = (role: Role): boolean =>
   isEditor(role) || role === 'mobilization_lead' || role === 'execution_head' || role === 'execution';
+/** "Manager" — approves site expenses. */
+export const isManager = (role: Role): boolean => isEditor(role) || role === 'execution_head';
 
 export function requireRole(...allowed: Role[]): RequestHandler {
   return (req: Request, _res: Response, next: NextFunction) => {
@@ -36,6 +38,20 @@ export function requireRole(...allowed: Role[]): RequestHandler {
 export const requireEditor: RequestHandler = (req, _res, next) => {
   if (!req.auth) return next(unauthorized());
   if (!isEditor(req.auth.role)) return next(forbidden('Requires admin privileges'));
+  next();
+};
+
+/** Manager gate — Admin / Execution Head (e.g. approving site expenses). */
+export const requireManager: RequestHandler = (req, _res, next) => {
+  if (!req.auth) return next(unauthorized());
+  if (!isManager(req.auth.role)) return next(forbidden('Requires manager privileges'));
+  next();
+};
+
+/** Mobilisation/site actions — the assigned team can record, admins always can. */
+export const requireMobiliser: RequestHandler = (req, _res, next) => {
+  if (!req.auth) return next(unauthorized());
+  if (!canMobilise(req.auth.role)) return next(forbidden('Requires mobilisation privileges'));
   next();
 };
 

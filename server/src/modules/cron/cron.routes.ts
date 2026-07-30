@@ -65,7 +65,21 @@ function makeOrgHelpers() {
     }
   }
 
-  return { orgSettings, orgAdminIds, notifyAdmins };
+  // Resolve active org users (id/name/email/phone) for the given roles.
+  async function orgRoleUsers(
+    orgId: string,
+    roles: string[],
+  ): Promise<Array<{ id: string; full_name: string | null; email: string | null; phone: string | null }>> {
+    const { data } = await sb
+      .from('profiles')
+      .select('id, full_name, email, phone')
+      .eq('org_id', orgId)
+      .in('role', roles)
+      .eq('is_active', true);
+    return (data ?? []) as Array<{ id: string; full_name: string | null; email: string | null; phone: string | null }>;
+  }
+
+  return { orgSettings, orgAdminIds, notifyAdmins, orgRoleUsers };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -171,7 +185,9 @@ async function runDaily(): Promise<Record<string, unknown>> {
   const today = new Date().toISOString().split('T')[0]!;
   const results: Record<string, unknown> = { date: today };
   const appUrl = env.APP_URL || 'https://qms.globalgeoconsultancy.com';
-  const { orgSettings, orgAdminIds, notifyAdmins } = makeOrgHelpers();
+  const { orgSettings, orgAdminIds, notifyAdmins, orgRoleUsers } = makeOrgHelpers();
+  const dayOffset = (fromDate: string) =>
+    Math.floor((new Date(`${today}T00:00:00Z`).getTime() - new Date(`${String(fromDate).slice(0, 10)}T00:00:00Z`).getTime()) / 86_400_000);
 
   // 1. Follow-up reminders
   try {
@@ -497,6 +513,169 @@ async function runDaily(): Promise<Record<string, unknown>> {
     results.site_visit_notifications = { processed: n };
   } catch (err) {
     results.site_visit_notifications = { error: (err as Error).message };
+  }
+
+  // 10. Field-work → sample-submission reminders (#7): daily for 3 days after the
+  //     field work completion date, to the Site Supervisor (mobilisation team lead)
+  //     + the Execution Team, until samples are marked submitted.
+  try {
+    const { data: jobs } = await sb
+      .from('job_completion')
+      .select('id, org_id, enquiry_id, field_work_completion_date, enquiries(ref_number)')
+      .not('field_work_completion_date', 'is', null)
+      .eq('samples_submitted', false);
+    let n = 0;
+    for (const jc of jobs ?? []) {
+      const org = jc.org_id as string | null;
+      if (!org) continue;
+      const off = dayOffset(jc.field_work_completion_date as string);
+      if (off < 0 || off > 2) continue; // days 0,1,2
+      const ref = (jc.enquiries as any)?.ref_number ?? '';
+      const settings = await orgSettings(org);
+      const link = `/enquiries/${jc.enquiry_id}`;
+      const { data: mob } = await sb.from('mobilisation').select('team_lead_id').eq('enquiry_id', jc.enquiry_id).maybeSingle();
+      const supId = mob?.team_lead_id as string | null;
+      if (supId) {
+        await sb.from('notifications').insert({
+          org_id: org, user_id: supId, type: 'sample_submission_reminder', requires_ack: true,
+          title: `Submit samples to lab — ${ref}`,
+          body: `Field work completed on ${String(jc.field_work_completion_date).slice(0, 10)}. Please submit the samples to the laboratory (day ${off + 1} of 3).`,
+          enquiry_id: jc.enquiry_id, link,
+        });
+        const { data: sup } = await sb.from('profiles').select('email').eq('id', supId).maybeSingle();
+        if (sup?.email) {
+          await sendEmail({
+            to: sup.email, orgId: org, reply_to: settings.admin_email || undefined,
+            subject: `Submit samples to lab — ${ref}`,
+            html_body: `<p>Field work for <strong>${ref}</strong> completed on ${String(jc.field_work_completion_date).slice(0, 10)}.</p><p>Please submit the samples to the laboratory. This is day ${off + 1} of 3.</p>`,
+          });
+        }
+      }
+      // Execution Team FYI.
+      for (const u of await orgRoleUsers(org, ['execution', 'execution_head'])) {
+        if (u.id === supId) continue;
+        await sb.from('notifications').insert({
+          org_id: org, user_id: u.id, type: 'sample_submission_reminder',
+          title: `Samples pending submission — ${ref}`,
+          body: `Awaiting sample submission to the lab (day ${off + 1} of 3).`,
+          enquiry_id: jc.enquiry_id, link,
+        });
+      }
+      n++;
+    }
+    results.sample_submission_reminders = { processed: n };
+  } catch (err) {
+    results.sample_submission_reminders = { error: (err as Error).message };
+  }
+
+  // 11. Lab processing reminders (#8): alternate days (0,2,4) after samples were
+  //     submitted, to the Lab Team, until lab processing is marked complete.
+  try {
+    const { data: jobs } = await sb
+      .from('job_completion')
+      .select('id, org_id, enquiry_id, samples_submitted_at, lab_assignee_id, lab_due_date, enquiries(ref_number)')
+      .eq('samples_submitted', true)
+      .eq('lab_processing_done', false);
+    let n = 0;
+    for (const jc of jobs ?? []) {
+      const org = jc.org_id as string | null;
+      if (!org || !jc.samples_submitted_at) continue;
+      const off = dayOffset(jc.samples_submitted_at as string);
+      if (off < 0 || off > 4 || off % 2 !== 0) continue; // days 0,2,4
+      const ref = (jc.enquiries as any)?.ref_number ?? '';
+      const settings = await orgSettings(org);
+      const link = `/enquiries/${jc.enquiry_id}`;
+      const labUsers = jc.lab_assignee_id
+        ? [{ id: jc.lab_assignee_id as string, email: null as string | null }]
+        : (await orgRoleUsers(org, ['lab'])).map((u) => ({ id: u.id, email: u.email }));
+      for (const lu of labUsers) {
+        await sb.from('notifications').insert({
+          org_id: org, user_id: lu.id, type: 'lab_processing_reminder', requires_ack: true,
+          title: `Lab processing due — ${ref}`,
+          body: `Samples submitted on ${String(jc.samples_submitted_at).slice(0, 10)}. Please process and report by ${jc.lab_due_date ?? 'the due date'}.`,
+          enquiry_id: jc.enquiry_id, link,
+        });
+        let email = lu.email;
+        if (!email && jc.lab_assignee_id) {
+          const { data: p } = await sb.from('profiles').select('email').eq('id', jc.lab_assignee_id).maybeSingle();
+          email = p?.email ?? null;
+        }
+        if (email) {
+          await sendEmail({
+            to: email, orgId: org, reply_to: settings.admin_email || undefined,
+            subject: `Lab processing due — ${ref}`,
+            html_body: `<p>Samples for <strong>${ref}</strong> were submitted on ${String(jc.samples_submitted_at).slice(0, 10)}.</p><p>Please complete processing and reporting by <strong>${jc.lab_due_date ?? 'the due date'}</strong>.</p>`,
+          });
+        }
+      }
+      n++;
+    }
+    results.lab_processing_reminders = { processed: n };
+  } catch (err) {
+    results.lab_processing_reminders = { error: (err as Error).message };
+  }
+
+  // 12. Lab delay alert (#8): past the lab due date and still not complete → WhatsApp
+  //     to Admin + Manager (execution_head) + in-app. Inert without WATI creds.
+  try {
+    const { data: jobs } = await sb
+      .from('job_completion')
+      .select('id, org_id, enquiry_id, lab_due_date, enquiries(ref_number)')
+      .eq('samples_submitted', true)
+      .eq('lab_processing_done', false)
+      .lt('lab_due_date', today);
+    let n = 0;
+    for (const jc of jobs ?? []) {
+      const org = jc.org_id as string | null;
+      if (!org) continue;
+      const ref = (jc.enquiries as any)?.ref_number ?? '';
+      const settings = await orgSettings(org);
+      await notifyAdmins(org, {
+        type: 'lab_delay', title: `Lab processing delayed — ${ref}`,
+        body: `Laboratory processing is past its due date (${jc.lab_due_date}). Please follow up with the Lab Team.`,
+        enquiry_id: jc.enquiry_id, link: `/enquiries/${jc.enquiry_id}`,
+      });
+      const waParams = [
+        { name: 'ref_number', value: ref },
+        { name: 'due_date', value: String(jc.lab_due_date ?? '') },
+      ];
+      const phones = new Set<string>();
+      if (settings.admin_whatsapp) phones.add(settings.admin_whatsapp);
+      for (const m of await orgRoleUsers(org, ['execution_head'])) if (m.phone) phones.add(m.phone);
+      for (const phone of phones) {
+        await sendWhatsApp({ phone_number: phone, orgId: org, template_name: 'qms_lab_delay', parameters: waParams });
+      }
+      n++;
+    }
+    results.lab_delay_alerts = { processed: n };
+  } catch (err) {
+    results.lab_delay_alerts = { error: (err as Error).message };
+  }
+
+  // 13. Re-nudge admins about reminders left unacknowledged > 1 day (#4).
+  try {
+    const cutoff = new Date(Date.now() - 86_400_000).toISOString();
+    const { data: stale } = await sb
+      .from('notifications')
+      .select('org_id')
+      .eq('requires_ack', true)
+      .is('acknowledged_at', null)
+      .lt('created_at', cutoff);
+    const byOrg = new Map<string, number>();
+    for (const r of stale ?? []) {
+      const org = r.org_id as string | null;
+      if (org) byOrg.set(org, (byOrg.get(org) ?? 0) + 1);
+    }
+    for (const [org, count] of byOrg) {
+      await notifyAdmins(org, {
+        type: 'ack_pending', title: `${count} reminder${count === 1 ? '' : 's'} awaiting response`,
+        body: `${count} reminder${count === 1 ? ' has' : 's have'} not been acknowledged for over a day. Review who still needs to respond.`,
+        link: '/dashboard',
+      });
+    }
+    results.ack_renudge = { orgs: byOrg.size };
+  } catch (err) {
+    results.ack_renudge = { error: (err as Error).message };
   }
 
   return { success: true, ...results };

@@ -13,7 +13,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Loader2, Check, Hammer, FileText, Receipt, Upload } from "lucide-react";
+import { Loader2, Check, Hammer, FileText, Receipt, Upload, FlaskConical } from "lucide-react";
 import { motion } from "framer-motion";
 import type { Tables } from "@/integrations/supabase/types";
 
@@ -202,79 +202,88 @@ export function JobCompletionTab({ enquiryId }: { enquiryId: string }) {
   return (
     <div className="space-y-6">
       {/* ── Field Work Completion → Samples → Lab Processing (#7/#8) ── */}
-      <div style={{ border: "1px solid #E0E7EF", borderRadius: 12, padding: 16, background: "#FFFFFF" }}>
-        <p className="text-[12px] font-semibold uppercase tracking-wide mb-3" style={{ color: "#546E7A" }}>
-          Field Work &amp; Laboratory
-        </p>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          {/* Field work completion date (Execution Team) */}
-          <div>
-            <label className="text-[13px] font-medium" style={{ color: "#0A1929" }}>Field Work Completion Date</label>
-            <Input
-              type="date"
-              value={(job.field_work_completion_date as string | null) ?? ""}
-              onChange={(e) => updateField("field_work_completion_date", e.target.value || null)}
-              className="mt-1"
-            />
-            <p className="text-[12px] mt-1" style={{ color: "#94A3B8" }}>
-              Set by the Execution Team. Starts a 3-day daily reminder to the Site Supervisor to submit samples.
-            </p>
-          </div>
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base flex items-center gap-2">
+            <FlaskConical className="h-4 w-4" /> Field Work &amp; Laboratory
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-5">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-5">
+            {/* Field work completion date (Execution Team) */}
+            <div className="space-y-1.5">
+              <Label className="text-[13px]">Field Work Completion Date</Label>
+              <Input
+                type="date"
+                className="max-w-[240px]"
+                value={(job.field_work_completion_date as string | null) ?? ""}
+                onChange={(e) => updateField("field_work_completion_date", e.target.value || null)}
+              />
+              <p className="text-[12px] text-muted-foreground">
+                Set by the Execution Team. Starts a 3-day daily reminder to the Site Supervisor to submit samples.
+              </p>
+            </div>
 
-          {/* Samples submitted */}
-          <div>
-            <label className="text-[13px] font-medium" style={{ color: "#0A1929" }}>Sample Submission</label>
-            {job.samples_submitted ? (
-              <div className="mt-1 text-[13px]" style={{ color: "#15673A", fontWeight: 600 }}>
-                ✓ Submitted{job.samples_submitted_at ? ` on ${String(job.samples_submitted_at).slice(0, 10)}` : ""}
+            {/* Samples submitted */}
+            <div className="space-y-1.5">
+              <Label className="text-[13px]">Sample Submission</Label>
+              <div>
+                {job.samples_submitted ? (
+                  <Badge className="bg-green-100 text-green-700 gap-1"><Check className="h-3.5 w-3.5" /> Submitted{job.samples_submitted_at ? ` · ${String(job.samples_submitted_at).slice(0, 10)}` : ""}</Badge>
+                ) : (
+                  <Button
+                    size="sm"
+                    onClick={handleSamplesSubmitted}
+                    disabled={!job.field_work_completion_date}
+                    title={job.field_work_completion_date ? "" : "Set the field work completion date first"}
+                  >
+                    Mark samples submitted to lab
+                  </Button>
+                )}
               </div>
-            ) : (
-              <button
-                onClick={handleSamplesSubmitted}
-                disabled={!job.field_work_completion_date}
-                className="mt-1 text-[13px] font-semibold px-3 py-2 rounded-lg text-white disabled:opacity-40"
-                style={{ background: "linear-gradient(135deg,#1565C0,#2979FF)" }}
-                title={job.field_work_completion_date ? "" : "Set the field work completion date first"}
-              >
-                Mark samples submitted to lab
-              </button>
-            )}
+              <p className="text-[12px] text-muted-foreground">
+                {job.samples_submitted
+                  ? "Lab processing has started below."
+                  : "Available once the completion date is set. This starts the lab window."}
+              </p>
+            </div>
           </div>
-        </div>
 
-        {/* Lab processing — appears once samples are submitted */}
-        {job.samples_submitted && (
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4 pt-4" style={{ borderTop: "1px solid #EEF2F6" }}>
-            <div>
-              <label className="text-[13px] font-medium" style={{ color: "#0A1929" }}>Lab Team member</label>
-              <div className="mt-1">
+          {/* Lab processing — appears once samples are submitted */}
+          {job.samples_submitted && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-5 pt-5 border-t">
+              <div className="space-y-1.5">
+                <Label className="text-[13px]">Lab Team Member</Label>
                 <AssigneeDropdown
                   value={(job.lab_assignee_id as string | null) ?? null}
                   onChange={(id) => updateField("lab_assignee_id", id)}
                   filterRoles={LAB_ROLES}
                 />
               </div>
-            </div>
-            <div>
-              <label className="text-[13px] font-medium" style={{ color: "#0A1929" }}>Lab Processing</label>
-              {job.lab_processing_done ? (
-                <div className="mt-1 text-[13px]" style={{ color: "#15673A", fontWeight: 600 }}>
-                  ✓ Complete{job.lab_completed_at ? ` on ${String(job.lab_completed_at).slice(0, 10)}` : ""}
+              <div className="space-y-1.5">
+                <Label className="text-[13px]">Lab Processing</Label>
+                <div>
+                  {job.lab_processing_done ? (
+                    <Badge className="bg-green-100 text-green-700 gap-1"><Check className="h-3.5 w-3.5" /> Complete{job.lab_completed_at ? ` · ${String(job.lab_completed_at).slice(0, 10)}` : ""}</Badge>
+                  ) : (
+                    <Button size="sm" onClick={handleLabDone} className="bg-green-600 hover:bg-green-700 text-white">
+                      Mark lab processing complete
+                    </Button>
+                  )}
                 </div>
-              ) : (
-                <div className="mt-1">
-                  <div className="text-[12px] mb-1" style={{ color: job.lab_due_date && String(job.lab_due_date) < new Date().toISOString().slice(0, 10) ? "#B91C1C" : "#94A3B8" }}>
-                    Due by {job.lab_due_date ? String(job.lab_due_date) : "—"} · alternate-day reminders to the Lab Team; a delay alerts Admin + Manager.
-                  </div>
-                  <button onClick={handleLabDone} className="text-[13px] font-semibold px-3 py-2 rounded-lg text-white" style={{ background: "#15673A" }}>
-                    Mark lab processing complete
-                  </button>
-                </div>
-              )}
+                {!job.lab_processing_done && (
+                  <p
+                    className="text-[12px]"
+                    style={{ color: job.lab_due_date && String(job.lab_due_date) < new Date().toISOString().slice(0, 10) ? "#B91C1C" : undefined }}
+                  >
+                    Due by {job.lab_due_date ? String(job.lab_due_date) : "—"} · alternate-day reminders; a delay alerts Admin &amp; Manager.
+                  </p>
+                )}
+              </div>
             </div>
-          </div>
-        )}
-      </div>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Progress bar */}
       <div className="flex items-center justify-center gap-0">
@@ -306,8 +315,8 @@ export function JobCompletionTab({ enquiryId }: { enquiryId: string }) {
           const stageReminders = reminders.filter((r) => r.reminder_type === stage.reminderType);
 
           return (
-            <motion.div key={stage.key} animate={{ backgroundColor: done ? "#D6F0E3" : "hsl(var(--card))" }} transition={{ duration: 0.4 }}>
-              <Card className={done ? "border-green-300" : ""} style={{ backgroundColor: "inherit" }}>
+            <motion.div key={stage.key} className="h-full" animate={{ backgroundColor: done ? "#D6F0E3" : "hsl(var(--card))" }} transition={{ duration: 0.4 }}>
+              <Card className={`h-full flex flex-col ${done ? "border-green-300" : ""}`} style={{ backgroundColor: "inherit" }}>
                 <CardHeader className="pb-3">
                   <div className="flex items-center justify-between">
                     <CardTitle className="text-base flex items-center gap-2">
@@ -318,7 +327,7 @@ export function JobCompletionTab({ enquiryId }: { enquiryId: string }) {
                     </Badge>
                   </div>
                 </CardHeader>
-                <CardContent className="space-y-3">
+                <CardContent className="space-y-3 flex flex-col flex-1">
                   <div>
                     <Label className="text-[13px]">Target Date</Label>
                     <Input
@@ -385,7 +394,7 @@ export function JobCompletionTab({ enquiryId }: { enquiryId: string }) {
                   )}
 
                   {!done && (
-                    <Button variant="outline" className="w-full border-green-500 text-green-700 hover:bg-green-50" onClick={() => handleMarkDone(stage)}>
+                    <Button variant="outline" className="w-full mt-auto border-green-500 text-green-700 hover:bg-green-50" onClick={() => handleMarkDone(stage)}>
                       <Check className="mr-1 h-4 w-4" /> Mark as Done
                     </Button>
                   )}

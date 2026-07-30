@@ -361,6 +361,8 @@ export function AddLeadDialog({ open, onOpenChange }: { open: boolean; onOpenCha
                       const { ok } = await sendNotification({
                         to: clientEmail,
                         template: "intake_link",
+                        // Initial communication: site address isn't known yet, so company only.
+                        subjectPrefix: company.trim() || undefined,
                         params: { client_name: clientName, ref_number: newEnquiry.ref_number, intake_url: intakeUrl },
                       });
                       if (ok) linkDelivered = true;

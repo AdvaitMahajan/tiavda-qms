@@ -129,15 +129,17 @@ export function JobCompletionTab({ enquiryId }: { enquiryId: string }) {
         // Client touchpoint: thank-you / report-delivered. Best-effort; inert
         // until Brevo/WATI credentials are provisioned.
         try {
-          const enq = await apiClient.get<{ ref_number: string; client_id: string }>(`/enquiries/${enquiryId}`);
+          const enq = await apiClient.get<{ ref_number: string; client_id: string; site_address: string | null }>(`/enquiries/${enquiryId}`);
           const client = await apiClient.get<{
-            id: string; name: string; email: string | null; email_bounced: boolean | null;
+            id: string; name: string; company: string | null; email: string | null; email_bounced: boolean | null;
             whatsapp_number: string | null; whatsapp_invalid: boolean | null;
           }>(`/clients/${enq.client_id}`);
           const clientName = client?.name ?? "Client";
           await sendClientTouchpoint({
             enquiryId,
             client,
+            company: client?.company,
+            siteAddress: enq.site_address,
             subject: `Project Completed — ${enq.ref_number}`,
             emailTemplate: "job_completed",
             emailParams: { client_name: clientName, ref_number: enq.ref_number },

@@ -10,6 +10,7 @@ import { createDriveFolder } from '../../integrations/drive';
 const emailSchema = z.object({
   to: z.union([z.string(), z.array(z.string())]),
   subject: z.string().optional(),
+  subject_prefix: z.string().optional(),
   html_body: z.string().optional(),
   template: z.string().optional(),
   params: z.record(z.string(), z.any()).optional(),

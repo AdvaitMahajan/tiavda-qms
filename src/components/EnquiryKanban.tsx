@@ -124,6 +124,8 @@ export function EnquiryKanban({ rows, isLoading, showClosed }: Props) {
         await sendClientTouchpoint({
           enquiryId: id,
           client,
+          company: client?.company,
+          siteAddress: enq.site_address,
           subject: `Order Confirmed — ${ref}`,
           emailTemplate: "order_confirmed",
           emailParams: { client_name: clientName, ref_number: ref, total_amount: totalFmt, advance_amount: advFmt },
@@ -147,9 +149,11 @@ export function EnquiryKanban({ rows, isLoading, showClosed }: Props) {
           await sendClientTouchpoint({
             enquiryId: id,
             client,
+            company: client?.company,
+            siteAddress: enq.site_address,
             subject: `Advance Payment Request — ${ref}`,
             emailTemplate: "payment_request",
-            emailParams: { client_name: clientName, ref_number: ref, amount: advFmt },
+            emailParams: { client_name: clientName, ref_number: ref, amount: advFmt, percentage: "50%" },
             waTemplate: "qms_payment_request",
             waParams: [
               { name: "client_name", value: clientName },

@@ -56,7 +56,7 @@ React/Vite frontend  ──HTTPS──>  Railway custom REST API  ──pg──
 - Integrations (Brevo/WATI/Google) use placeholder secrets → email/WhatsApp/Drive are inert until real secrets are set in Railway.
 
 ## Database Tables (15 core — all exist, do not recreate)
-clients · intake_tokens · intake_submissions · rate_matrix · enquiries (auto ref `TIV-YYYY-NNNN`) · quotations (A/B/C/D, one approved at a time) · communication_log · follow_ups · payments · mobilisation · job_completion · job_reminders · notifications · enquiry_events (audit log) · app_settings. (Plus `profiles`, `site_visits`, `mob_confirmation_tokens`.)
+clients · intake_tokens · intake_submissions · rate_matrix · enquiries (auto ref `GG-YYYY-NNNN`; legacy rows keep `TIV-YYYY-NNNN`) · quotations (A/B/C/D, one approved at a time; number `GGQ-YYYY-NNNNN`, legacy `QTN-`) · communication_log · follow_ups · payments · mobilisation · job_completion · job_reminders · notifications · enquiry_events (audit log) · app_settings. (Plus `profiles`, `site_visits`, `mob_confirmation_tokens`.)
 
 ## Enquiry Status Machine
 `new → pending → sent → follow_up → approved → confirmed → completed`; any active → `lost` (terminal). Extended states in use: `intake_pending`, `negotiation`, `payment_received`, `mobilization_scheduled`, `job_active`. Transitions validated server‑side.
@@ -65,7 +65,7 @@ clients · intake_tokens · intake_submissions · rate_matrix · enquiries (auto
 - Rate matrix: one active rate per `city + structure_type + soil_type`.
 - Quotations: only ONE approved per enquiry at a time.
 - Intake tokens: 32‑char URL‑safe, 7‑day expiry, single‑use.
-- Ref numbers `TIV-YYYY-NNNN` via Postgres trigger (becomes per‑org in Phase 2).
+- Ref numbers `GG-YYYY-NNNN` via Postgres trigger, per‑org sequence (legacy `TIV-` rows unchanged). Quotation number `GGQ-YYYY-NNNNN`, invoice `GG-INV-…`.
 - Money: `NUMERIC(12,2)`, Indian formatting ₹1,23,456. Phones: E.164 `+91XXXXXXXXXX`.
 - Job reminders: 3 rows (3/2/1‑day) per target date.
 

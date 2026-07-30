@@ -69,10 +69,10 @@ export interface TemplateParams {
   intake_expiry_admin: { ref_number: string; client_name: string; client_phone: string; expiry_date: string };
   new_intake_admin: { ref_number: string; site_city?: string; structure_type?: string; num_bores?: number | string };
   quotation_sent: { client_name: string; ref_number: string; total_amount: string; validity_date: string };
-  payment_request: { client_name: string; ref_number: string; amount: string };
+  payment_request: { client_name: string; ref_number: string; amount: string; percentage?: string };
   payment_request_detailed: {
     client_name: string; ref_number: string; type_label: string; amount: string;
-    due_date: string; bank_details: string; instructions?: string;
+    due_date: string; bank_details: string; instructions?: string; percentage?: string;
   };
   payment_reminder: { client_name: string; ref_number: string; amount: string; payment_type: string };
   mobilisation_confirmed: {
@@ -206,7 +206,7 @@ const TEMPLATES: { [K in TemplateKey]: (p: TemplateParams[K]) => RenderedEmail }
       body: `
         <p>Dear ${esc(p.client_name)},</p>
         <p>Thank you for confirming the quotation for <strong>${esc(p.ref_number)}</strong>.</p>
-        <p>An advance payment of <strong>${esc(p.amount)}</strong> (50% of quotation value) is required to proceed with mobilization.</p>
+        <p>An advance payment of <strong>${esc(p.percentage ?? '50%')}</strong> of the quotation value${p.amount ? ` (${esc(p.amount)})` : ''} is required to proceed with mobilization.</p>
         <p>Please arrange the payment at your earliest convenience.</p>
         <p style="margin-top:24px;">Best regards,<br/><strong>${esc(COMPANY_NAME)}</strong></p>`,
     }),
@@ -222,6 +222,7 @@ const TEMPLATES: { [K in TemplateKey]: (p: TemplateParams[K]) => RenderedEmail }
         <p>We request the ${esc(p.type_label.toLowerCase())} payment for your project <strong style="font-family:monospace;">${esc(p.ref_number)}</strong>.</p>
         <div style="background:${BRAND.surface};border:1px solid ${BRAND.border};border-radius:8px;padding:18px 20px;margin:22px 0;">
           <table style="width:100%;border-collapse:collapse;">
+            ${p.percentage ? detailRow('Advance', `${esc(p.percentage)} of quotation value`) : ''}
             ${detailRow('Amount Due', esc(p.amount))}
             ${detailRow('Due Date', esc(p.due_date))}
           </table>

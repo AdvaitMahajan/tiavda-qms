@@ -257,7 +257,7 @@ async function runDaily(): Promise<Record<string, unknown>> {
     const cutoff = new Date(Date.now() - 3 * 86_400_000).toISOString();
     const { data: overdue } = await sb
       .from('payments')
-      .select('id, org_id, enquiry_id, amount_requested, payment_type, request_sent_at, enquiries(ref_number, client_id, clients(name, email, whatsapp_number, whatsapp_invalid, email_bounced))')
+      .select('id, org_id, enquiry_id, amount_requested, payment_type, request_sent_at, enquiries(ref_number, site_address, client_id, clients(name, company, email, whatsapp_number, whatsapp_invalid, email_bounced))')
       .eq('status', 'request_sent')
       .lt('request_sent_at', cutoff);
     let n = 0;
@@ -277,8 +277,9 @@ async function runDaily(): Promise<Record<string, unknown>> {
         enquiry_id: pmt.enquiry_id,
         link: `/enquiries/${pmt.enquiry_id}`,
       });
+      const payPrefix = [client?.company?.trim?.(), (enq.site_address as string | null)?.trim?.()].filter(Boolean).join(' — ') || undefined;
       if (client?.email && !client.email_bounced) {
-        await sendEmail({ to: client.email, orgId: org, template: 'payment_reminder', params: { ref_number: ref, client_name: client.name, amount: amt, payment_type: pmt.payment_type } });
+        await sendEmail({ to: client.email, orgId: org, template: 'payment_reminder', subject_prefix: payPrefix, params: { ref_number: ref, client_name: client.name, amount: amt, payment_type: pmt.payment_type } });
         await sb.from('communication_log').insert({ org_id: org, enquiry_id: pmt.enquiry_id, client_id: enq.client_id, channel: 'email', direction: 'outbound', subject: `Payment Reminder — ${ref}`, body: `Automated payment reminder for ${amt} ${pmt.payment_type}`, status: 'sent' });
       }
       if (client?.whatsapp_number && !client.whatsapp_invalid) {

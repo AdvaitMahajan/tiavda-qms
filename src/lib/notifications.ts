@@ -14,10 +14,10 @@ export interface NotificationParams {
   intake_expiry_admin: { ref_number: string; client_name: string; client_phone: string; expiry_date: string };
   new_intake_admin: { ref_number: string; site_city?: string; structure_type?: string; num_bores?: number | string };
   quotation_sent: { client_name: string; ref_number: string; total_amount: string; validity_date: string };
-  payment_request: { client_name: string; ref_number: string; amount: string };
+  payment_request: { client_name: string; ref_number: string; amount: string; percentage?: string };
   payment_request_detailed: {
     client_name: string; ref_number: string; type_label: string; amount: string;
-    due_date: string; bank_details: string; instructions?: string;
+    due_date: string; bank_details: string; instructions?: string; percentage?: string;
   };
   payment_reminder: { client_name: string; ref_number: string; amount: string; payment_type: string };
   mobilisation_confirmed: {
@@ -55,6 +55,8 @@ export interface SendNotificationOptions<T extends NotificationTemplate> {
   attachmentBucket?: string;
   /** Override the template's default subject. */
   subject?: string;
+  /** Prepended to the rendered subject, e.g. "Company — Site Address". */
+  subjectPrefix?: string;
 }
 
 export interface SendNotificationResult {
@@ -75,6 +77,7 @@ export async function sendNotification<T extends NotificationTemplate>(
       template: opts.template,
       params: opts.params,
       ...(opts.subject ? { subject: opts.subject } : {}),
+      ...(opts.subjectPrefix ? { subject_prefix: opts.subjectPrefix } : {}),
       ...(opts.attachmentPath ? { attachment_path: opts.attachmentPath } : {}),
       ...(opts.attachmentBucket ? { attachment_bucket: opts.attachmentBucket } : {}),
     });

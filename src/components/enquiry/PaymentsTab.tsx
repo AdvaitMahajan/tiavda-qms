@@ -143,11 +143,18 @@ export function PaymentsTab({ enquiryId, onStatusChange }: { enquiryId: string; 
           status: ok ? "sent" : "failed", sent_by: user?.id ?? null,
         });
 
+      // Advance requests show the percentage of the quotation value (amount kept too).
+      const advancePct =
+        reqType === "advance" && approvedTotal && approvedTotal > 0
+          ? `${Math.round((amount / approvedTotal) * 100)}%`
+          : undefined;
+
       // Send email
       if (client?.email && !client?.email_bounced) {
         const { ok } = await sendNotification({
           to: client.email,
           template: "payment_request_detailed",
+          subjectPrefix: [client.company?.trim(), enquiry?.site_address?.trim()].filter(Boolean).join(" — ") || undefined,
           params: {
             client_name: clientName,
             ref_number: refNumber,
@@ -156,6 +163,7 @@ export function PaymentsTab({ enquiryId, onStatusChange }: { enquiryId: string; 
             due_date: dueDate,
             bank_details: bankDetails,
             instructions: reqInstructions || undefined,
+            percentage: advancePct,
           },
         });
         await logComm("email", ok, subject);
@@ -291,6 +299,8 @@ export function PaymentsTab({ enquiryId, onStatusChange }: { enquiryId: string; 
       await sendClientTouchpoint({
         enquiryId,
         client,
+        company: client?.company,
+        siteAddress: enquiry?.site_address,
         subject: `Payment Received — ${ref}`,
         emailTemplate: "payment_received",
         emailParams: {
@@ -380,7 +390,7 @@ export function PaymentsTab({ enquiryId, onStatusChange }: { enquiryId: string; 
       const gstType = isSameState ? "cgst_sgst" as const : "igst" as const;
 
       const invDate = p.received_at ? new Date(p.received_at).toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10);
-      const invNum = `TIV-INV-${invDate.slice(0, 4)}-${p.id.slice(0, 6).toUpperCase()}`;
+      const invNum = `GG-INV-${invDate.slice(0, 4)}-${p.id.slice(0, 6).toUpperCase()}`;
 
       const blob = await pdf(
         <InvoicePDF

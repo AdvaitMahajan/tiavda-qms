@@ -34,6 +34,15 @@ export interface SendTouchpointOptions<T extends NotificationTemplate> {
   attachmentPath?: string;
   /** User id recorded as the sender in communication_log. */
   sentBy?: string | null;
+  /** Project/site context prepended to the email subject (company — site address). */
+  company?: string | null;
+  siteAddress?: string | null;
+}
+
+/** "Company — Site Address" for the email subject prefix (either part optional). */
+export function subjectPrefixFrom(company?: string | null, siteAddress?: string | null): string | undefined {
+  const parts = [company?.trim(), siteAddress?.trim()].filter(Boolean);
+  return parts.length ? parts.join(" — ") : undefined;
 }
 
 /**
@@ -67,6 +76,7 @@ export async function sendClientTouchpoint<T extends NotificationTemplate>(
       template: opts.emailTemplate,
       params: opts.emailParams,
       attachmentPath: opts.attachmentPath,
+      subjectPrefix: subjectPrefixFrom(opts.company, opts.siteAddress),
     });
     await logComm("email", ok);
     if (ok) delivered = true;

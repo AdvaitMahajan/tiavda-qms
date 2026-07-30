@@ -753,6 +753,7 @@ export default function EnquiryDetail() {
         const { ok, error: emailErr } = await sendNotification({
           to: client.email,
           template: "quotation_sent",
+          subjectPrefix: [client.company?.trim(), enquiry.site_address?.trim()].filter(Boolean).join(" — ") || undefined,
           params: {
             client_name: client.name,
             ref_number: enquiry.ref_number,
@@ -946,6 +947,8 @@ export default function EnquiryDetail() {
       await sendClientTouchpoint({
         enquiryId: enquiry.id,
         client,
+        company: client?.company,
+        siteAddress: enquiry.site_address,
         subject: `Order Confirmed — ${enquiry.ref_number}`,
         emailTemplate: "order_confirmed",
         emailParams: { client_name: clientName, ref_number: enquiry.ref_number, total_amount: totalFmt, advance_amount: advFmt },
@@ -961,9 +964,11 @@ export default function EnquiryDetail() {
         await sendClientTouchpoint({
           enquiryId: enquiry.id,
           client,
+          company: client?.company,
+          siteAddress: enquiry.site_address,
           subject: `Advance Payment Request — ${enquiry.ref_number}`,
           emailTemplate: "payment_request",
-          emailParams: { client_name: clientName, ref_number: enquiry.ref_number, amount: advFmt },
+          emailParams: { client_name: clientName, ref_number: enquiry.ref_number, amount: advFmt, percentage: "50%" },
           waTemplate: "qms_payment_request",
           waParams: [
             { name: "client_name", value: clientName },

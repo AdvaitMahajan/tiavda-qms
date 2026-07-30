@@ -12,6 +12,8 @@ export interface SendEmailInput {
   attachment_path?: string; // storage path in a private bucket
   attachment_bucket?: string; // default quotation-pdfs
   attachment_url?: string; // directly fetchable url (back-compat)
+  /** Prepended to the rendered/overridden subject, e.g. "Company — Site Address". */
+  subject_prefix?: string;
   /** Org whose provisioned Brevo creds to use; defaults to the request's org. */
   orgId?: string | null;
 }
@@ -35,6 +37,9 @@ export async function sendEmail(input: SendEmailInput): Promise<SendEmailResult>
     subject = subject || rendered.subject;
   }
   if (!html_body) return { success: false, error: 'Nothing to send: provide a template or html_body' };
+
+  // Prepend the project/site context (e.g. "Company — Site Address") to the subject.
+  if (input.subject_prefix && subject) subject = `${input.subject_prefix} — ${subject}`;
 
   const orgId = input.orgId ?? currentOrgId();
   const creds = await resolveEmailCreds(orgId);

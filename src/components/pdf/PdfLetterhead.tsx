@@ -17,9 +17,10 @@ const s = StyleSheet.create({
   logo: { width: 200, objectFit: "contain", marginTop: -16 },
   details: { alignItems: "flex-end", maxWidth: 240 },
   detailLine: { fontSize: 8, color: muted, textAlign: "right", marginBottom: 1.5 },
-  // Negative top margin lifts the divider up under the header content, closing
-  // the gap left by the tall logo box after the logo was pulled up.
-  rule: { borderBottomWidth: 2, borderBottomColor: navy, marginTop: -20, marginBottom: 10 },
+  // Slight negative top margin lifts the divider up under the header content
+  // (the tall logo box would otherwise leave a big gap), but leaves breathing
+  // room so it doesn't touch the logo; tighter marginBottom to the text below.
+  rule: { borderBottomWidth: 2, borderBottomColor: navy, marginTop: -8, marginBottom: 5 },
 });
 
 export function PdfLetterhead({ company }: { company?: CompanyInfo | null }) {

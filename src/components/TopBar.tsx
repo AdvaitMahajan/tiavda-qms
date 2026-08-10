@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiClient } from "@/lib/apiClient";
@@ -62,6 +63,15 @@ export function TopBar() {
   const [bellBounce, setBellBounce] = useState(false);
   const [bellHover, setBellHover] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  // Fixed-position anchor for the portaled dropdown (escapes ancestor overflow
+  // and z-index stacking so it never gets clipped by page content).
+  const [coords, setCoords] = useState<{ top: number; right: number }>({ top: 64, right: 16 });
+  const updateCoords = () => {
+    const r = buttonRef.current?.getBoundingClientRect();
+    if (r) setCoords({ top: r.bottom + 8, right: Math.max(8, window.innerWidth - r.right) });
+  };
 
   const title =
     pageTitles[pathname] ??
@@ -114,6 +124,17 @@ export function TopBar() {
     if (!seededRef.current) {
       recentNotifs.forEach((n) => seenRef.current.add(n.id));
       seededRef.current = true;
+      // Login nudge: surface the most recent unread once (a real on-screen pop,
+      // not just the bell badge). recentNotifs is newest-first. Later arrivals
+      // toast individually below.
+      const newestUnread = recentNotifs.find((n) => !n.read);
+      if (newestUnread) {
+        toast(newestUnread.title, {
+          description: newestUnread.body,
+          duration: 3000,
+          ...(newestUnread.link ? { action: { label: "View", onClick: () => navigate(newestUnread.link!) } } : {}),
+        });
+      }
       return;
     }
     // API returns newest-first; toast oldest-first so the newest ends up on top.
@@ -142,16 +163,30 @@ export function TopBar() {
     prevCountRef.current = unreadCount;
   }, [unreadCount]);
 
-  // ── Click outside to close ──
+  // ── Click outside to close (panel is portaled, so check it separately) ──
   useEffect(() => {
     if (!open) return;
     const handler = (e: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
-        setOpen(false);
-      }
+      const t = e.target as Node;
+      if (dropdownRef.current?.contains(t)) return;
+      if (panelRef.current?.contains(t)) return;
+      setOpen(false);
     };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
+  }, [open]);
+
+  // ── Keep the portaled panel anchored to the bell on scroll / resize ──
+  useEffect(() => {
+    if (!open) return;
+    updateCoords();
+    const onMove = () => updateCoords();
+    window.addEventListener("resize", onMove);
+    window.addEventListener("scroll", onMove, true);
+    return () => {
+      window.removeEventListener("resize", onMove);
+      window.removeEventListener("scroll", onMove, true);
+    };
   }, [open]);
 
   const handleMarkAllRead = async () => {
@@ -215,7 +250,8 @@ export function TopBar() {
         {/* ── Notification bell ── */}
         <div className="relative" ref={dropdownRef}>
           <motion.button
-            onClick={() => { setOpen(!open); if (!open) refetchNotifs(); }}
+            ref={buttonRef}
+            onClick={() => { if (!open) { updateCoords(); refetchNotifs(); } setOpen(!open); }}
             onMouseEnter={() => setBellHover(true)}
             onMouseLeave={() => setBellHover(false)}
             animate={bellBounce ? { scale: [1, 1.3, 1] } : { scale: 1 }}
@@ -261,16 +297,21 @@ export function TopBar() {
             )}
           </motion.button>
 
-          {/* ── Dropdown panel ── */}
-          <AnimatePresence>
+          {/* ── Dropdown panel (portaled to body so it never gets clipped) ── */}
+          {createPortal(
+            <AnimatePresence>
             {open && (
               <motion.div
+                ref={panelRef}
                 initial={{ opacity: 0, y: -8, scale: 0.96 }}
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 exit={{ opacity: 0, y: -8, scale: 0.96 }}
                 transition={{ duration: 0.15 }}
-                className="absolute right-0 top-full mt-2 z-50"
                 style={{
+                  position: "fixed",
+                  top: coords.top,
+                  right: coords.right,
+                  zIndex: 9999,
                   width: "min(380px, calc(100vw - 32px))",
                   padding: 0,
                   background: "white",
@@ -378,7 +419,9 @@ export function TopBar() {
                 </div>
               </motion.div>
             )}
-          </AnimatePresence>
+            </AnimatePresence>,
+            document.body,
+          )}
         </div>
 
         {/* User avatar */}

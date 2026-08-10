@@ -269,13 +269,13 @@ export default function InvoicePDF({
         <View style={s.sigBlock}>
           <View style={s.sigLine} />
           <Text style={s.sigLabel}>Authorized Signatory</Text>
-          <Text style={s.sigCompany}>The Company</Text>
+          <Text style={s.sigCompany}>{companyInfo?.name || "The Company"}</Text>
         </View>
 
         {/* Footer */}
         <View style={s.pageFooter} fixed>
           <View style={s.footerRow}>
-            <Text style={s.footerCompany}>The Company</Text>
+            <Text style={s.footerCompany}>{companyInfo?.name || "The Company"}</Text>
             <Text style={s.footerPageNum} render={({ pageNumber, totalPages }) => `Page ${pageNumber} of ${totalPages}`} />
           </View>
           <Text style={s.footerCenter}>Geotechnical Investigation & Consultancy | +91 8605811117 | accounts@company.com</Text>

@@ -12,7 +12,7 @@ const muted = "#546E7A";
 
 const s = StyleSheet.create({
   wrap: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 6 },
-  logo: { width: 170, objectFit: "contain" },
+  logo: { width: 200, objectFit: "contain" },
   details: { alignItems: "flex-end", maxWidth: 240 },
   detailLine: { fontSize: 8, color: muted, textAlign: "right", marginBottom: 1.5 },
   rule: { borderBottomWidth: 2, borderBottomColor: navy, marginBottom: 10 },

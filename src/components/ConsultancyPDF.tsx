@@ -277,13 +277,13 @@ export default function ConsultancyPDF({
         <View style={s.signatoryBlock} wrap={false}>
           <View style={s.sigLine} />
           <Text style={s.sigLabel}>Authorized Signatory</Text>
-          <Text style={s.sigCompany}>The Company</Text>
+          <Text style={s.sigCompany}>{companyInfo?.name || "The Company"}</Text>
         </View>
 
         {/* Fixed footer — repeats on every page */}
         <View style={s.pageFooter} fixed>
           <View style={s.footerRow}>
-            <Text style={s.footerCompany}>The Company</Text>
+            <Text style={s.footerCompany}>{companyInfo?.name || "The Company"}</Text>
             <Text
               style={s.footerPageNum}
               render={({ pageNumber, totalPages }) => `Page ${pageNumber} of ${totalPages}`}

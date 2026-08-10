@@ -1217,6 +1217,8 @@ export type Database = {
           enquiry_id: string
           visit_date: string
           geologist_id: string | null
+          geologist_member_id: string | null
+          supervisor_member_id: string | null
           status: string
           feasibility: string | null
           water_confirmed: boolean | null

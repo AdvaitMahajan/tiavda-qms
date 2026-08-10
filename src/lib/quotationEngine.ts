@@ -31,7 +31,7 @@ export const RATE_KEYS = [
   "rate_drilling_rock_per_m",
   "rate_spt_per_test",
   "rate_uds_per_sample",
-  "rate_core_cutting_per_m",
+  "rate_core_box",
   "rate_water_sample",
   "rate_lab_soil_per_sample",
   "rate_lab_rock_per_sample",
@@ -145,7 +145,7 @@ export function buildLineItems(params: {
     const setupQty = B - 1;
     items.push({
       section: "A",
-      description: "Setting up equipment (borehole to borehole)",
+      description: "Shifting (borehole to borehole)",
       unit: "per move",
       qty: setupQty,
       rate: setupRate,
@@ -197,16 +197,7 @@ export function buildLineItems(params: {
     amount: round2(udsQty * udsRate),
   });
 
-  const coreCutRate = round2(r(rates, "rate_core_cutting_per_m") * mul.drilling);
-  const coreCutQty = round2(B * rockDepth);
-  items.push({
-    section: "A",
-    description: "Core Cutting in Rock",
-    unit: "RM",
-    qty: coreCutQty,
-    rate: coreCutRate,
-    amount: round2(coreCutQty * coreCutRate),
-  });
+  // Core Cutting item removed per client change request (2026-08).
 
   const waterRate = r(rates, "rate_water_sample");
   items.push({
@@ -223,7 +214,7 @@ export function buildLineItems(params: {
   const labSoilQty = B * Math.ceil(soilDepth / 1.5);
   items.push({
     section: "B",
-    description: "Lab Testing — Soil Samples",
+    description: "Lab Testing — UDS Samples",
     unit: "per sample",
     qty: labSoilQty,
     rate: labSoilRate,
@@ -260,6 +251,18 @@ export function buildLineItems(params: {
     qty: distanceKm,
     rate: travelRate,
     amount: round2(distanceKm * travelRate),
+  });
+
+  // Core Box (Misc). Client change request: manual quantity — the estimator enters
+  // the number of core boxes on the quotation; starts at 0.
+  const coreBoxRate = r(rates, "rate_core_box");
+  items.push({
+    section: "C",
+    description: "Core Box",
+    unit: "Nos",
+    qty: 0,
+    rate: coreBoxRate,
+    amount: 0,
   });
 
   const miscRate = r(rates, "rate_misc_lumpsum");
@@ -338,14 +341,16 @@ export function buildLineItems(params: {
   }
 
   // ── Section D: Report ──
+  // Client change request: Report is a lump sum (unit L.S., qty 1) — a flat
+  // report fee, no longer scaled by bore count.
   const reportRate = r(rates, "rate_reporting_per_bore");
   items.push({
     section: "D",
     description: "Report Writing & Submission",
-    unit: "per bore",
-    qty: B,
+    unit: "L.S.",
+    qty: 1,
     rate: reportRate,
-    amount: round2(B * reportRate),
+    amount: round2(reportRate),
   });
 
   const boringLogRate = r(rates, "rate_boring_log_per_bore");

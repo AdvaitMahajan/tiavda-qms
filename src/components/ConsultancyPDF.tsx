@@ -1,4 +1,6 @@
 import { Document, Page, View, Text, StyleSheet } from "@react-pdf/renderer";
+import { PdfLetterhead } from "@/components/pdf/PdfLetterhead";
+import type { CompanyInfo } from "@/lib/templateRegistry";
 
 const navy = "#0F2A47";
 const gold = "#D4930A";
@@ -134,6 +136,7 @@ interface Props {
   };
   client: { name: string; company: string | null; phone: string; email: string | null; city: string };
   enquiry: { ref_number: string };
+  companyInfo?: CompanyInfo | null;
   projectScope?: string;
   validityDays?: number;
   terms?: string[];
@@ -144,7 +147,7 @@ interface Props {
 const colW = ["8%", "38%", "12%", "10%", "16%", "16%"] as const;
 
 export default function ConsultancyPDF({
-  quotation, client, enquiry, projectScope,
+  quotation, client, enquiry, companyInfo, projectScope,
   validityDays = 30, terms, paymentTerms, footerText,
 }: Props) {
   const items: LineItem[] = typeof quotation.line_items === "string"
@@ -156,6 +159,7 @@ export default function ConsultancyPDF({
   return (
     <Document>
       <Page size="A4" style={s.page}>
+        <PdfLetterhead company={companyInfo} />
         <Text style={s.docTitle}>CONSULTANCY SERVICES QUOTATION</Text>
 
         <View style={s.twoCol}>

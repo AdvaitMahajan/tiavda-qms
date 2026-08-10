@@ -10,6 +10,7 @@ import { useRole } from "@/hooks/useRole";
 import { toast } from "sonner";
 import { pdf } from "@react-pdf/renderer";
 import InvoicePDF from "@/components/InvoicePDF";
+import { getCompanyInfoFromSettings } from "@/lib/templateRegistry";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -364,6 +365,8 @@ export function PaymentsTab({ enquiryId, onStatusChange }: { enquiryId: string; 
         "bank_account_name", "bank_name", "bank_account_number",
         "bank_account_type", "bank_ifsc", "bank_branch", "bank_upi",
         "company_gst", "gst_rate", "company_state",
+        // Letterhead details for the invoice header.
+        "company_name", "company_address", "company_pan", "gst_number", "admin_email", "admin_whatsapp",
       ];
       const settingsData = await apiClient.get<{ key: string; value: string }[]>("/settings", { keys: bankKeys.join(",") });
       const sm = new Map(settingsData.map((r) => [r.key, r.value]));
@@ -416,6 +419,7 @@ export function PaymentsTab({ enquiryId, onStatusChange }: { enquiryId: string; 
           totalAmount={amount}
           bankDetails={hasBankDetails ? bankObj : null}
           companyGst={sm.get("company_gst") ?? undefined}
+          companyInfo={getCompanyInfoFromSettings(Object.fromEntries(sm))}
         />
       ).toBlob();
 

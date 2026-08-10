@@ -34,6 +34,8 @@ const bodySchema = z.object({
   app_role: z.enum(APP_ROLES).nullish(),
   city: z.string().nullish(),
   profile_id: z.string().uuid().nullish(),
+  is_geologist: z.boolean().optional(),
+  is_supervisor: z.boolean().optional(),
   is_active: z.boolean().optional(),
   sort_order: z.number().int().optional(),
   notes: z.string().nullish(),

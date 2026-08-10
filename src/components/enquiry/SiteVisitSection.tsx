@@ -3,7 +3,6 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiClient } from "@/lib/apiClient";
 import { uploadToStorage, getPublicStorageUrl } from "@/lib/storage";
 import { useAuth } from "@/hooks/useAuth";
-import { AssigneeDropdown } from "@/components/AssigneeDropdown";
 import { toast } from "sonner";
 import {
   MapPin, Calendar, User, AlertTriangle, CheckCircle2,
@@ -302,9 +301,19 @@ function ScheduleDialog({
   open: boolean; onClose: () => void; enquiryId: string; userId: string | null; queryClient: any;
 }) {
   const [date, setDate] = useState("");
-  const [geologist, setGeologist] = useState<string | null>(null);
+  const [geologistMember, setGeologistMember] = useState<string>("");
+  const [supervisorMember, setSupervisorMember] = useState<string>("");
   const [notes, setNotes] = useState("");
   const [saving, setSaving] = useState(false);
+
+  // Geologist + Supervisor come from the Team Directory (no logins required).
+  const { data: teamMembers = [] } = useQuery({
+    queryKey: ["team-directory"],
+    queryFn: () =>
+      apiClient.get<Array<{ id: string; full_name: string; city: string | null; is_geologist: boolean; is_supervisor: boolean }>>("/team-members"),
+  });
+  const geologists = teamMembers.filter((m) => m.is_geologist);
+  const supervisors = teamMembers.filter((m) => m.is_supervisor);
 
   const handleSave = async () => {
     if (!date) { toast.error("Visit date is required"); return; }
@@ -313,7 +322,8 @@ function ScheduleDialog({
       await apiClient.post("/site-visits", {
         enquiry_id: enquiryId,
         visit_date: date,
-        geologist_id: geologist,
+        geologist_member_id: geologistMember || null,
+        supervisor_member_id: supervisorMember || null,
         status: "scheduled",
         observations: notes ? { notes } : null,
       });
@@ -325,7 +335,7 @@ function ScheduleDialog({
 
       toast.success("Site visit scheduled");
       queryClient.invalidateQueries({ queryKey: ["site-visits", enquiryId] });
-      setDate(""); setGeologist(null); setNotes("");
+      setDate(""); setGeologistMember(""); setSupervisorMember(""); setNotes("");
       onClose();
     } catch (err: any) {
       toast.error(err.message || "Failed to schedule visit");
@@ -355,7 +365,34 @@ function ScheduleDialog({
           </div>
           <div>
             <label className="text-[13px] font-semibold mb-1.5 block" style={{ color: "#0A1929" }}>Assign Geologist</label>
-            <AssigneeDropdown value={geologist} onChange={setGeologist} />
+            <select
+              value={geologistMember}
+              onChange={(e) => setGeologistMember(e.target.value)}
+              className="w-full rounded-lg text-sm bg-white"
+              style={{ border: "1.5px solid #E0E7EF", padding: "10px 14px", color: geologistMember ? "#0A1929" : "#94A3B8" }}
+            >
+              <option value="">Select geologist…</option>
+              {geologists.map((m) => (
+                <option key={m.id} value={m.id}>{m.full_name}{m.city ? ` — ${m.city}` : ""}</option>
+              ))}
+            </select>
+            {geologists.length === 0 && (
+              <p className="text-[12px] mt-1" style={{ color: "#B45309" }}>No geologists yet — mark team members as geologists in Settings → Team Directory.</p>
+            )}
+          </div>
+          <div>
+            <label className="text-[13px] font-semibold mb-1.5 block" style={{ color: "#0A1929" }}>Assign Supervisor</label>
+            <select
+              value={supervisorMember}
+              onChange={(e) => setSupervisorMember(e.target.value)}
+              className="w-full rounded-lg text-sm bg-white"
+              style={{ border: "1.5px solid #E0E7EF", padding: "10px 14px", color: supervisorMember ? "#0A1929" : "#94A3B8" }}
+            >
+              <option value="">Select supervisor…</option>
+              {supervisors.map((m) => (
+                <option key={m.id} value={m.id}>{m.full_name}</option>
+              ))}
+            </select>
           </div>
           <div>
             <label className="text-[13px] font-semibold mb-1.5 block" style={{ color: "#0A1929" }}>Initial Notes</label>

@@ -96,6 +96,10 @@ export type CompanyInfo = {
   gstNumber: string;
   panNumber: string;
   address: string;
+  /** Contact details for the letterhead header. */
+  email: string;
+  phone: string;
+  state: string;
   bankAccountName: string;
   bankName: string;
   bankAccountNumber: string;
@@ -212,6 +216,9 @@ export function getCompanyInfoFromSettings(
     gstNumber: settings.gst_number ?? "",
     panNumber: settings.company_pan ?? "",
     address: settings.company_address ?? "",
+    email: settings.admin_email ?? "",
+    phone: settings.admin_whatsapp ?? "",
+    state: settings.company_state ?? "",
     bankAccountName: settings.bank_account_name ?? "",
     bankName: settings.bank_name ?? "",
     bankAccountNumber: settings.bank_account_number ?? "",

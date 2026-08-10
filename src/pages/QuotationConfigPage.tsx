@@ -382,7 +382,7 @@ export default function QuotationConfigPage() {
                 <PremiumInput label="Drilling — Rock (per m)" value={s.rate_drilling_rock_per_m ?? ""} onChange={set("rate_drilling_rock_per_m")} type="number" font="mono" />
                 <PremiumInput label="SPT (per test)" value={s.rate_spt_per_test ?? ""} onChange={set("rate_spt_per_test")} type="number" font="mono" />
                 <PremiumInput label="UDS (per sample)" value={s.rate_uds_per_sample ?? ""} onChange={set("rate_uds_per_sample")} type="number" font="mono" />
-                <PremiumInput label="Core Cutting — Rock (per m)" value={s.rate_core_cutting_per_m ?? ""} onChange={set("rate_core_cutting_per_m")} type="number" font="mono" />
+                <PremiumInput label="Core Box (per unit)" value={s.rate_core_box ?? ""} onChange={set("rate_core_box")} type="number" font="mono" helper="Qty entered manually per quotation" />
                 <PremiumInput label="Water Sample" value={s.rate_water_sample ?? ""} onChange={set("rate_water_sample")} type="number" font="mono" />
               </div>
 
@@ -390,7 +390,7 @@ export default function QuotationConfigPage() {
                 B. Laboratory Testing
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <PremiumInput label="Lab — Soil (per sample)" value={s.rate_lab_soil_per_sample ?? ""} onChange={set("rate_lab_soil_per_sample")} type="number" font="mono" />
+                <PremiumInput label="Lab — UDS (per sample)" value={s.rate_lab_soil_per_sample ?? ""} onChange={set("rate_lab_soil_per_sample")} type="number" font="mono" />
                 <PremiumInput label="Lab — Rock (per sample)" value={s.rate_lab_rock_per_sample ?? ""} onChange={set("rate_lab_rock_per_sample")} type="number" font="mono" />
                 <PremiumInput label="Lab — Water (per sample)" value={s.rate_lab_water_per_sample ?? ""} onChange={set("rate_lab_water_per_sample")} type="number" font="mono" />
               </div>
@@ -401,7 +401,7 @@ export default function QuotationConfigPage() {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <PremiumInput label="Travel (per km)" value={s.rate_travel_per_km ?? ""} onChange={set("rate_travel_per_km")} type="number" font="mono" />
                 <PremiumInput label="Miscellaneous (lump sum)" value={s.rate_misc_lumpsum ?? ""} onChange={set("rate_misc_lumpsum")} type="number" font="mono" />
-                <PremiumInput label="Report Writing (per bore)" value={s.rate_reporting_per_bore ?? ""} onChange={set("rate_reporting_per_bore")} type="number" font="mono" />
+                <PremiumInput label="Report Writing (lump sum)" value={s.rate_reporting_per_bore ?? ""} onChange={set("rate_reporting_per_bore")} type="number" font="mono" />
                 <PremiumInput label="Boring Log (per bore)" value={s.rate_boring_log_per_bore ?? ""} onChange={set("rate_boring_log_per_bore")} type="number" font="mono" />
               </div>
 
@@ -410,7 +410,7 @@ export default function QuotationConfigPage() {
               </div>
               <p style={{ fontSize: "13px", color: "#546E7A", margin: "-8px 0 4px" }}>Auto-added based on intake form &amp; site visit conditions</p>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <PremiumInput label="Equipment Setup (per move)" value={s.rate_setup_per_move ?? ""} onChange={set("rate_setup_per_move")} type="number" font="mono" helper="Added when bores > 1" />
+                <PremiumInput label="Shifting (per move)" value={s.rate_setup_per_move ?? ""} onChange={set("rate_setup_per_move")} type="number" font="mono" helper="Added when bores > 1" />
                 <PremiumInput label="Water Arrangement (LS)" value={s.rate_water_arrangement ?? ""} onChange={set("rate_water_arrangement")} type="number" font="mono" helper="Added when client can't provide water" />
                 <PremiumInput label="TPA / Safety (LS)" value={s.rate_safety_arrangement ?? ""} onChange={set("rate_safety_arrangement")} type="number" font="mono" helper="Added when safety requirements exist" />
                 <PremiumInput label="Generator / Power (LS)" value={s.rate_generator_arrangement ?? ""} onChange={set("rate_generator_arrangement")} type="number" font="mono" helper="Added when electricity not available" />

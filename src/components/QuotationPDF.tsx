@@ -1,4 +1,6 @@
 import { Document, Page, View, Text, StyleSheet } from "@react-pdf/renderer";
+import { PdfLetterhead } from "@/components/pdf/PdfLetterhead";
+import type { CompanyInfo } from "@/lib/templateRegistry";
 import { SECTION_LABELS } from "@/lib/quotationEngine";
 
 const navy = "#0F2A47";
@@ -156,6 +158,7 @@ interface Props {
   };
   client: { name: string; company: string | null; phone: string; email: string | null; city: string };
   enquiry: { ref_number: string };
+  companyInfo?: CompanyInfo | null;
   validityDays?: number;
   terms?: string[];
   paymentTerms?: string;
@@ -164,7 +167,7 @@ interface Props {
 
 const colW = ["6%", "30%", "12%", "12%", "18%", "22%"] as const;
 
-export default function QuotationPDF({ quotation, client, enquiry, validityDays = 30, terms, paymentTerms, footerText }: Props) {
+export default function QuotationPDF({ quotation, client, enquiry, companyInfo, validityDays = 30, terms, paymentTerms, footerText }: Props) {
   const items: LineItem[] = typeof quotation.line_items === "string"
     ? JSON.parse(quotation.line_items)
     : quotation.line_items;
@@ -182,6 +185,7 @@ export default function QuotationPDF({ quotation, client, enquiry, validityDays 
   return (
     <Document>
       <Page size="A4" style={s.page}>
+        <PdfLetterhead company={companyInfo} />
         <Text style={s.docTitle}>GEOTECHNICAL INVESTIGATION QUOTATION</Text>
 
         <View style={s.twoCol}>

@@ -466,7 +466,7 @@ async function runDaily(): Promise<Record<string, unknown>> {
   try {
     const { data: visits } = await sb
       .from('site_visits')
-      .select('id, org_id, visit_date, token, geologist_id, observations, enquiries(id, ref_number, site_address, site_city, structure_type, num_bores, expected_depth_m, client_id, clients(name, phone, email, company))')
+      .select('id, org_id, visit_date, token, geologist_id, geologist_member_id, supervisor_member_id, observations, enquiries(id, ref_number, site_address, site_city, structure_type, num_bores, expected_depth_m, client_id, clients(name, phone, email, company))')
       .eq('visit_date', today)
       .eq('status', 'scheduled')
       .eq('notification_sent', false);
@@ -487,9 +487,20 @@ async function runDaily(): Promise<Record<string, unknown>> {
       let geoPhone: string | null = null;
       let geoEmail: string | null = null;
       let geoName = 'Team';
-      if (sv.geologist_id) {
+      // Geologist now comes from the Team Directory (team_members) when assigned
+      // there; fall back to the legacy profile link for older visits.
+      if ((sv as any).geologist_member_id) {
+        const { data: gm } = await sb.from('team_members').select('full_name, phone, email').eq('id', (sv as any).geologist_member_id).single();
+        if (gm) { geoName = gm.full_name ?? 'Team'; geoPhone = gm.phone; geoEmail = gm.email; }
+      } else if (sv.geologist_id) {
         const { data: geo } = await sb.from('profiles').select('full_name, phone, email').eq('id', sv.geologist_id).single();
         if (geo) { geoName = geo.full_name ?? 'Team'; geoPhone = geo.phone; geoEmail = geo.email; }
+      }
+      // Supervisor name for the notification (contact stored in the directory).
+      let supervisorName = '';
+      if ((sv as any).supervisor_member_id) {
+        const { data: sm } = await sb.from('team_members').select('full_name').eq('id', (sv as any).supervisor_member_id).single();
+        supervisorName = sm?.full_name ?? '';
       }
       const waParams = [
         { name: 'geologist_name', value: geoName },
@@ -501,10 +512,11 @@ async function runDaily(): Promise<Record<string, unknown>> {
       ];
       if (geoPhone) await sendWhatsApp({ phone_number: geoPhone, orgId: org, template_name: 'qms_site_visit_today', parameters: waParams });
       if (settings.admin_whatsapp) await sendWhatsApp({ phone_number: settings.admin_whatsapp, orgId: org, template_name: 'qms_site_visit_today', parameters: waParams });
-      const emailParams = { ref_number: ref, geologist_name: geoName, client_name: contactName, client_phone: contactPhone, client_email: client?.email, site_address: siteAddress, structure_type: enq.structure_type, num_bores: enq.num_bores, depth_m: enq.expected_depth_m, notes: initialNotes, form_url: formUrl };
+      const notesWithSup = [initialNotes, supervisorName && `Supervisor: ${supervisorName}`].filter(Boolean).join(' · ');
+      const emailParams = { ref_number: ref, geologist_name: geoName, client_name: contactName, client_phone: contactPhone, client_email: client?.email, site_address: siteAddress, structure_type: enq.structure_type, num_bores: enq.num_bores, depth_m: enq.expected_depth_m, notes: notesWithSup, form_url: formUrl };
       if (geoEmail) await sendEmail({ to: geoEmail, orgId: org, template: 'site_visit_today', params: emailParams });
       if (settings.admin_email) await sendEmail({ to: settings.admin_email, orgId: org, template: 'site_visit_today', params: emailParams });
-      await notifyAdmins(org, { type: 'site_visit_today', title: `Site Visit Today — ${ref}`, body: `${geoName} visiting ${siteAddress} for ${contactName}`, enquiry_id: enq.id, link: `/enquiries/${enq.id}` });
+      await notifyAdmins(org, { type: 'site_visit_today', title: `Site Visit Today — ${ref}`, body: `${geoName} visiting ${siteAddress} for ${contactName}${supervisorName ? ` · Supervisor: ${supervisorName}` : ''}`, enquiry_id: enq.id, link: `/enquiries/${enq.id}` });
       if (sv.geologist_id) await sb.from('notifications').insert({ org_id: org, user_id: sv.geologist_id, type: 'site_visit_today', title: `Your Site Visit Today — ${ref}`, body: `Visit ${siteAddress} — Contact: ${contactName} (${contactPhone})`, enquiry_id: enq.id, link: `/enquiries/${enq.id}` });
       await sb.from('site_visits').update({ notification_sent: true, notification_sent_at: new Date().toISOString() }).eq('id', sv.id);
       await sb.from('communication_log').insert({ org_id: org, enquiry_id: enq.id, client_id: enq.client_id, channel: 'whatsapp', direction: 'outbound', subject: `Site Visit Reminder — ${ref}`, body: `Automated site visit reminder sent to ${geoName} for ${siteAddress}`, status: 'sent' });

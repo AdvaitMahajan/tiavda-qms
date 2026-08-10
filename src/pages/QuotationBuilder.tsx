@@ -793,6 +793,7 @@ export default function QuotationBuilder() {
             quotation={quotObj}
             client={clientObj}
             enquiry={enqObj}
+            companyInfo={getCompanyInfoFromSettings(allSettings)}
             validityDays={validityDays}
             terms={siNotes.length > 0 ? siNotes : undefined}
             paymentTerms={siPayTerms}
@@ -805,6 +806,7 @@ export default function QuotationBuilder() {
             quotation={quotObj}
             client={clientObj}
             enquiry={enqObj}
+            companyInfo={getCompanyInfoFromSettings(allSettings)}
             projectScope={projectScope}
           />,
         ).toBlob();

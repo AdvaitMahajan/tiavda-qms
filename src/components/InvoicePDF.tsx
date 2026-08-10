@@ -1,4 +1,6 @@
 import { Document, Page, View, Text, StyleSheet } from "@react-pdf/renderer";
+import { PdfLetterhead } from "@/components/pdf/PdfLetterhead";
+import type { CompanyInfo } from "@/lib/templateRegistry";
 
 const navy = "#0F2A47";
 const gold = "#D4930A";
@@ -127,6 +129,7 @@ interface Props {
   } | null;
   terms?: string[];
   companyGst?: string;
+  companyInfo?: CompanyInfo | null;
 }
 
 const DEFAULT_INVOICE_TERMS = [
@@ -150,6 +153,7 @@ export default function InvoicePDF({
   bankDetails,
   terms,
   companyGst,
+  companyInfo,
 }: Props) {
   const notesList = terms && terms.length > 0 ? terms : DEFAULT_INVOICE_TERMS;
   const colW = ["8%", "62%", "30%"] as const;
@@ -157,13 +161,10 @@ export default function InvoicePDF({
   return (
     <Document>
       <Page size="A4" style={s.page}>
-        {/* Header */}
+        {/* Header: company letterhead + invoice title */}
+        <PdfLetterhead company={companyInfo} />
         <View style={s.headerBand}>
-          <View>
-            <Text style={s.companyName}>COMPANY NAME</Text>
-            <Text style={s.companyTag}>Geotechnical Investigation & Consultancy</Text>
-            {companyGst && <Text style={{ fontSize: 8, color: muted, marginTop: 1 }}>GSTIN: {companyGst}</Text>}
-          </View>
+          <View />
           <Text style={s.invoiceTitle}>TAX INVOICE</Text>
         </View>
 

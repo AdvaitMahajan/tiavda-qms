@@ -1,4 +1,5 @@
 import { Document, Page, View, Text, StyleSheet } from "@react-pdf/renderer";
+import { PdfLetterhead } from "@/components/pdf/PdfLetterhead";
 import type { TemplateDefinition, CompanyInfo, ProjectHeader } from "@/lib/templateRegistry";
 
 const navy = "#0F2A47";
@@ -165,6 +166,7 @@ export default function BOQTemplatePDF({
 
   const renderDetailPage = () => (
     <Page size="A4" style={s.page}>
+      <PdfLetterhead company={companyInfo} />
       <Text style={s.docTitle}>{layout.title}</Text>
       {layout.hasSummaryPage && (
         <Text style={s.scopeLine}>SCOPE: Bill of Quantities for Carrying Out Soil Investigation Works</Text>

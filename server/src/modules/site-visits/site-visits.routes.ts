@@ -12,6 +12,8 @@ const createSchema = z.object({
   enquiry_id: z.string().uuid(),
   visit_date: z.string(),
   geologist_id: z.string().uuid().nullish(),
+  geologist_member_id: z.string().uuid().nullish(),
+  supervisor_member_id: z.string().uuid().nullish(),
   status: z.string().optional(),
   observations: z.any().optional(),
 });
@@ -19,6 +21,8 @@ const createSchema = z.object({
 const updateSchema = z.object({
   visit_date: z.string().optional(),
   geologist_id: z.string().uuid().nullable().optional(),
+  geologist_member_id: z.string().uuid().nullable().optional(),
+  supervisor_member_id: z.string().uuid().nullable().optional(),
   status: z.string().optional(),
   feasibility: z.string().nullable().optional(),
   water_confirmed: z.boolean().optional(),

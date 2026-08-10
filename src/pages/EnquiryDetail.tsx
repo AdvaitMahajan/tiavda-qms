@@ -664,6 +664,7 @@ export default function EnquiryDetail() {
             quotation={q}
             client={client}
             enquiry={enquiry}
+            companyInfo={getCompanyInfoFromSettings(pdfSettingsMap)}
             projectScope={projectScope}
             validityDays={validityDays}
             terms={notes.length > 0 ? notes : undefined}
@@ -677,6 +678,7 @@ export default function EnquiryDetail() {
             quotation={q}
             client={client}
             enquiry={enquiry}
+            companyInfo={getCompanyInfoFromSettings(pdfSettingsMap)}
             validityDays={validityDays}
             terms={notes.length > 0 ? notes : undefined}
             paymentTerms={paymentTerms}

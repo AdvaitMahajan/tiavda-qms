@@ -237,11 +237,11 @@ export default function ConsultancyPDF({
           {quotation.gst_type === "cgst_sgst" ? (
             <>
               <View style={s.totalsRow}>
-                <Text style={s.totalsLabel}>CGST @ 9%:</Text>
+                <Text style={s.totalsLabel}>CGST @ {(quotation.gst_rate ?? 0) / 2}%:</Text>
                 <Text style={s.totalsValue}>{inr(quotation.gst_amount / 2)}</Text>
               </View>
               <View style={s.totalsRow}>
-                <Text style={s.totalsLabel}>SGST @ 9%:</Text>
+                <Text style={s.totalsLabel}>SGST @ {(quotation.gst_rate ?? 0) / 2}%:</Text>
                 <Text style={s.totalsValue}>{inr(quotation.gst_amount / 2)}</Text>
               </View>
             </>

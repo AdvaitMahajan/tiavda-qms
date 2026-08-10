@@ -19,7 +19,7 @@ import { ROLE_LABELS, ROLE_COLORS, type UserRole } from "@/lib/permissions";
 // ─── Setting keys for this page ──────────────────────────────────────────────
 
 const BUNDLE_KEYS = [
-  "company_name", "company_state", "gst_number", "company_pan", "company_address",
+  "company_name", "company_state", "gst_number", "gst_rate", "company_pan", "company_address",
   "admin_email", "admin_whatsapp",
   "bank_account_name", "bank_name", "bank_account_number",
   "bank_account_type", "bank_ifsc", "bank_branch", "bank_upi",
@@ -34,7 +34,7 @@ const AUTOMATION_KEYS = [
 ] as const;
 
 const DEFAULTS: Record<string, string> = {
-  company_name: "", company_state: "", gst_number: "", company_pan: "", company_address: "",
+  company_name: "", company_state: "", gst_number: "", gst_rate: "18", company_pan: "", company_address: "",
   admin_email: "", admin_whatsapp: "",
   bank_account_name: "", bank_name: "", bank_account_number: "",
   bank_account_type: "Current", bank_ifsc: "", bank_branch: "", bank_upi: "",
@@ -137,9 +137,12 @@ export default function SettingsPage() {
             <SettingsCardHeader Icon={Building2} iconBg="#EBF2FF" iconColor="#1565C0" title="Company Information" />
             <div style={{ padding: "20px 24px", display: "flex", flexDirection: "column", gap: "16px" }}>
               <PremiumInput label="Company Name" value={s.company_name} onChange={set("company_name")} />
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <PremiumInput label="Registered State" value={s.company_state} onChange={set("company_state")} />
                 <PremiumInput label="GST Number" value={s.gst_number} onChange={set("gst_number")} helper="Used for CGST+SGST vs IGST calculation" />
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <PremiumInput label="GST Rate (%)" value={s.gst_rate} onChange={set("gst_rate")} type="number" helper="Total GST applied to quotations (e.g. 18 = 9% CGST + 9% SGST)" />
                 <PremiumInput label="PAN Number" value={s.company_pan} onChange={set("company_pan")} placeholder="AAAAA0000A" />
               </div>
               <PremiumInput label="Company Address" value={s.company_address} onChange={set("company_address")} as="textarea" />

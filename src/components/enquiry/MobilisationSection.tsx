@@ -712,9 +712,34 @@ export function MobilisationSection({ enquiryId, enquiry, onStatusChange }: { en
             </a>
           )}
           {mob.drive_folder_status === "failed" && (
-            <span className="flex items-center gap-1.5 text-[13px] text-red-600">
-              <FolderX className="h-3 w-3" /> Drive folder creation failed
-            </span>
+            <div className="flex items-center gap-2">
+              <span className="flex items-center gap-1.5 text-[13px] text-red-600">
+                <FolderX className="h-3 w-3" /> Drive folder creation failed
+              </span>
+              {enquiry && (
+                <button
+                  onClick={async () => {
+                    try {
+                      const clientData = await apiClient.get<Tables<"clients">>(`/clients/${enquiry.client_id}`);
+                      const res = await apiClient.post<{ success: boolean; error?: string }>("/integrations/drive-folder", {
+                        enquiry_id: enquiry.id,
+                        ref_number: enquiry.ref_number,
+                        client_name: clientData?.name ?? "Client",
+                        city: enquiry.site_city,
+                      });
+                      if (res?.success) toast.success("Drive folder created");
+                      else toast.error("Drive: " + (res?.error ?? "creation failed"));
+                    } catch (err) {
+                      toast.error("Retry failed: " + (err as Error).message);
+                    }
+                    fetchMob({ silent: true });
+                  }}
+                  className="text-[12px] font-semibold text-blue-600 hover:underline"
+                >
+                  Retry
+                </button>
+              )}
+            </div>
           )}
         </div>
       </CardContent>

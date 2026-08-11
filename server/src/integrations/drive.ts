@@ -41,26 +41,45 @@ async function getGoogleAccessToken(sa: ServiceAccount): Promise<string> {
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: `grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer&assertion=${jwt}`,
   });
-  const data = (await res.json()) as { access_token?: string };
-  if (!data.access_token) throw new Error('Failed to obtain Google access token');
+  const data = (await res.json()) as { access_token?: string; error?: string; error_description?: string };
+  if (!data.access_token) {
+    // Surface Google's real reason (bad key, clock skew, API not enabled…) instead
+    // of a generic failure so the folder-status error is actionable.
+    throw new Error(
+      `Google auth failed: ${data.error_description || data.error || `HTTP ${res.status}`}`,
+    );
+  }
   return data.access_token;
 }
 
+// supportsAllDrives / includeItemsFromAllDrives are required for Shared Drives,
+// which is the recommended home for these folders — a service account has no My
+// Drive storage quota of its own, so folders it creates must live in a Shared
+// Drive owned by the drive, not the account.
 async function findOrCreateFolder(name: string, parentId: string, accessToken: string): Promise<string> {
   const q = `name='${name.replace(/'/g, "\\'")}' and '${parentId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`;
   const searchRes = await fetch(
-    `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id,name)`,
+    `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id,name)&supportsAllDrives=true&includeItemsFromAllDrives=true`,
     { headers: { Authorization: `Bearer ${accessToken}` } },
   );
+  if (!searchRes.ok) {
+    const body = await searchRes.text();
+    throw new Error(`Drive search failed (HTTP ${searchRes.status}): ${body.slice(0, 300)}`);
+  }
   const searchData = (await searchRes.json()) as { files?: Array<{ id: string }> };
   if (searchData.files && searchData.files.length > 0 && searchData.files[0]) return searchData.files[0].id;
 
-  const createRes = await fetch('https://www.googleapis.com/drive/v3/files', {
+  const createRes = await fetch('https://www.googleapis.com/drive/v3/files?supportsAllDrives=true', {
     method: 'POST',
     headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({ name, mimeType: 'application/vnd.google-apps.folder', parents: [parentId] }),
   });
-  const createData = (await createRes.json()) as { id: string };
+  if (!createRes.ok) {
+    const body = await createRes.text();
+    throw new Error(`Drive folder create failed (HTTP ${createRes.status}): ${body.slice(0, 300)}`);
+  }
+  const createData = (await createRes.json()) as { id?: string };
+  if (!createData.id) throw new Error(`Drive create returned no folder id for "${name}"`);
   return createData.id;
 }
 

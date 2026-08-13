@@ -98,14 +98,26 @@ export async function authenticate(req: Request, res: Response, next: NextFuncti
     // every query made through the `db` Proxy during this request.
     const client = await pool.connect();
     let released = false;
-    const release = (): void => {
+    let finished = false;
+    // Normal completion: the handler has awaited all its queries, so the
+    // connection is idle — reset the tenant GUCs and return it to the pool.
+    const releaseClean = (): void => {
       if (released) return;
       released = true;
-      // RESET ROLE returns to postgres; RESET ALL clears the tenant GUCs.
       client.query('RESET ROLE; RESET ALL').catch(() => undefined).finally(() => client.release());
     };
-    res.on('finish', release);
-    res.on('close', release);
+    // Client aborted / disconnected before the response finished: the handler may
+    // still have a query in flight on this connection. Resetting or returning it
+    // now would hand a BUSY connection to the next request (→ "client is already
+    // executing a query" and a poisoned pool that cascades into errored requests).
+    // Discard it instead — pg removes it from the pool and opens a fresh one.
+    const releaseAborted = (): void => {
+      if (released) return;
+      released = true;
+      try { client.release(new Error('request aborted — connection discarded')); } catch { /* already gone */ }
+    };
+    res.on('finish', () => { finished = true; releaseClean(); });
+    res.on('close', () => { if (!finished) releaseAborted(); });
 
     try {
       await client.query('RESET ROLE; RESET ALL');
@@ -118,7 +130,7 @@ export async function authenticate(req: Request, res: Response, next: NextFuncti
       // Become the NOBYPASSRLS role so org_isolation policies are enforced.
       await client.query('SET ROLE app_tenant');
     } catch (e) {
-      release();
+      releaseClean();
       throw e;
     }
 

@@ -104,4 +104,20 @@ export async function runWithTenant<T>(
   }
 }
 
+/**
+ * Run async thunks strictly one at a time (never concurrently). REQUIRED for the
+ * per-request single-connection model: firing multiple queries with
+ * `Promise.all([db…, db…])` runs them on the same bound connection at once, which
+ * trips node-postgres's "client is already executing a query" and can corrupt the
+ * connection. Pass THUNKS (`() => db.select()…`) so each query is created and
+ * awaited only when the previous one has finished.
+ */
+export async function series<T extends readonly unknown[]>(
+  thunks: readonly [...{ [K in keyof T]: () => Promise<T[K]> }],
+): Promise<T> {
+  const out = [] as unknown[];
+  for (const thunk of thunks) out.push(await (thunk as () => Promise<unknown>)());
+  return out as unknown as T;
+}
+
 export { schema };

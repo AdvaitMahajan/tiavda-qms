@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { and, desc, eq, ilike, or, sql, type SQL } from 'drizzle-orm';
-import { db } from '../../db';
+import { db, series } from '../../db';
 import { enquiry_events, enquiries, clients, profiles } from '../../db/schema';
 import { authenticate } from '../../middleware/auth';
 import { requireEditor } from '../../middleware/roles';
@@ -40,8 +40,8 @@ auditRouter.get(
     }
     const where = filters.length ? and(...filters) : undefined;
 
-    const [rows, totalRes, typesRes] = await Promise.all([
-      db
+    const [rows, totalRes, typesRes] = await series([
+      () => db
         .select({
           id: enquiry_events.id,
           event_type: enquiry_events.event_type,
@@ -64,7 +64,7 @@ auditRouter.get(
         .orderBy(desc(enquiry_events.created_at))
         .limit(limit)
         .offset(offset),
-      db
+      () => db
         .select({ c: sql<number>`count(*)::int` })
         .from(enquiry_events)
         .leftJoin(enquiries, eq(enquiry_events.enquiry_id, enquiries.id))
@@ -72,7 +72,7 @@ auditRouter.get(
         .leftJoin(profiles, eq(enquiry_events.triggered_by, profiles.id))
         .where(where),
       // Distinct event types present (for the filter dropdown), org-scoped by RLS.
-      db.select({ t: enquiry_events.event_type }).from(enquiry_events).groupBy(enquiry_events.event_type),
+      () => db.select({ t: enquiry_events.event_type }).from(enquiry_events).groupBy(enquiry_events.event_type),
     ]);
 
     res.json({

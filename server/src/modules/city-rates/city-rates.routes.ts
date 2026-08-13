@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { and, asc, eq, ilike } from 'drizzle-orm';
-import { db, requireOrgId } from '../../db';
+import { db, requireOrgId, series } from '../../db';
 import { rate_matrix_cities, rate_matrix_rows, rate_matrix_cells } from '../../db/schema';
 import { authenticate } from '../../middleware/auth';
 import { requireQuoting, requireFeature } from '../../middleware/roles';
@@ -26,10 +26,10 @@ cityRatesRouter.get(
   '/',
   asyncHandler(async (_req, res) => {
     const orgId = requireOrgId();
-    const [cities, rows, cells] = await Promise.all([
-      db.select().from(rate_matrix_cities).where(eq(rate_matrix_cities.org_id, orgId)).orderBy(asc(rate_matrix_cities.sort_order)),
-      db.select().from(rate_matrix_rows).where(eq(rate_matrix_rows.org_id, orgId)).orderBy(asc(rate_matrix_rows.sort_order)),
-      db.select().from(rate_matrix_cells).where(eq(rate_matrix_cells.org_id, orgId)),
+    const [cities, rows, cells] = await series([
+      () => db.select().from(rate_matrix_cities).where(eq(rate_matrix_cities.org_id, orgId)).orderBy(asc(rate_matrix_cities.sort_order)),
+      () => db.select().from(rate_matrix_rows).where(eq(rate_matrix_rows.org_id, orgId)).orderBy(asc(rate_matrix_rows.sort_order)),
+      () => db.select().from(rate_matrix_cells).where(eq(rate_matrix_cells.org_id, orgId)),
     ]);
     res.json({ cities, rows, cells });
   }),

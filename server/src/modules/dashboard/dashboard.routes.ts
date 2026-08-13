@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { and, asc, desc, eq, gte, inArray, isNull, lte, sql } from 'drizzle-orm';
-import { db } from '../../db';
+import { db, series } from '../../db';
 import { clients, enquiries, enquiry_events, follow_ups, job_reminders, payments, quotations } from '../../db/schema';
 import { authenticate } from '../../middleware/auth';
 import { asyncHandler } from '../../lib/http';
@@ -24,22 +24,22 @@ dashboardRouter.get(
     const [
       newEnq, sentQuotes, followToday, pendingPay, activeJobs, totalEnq, wonEnq, intakePending,
       bookValues, pendingQuotes, totalClients, convertedClients, lostClientsRes, activeByCityRes,
-    ] = await Promise.all([
-      db.select({ c: COUNT }).from(enquiries).where(and(eq(enquiries.status, 'new'), isNull(enquiries.deleted_at))),
-      db.select({ c: COUNT }).from(enquiries).where(and(eq(enquiries.status, 'sent'), isNull(enquiries.deleted_at))),
-      db.select({ c: COUNT }).from(follow_ups).where(and(eq(follow_ups.scheduled_date, t), eq(follow_ups.outcome, 'pending'))),
-      db.select({ c: COUNT }).from(payments).where(eq(payments.status, 'request_sent')),
-      db.select({ c: COUNT }).from(enquiries).where(and(inArray(enquiries.status, ['job_active', 'mobilization_scheduled']), isNull(enquiries.deleted_at))),
-      db.select({ c: COUNT }).from(enquiries).where(isNull(enquiries.deleted_at)),
-      db.select({ c: COUNT }).from(enquiries).where(and(inArray(enquiries.status, ['approved', 'payment_received', 'mobilization_scheduled', 'job_active', 'confirmed', 'completed']), isNull(enquiries.deleted_at))),
-      db.select({ c: COUNT }).from(enquiries).where(and(eq(enquiries.status, 'intake_pending'), isNull(enquiries.deleted_at))),
+    ] = await series([
+      () => db.select({ c: COUNT }).from(enquiries).where(and(eq(enquiries.status, 'new'), isNull(enquiries.deleted_at))),
+      () => db.select({ c: COUNT }).from(enquiries).where(and(eq(enquiries.status, 'sent'), isNull(enquiries.deleted_at))),
+      () => db.select({ c: COUNT }).from(follow_ups).where(and(eq(follow_ups.scheduled_date, t), eq(follow_ups.outcome, 'pending'))),
+      () => db.select({ c: COUNT }).from(payments).where(eq(payments.status, 'request_sent')),
+      () => db.select({ c: COUNT }).from(enquiries).where(and(inArray(enquiries.status, ['job_active', 'mobilization_scheduled']), isNull(enquiries.deleted_at))),
+      () => db.select({ c: COUNT }).from(enquiries).where(isNull(enquiries.deleted_at)),
+      () => db.select({ c: COUNT }).from(enquiries).where(and(inArray(enquiries.status, ['approved', 'payment_received', 'mobilization_scheduled', 'job_active', 'confirmed', 'completed']), isNull(enquiries.deleted_at))),
+      () => db.select({ c: COUNT }).from(enquiries).where(and(eq(enquiries.status, 'intake_pending'), isNull(enquiries.deleted_at))),
       // Value KPIs keyed off the ENQUIRY stage, using the single finalized quotation
       // per enquiry (the winning variant: approved -> sent -> accepted). Filtering on
       // quotation.status='approved' alone missed quotes once sent/won, freezing these.
       //   Pipeline Value  = quotes out, awaiting client decision (not won, not lost)
       //   Order Book      = value of WON orders in execution (not yet completed)
       //   Quotation Book  = value of every live quotation (anything not lost/inactive)
-      db.execute(sql`
+      () => db.execute(sql`
         with finalized as (
           select distinct on (q.enquiry_id) q.enquiry_id, q.total_amount, e.status as estatus
           from quotations q
@@ -53,16 +53,16 @@ dashboardRouter.get(
           coalesce(sum(total_amount) filter (where estatus not in ('lost','inactive')),0)::float as quotation_book_value
         from finalized
       `),
-      db.select({ c: COUNT }).from(enquiries).where(and(inArray(enquiries.status, ['sent', 'follow_up', 'negotiation']), isNull(enquiries.deleted_at))),
+      () => db.select({ c: COUNT }).from(enquiries).where(and(inArray(enquiries.status, ['sent', 'follow_up', 'negotiation']), isNull(enquiries.deleted_at))),
       // total clients
-      db.select({ c: COUNT }).from(clients).where(isNull(clients.deleted_at)),
+      () => db.select({ c: COUNT }).from(clients).where(isNull(clients.deleted_at)),
       // converted clients (distinct clients with at least one won/executed enquiry)
-      db
+      () => db
         .select({ c: sql<number>`count(distinct ${enquiries.client_id})::int` })
         .from(enquiries)
         .where(and(inArray(enquiries.status, [...WON]), isNull(enquiries.deleted_at))),
       // lost clients: has enquiries, and none of them is anything other than lost/inactive
-      db.execute(sql`
+      () => db.execute(sql`
         select count(*)::int as c
         from clients c
         where c.deleted_at is null
@@ -74,7 +74,7 @@ dashboardRouter.get(
           )
       `),
       // Active jobs bucketed by city (free-text site_city → Mumbai / Pune / Other).
-      db.execute(sql`
+      () => db.execute(sql`
         select
           count(*) filter (where lower(trim(site_city)) = 'mumbai')::int as mumbai,
           count(*) filter (where lower(trim(site_city)) = 'pune')::int   as pune,

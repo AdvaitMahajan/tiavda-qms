@@ -52,21 +52,16 @@ export function AppSidebar() {
         </div>
         <div className="hidden lg:block min-w-0">
           <span
-            className="block font-bold text-white text-sm leading-tight"
-            style={{
-              fontFamily: "Sora, sans-serif",
-              display: "-webkit-box",
-              WebkitLineClamp: 2,
-              WebkitBoxOrient: "vertical",
-              overflow: "hidden",
-              wordBreak: "break-word",
-            }}
+            className="block font-bold text-white text-[13px] leading-tight"
+            style={{ fontFamily: "Sora, sans-serif", overflowWrap: "anywhere" }}
           >
             {organization?.name ?? "Global Geo"}
           </span>
-          <span className="block text-[12px]" style={{ color: "rgba(255,255,255,0.45)" }}>
-            {isPlatformAdmin ? "Platform Admin" : "Consultancy"}
-          </span>
+          {isPlatformAdmin && (
+            <span className="block text-[12px] mt-0.5" style={{ color: "rgba(255,255,255,0.45)" }}>
+              Platform Admin
+            </span>
+          )}
         </div>
       </div>
 

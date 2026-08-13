@@ -1,7 +1,7 @@
 import { Router } from 'express';
-import { and, asc, desc, eq, gte, inArray, isNull, lte, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, isNull, lte, sql } from 'drizzle-orm';
 import { db, series } from '../../db';
-import { clients, enquiries, enquiry_events, follow_ups, job_reminders, payments, quotations } from '../../db/schema';
+import { clients, enquiries, enquiry_events, follow_ups, job_reminders } from '../../db/schema';
 import { authenticate } from '../../middleware/auth';
 import { asyncHandler } from '../../lib/http';
 
@@ -16,23 +16,31 @@ dashboardRouter.get(
   '/stats',
   asyncHandler(async (_req, res) => {
     const t = today();
-    // Client-level segmentation:
-    //   converted = has >=1 enquiry that reached a won/executed state
-    //   lost      = has enquiries and EVERY one ended lost/inactive (never converted)
-    const WON = ['approved', 'payment_received', 'mobilization_scheduled', 'job_active', 'confirmed', 'completed'] as const;
 
-    const [
-      newEnq, sentQuotes, followToday, pendingPay, activeJobs, totalEnq, wonEnq, intakePending,
-      bookValues, pendingQuotes, totalClients, convertedClients, lostClientsRes, activeByCityRes,
-    ] = await series([
-      () => db.select({ c: COUNT }).from(enquiries).where(and(eq(enquiries.status, 'new'), isNull(enquiries.deleted_at))),
-      () => db.select({ c: COUNT }).from(enquiries).where(and(eq(enquiries.status, 'sent'), isNull(enquiries.deleted_at))),
-      () => db.select({ c: COUNT }).from(follow_ups).where(and(eq(follow_ups.scheduled_date, t), eq(follow_ups.outcome, 'pending'))),
-      () => db.select({ c: COUNT }).from(payments).where(eq(payments.status, 'request_sent')),
-      () => db.select({ c: COUNT }).from(enquiries).where(and(inArray(enquiries.status, ['job_active', 'mobilization_scheduled']), isNull(enquiries.deleted_at))),
-      () => db.select({ c: COUNT }).from(enquiries).where(isNull(enquiries.deleted_at)),
-      () => db.select({ c: COUNT }).from(enquiries).where(and(inArray(enquiries.status, ['approved', 'payment_received', 'mobilization_scheduled', 'job_active', 'confirmed', 'completed']), isNull(enquiries.deleted_at))),
-      () => db.select({ c: COUNT }).from(enquiries).where(and(eq(enquiries.status, 'intake_pending'), isNull(enquiries.deleted_at))),
+    // The 18 stat tiles roll up into FOUR aggregate round-trips (all RLS-scoped
+    // to the caller's org via the bound connection), instead of 14 count queries:
+    //   1) enquiries  — every status tile + the Mumbai/Pune/Other job buckets +
+    //      the converted-client count (distinct clients with a won/executed job).
+    //   2) finalized  — the value KPIs off the single winning quotation per enquiry.
+    //   3) clients    — total + "lost" (has enquiries, all ended lost/inactive).
+    //   4) misc       — the two remaining cross-table counts in one trip.
+    const [enqRes, valRes, clientRes, miscRes] = await series([
+      () => db.execute(sql`
+        select
+          count(*) filter (where status = 'new')::int                                     as new_enquiries,
+          count(*) filter (where status = 'sent')::int                                    as sent_quotes,
+          count(*) filter (where status in ('job_active','mobilization_scheduled'))::int   as active_jobs,
+          count(*)::int                                                                    as total_enquiries,
+          count(*) filter (where status in ('approved','payment_received','mobilization_scheduled','job_active','confirmed','completed'))::int as won_enquiries,
+          count(*) filter (where status = 'intake_pending')::int                           as intake_pending,
+          count(*) filter (where status in ('sent','follow_up','negotiation'))::int        as pending_quotes,
+          count(distinct client_id) filter (where status in ('approved','payment_received','mobilization_scheduled','job_active','confirmed','completed'))::int as converted_clients,
+          count(*) filter (where status in ('job_active','mobilization_scheduled') and lower(trim(site_city)) = 'mumbai')::int               as active_jobs_mumbai,
+          count(*) filter (where status in ('job_active','mobilization_scheduled') and lower(trim(site_city)) = 'pune')::int                 as active_jobs_pune,
+          count(*) filter (where status in ('job_active','mobilization_scheduled') and lower(trim(site_city)) not in ('mumbai','pune'))::int as active_jobs_other
+        from enquiries
+        where deleted_at is null
+      `),
       // Value KPIs keyed off the ENQUIRY stage, using the single finalized quotation
       // per enquiry (the winning variant: approved -> sent -> accepted). Filtering on
       // quotation.status='approved' alone missed quotes once sent/won, freezing these.
@@ -53,66 +61,54 @@ dashboardRouter.get(
           coalesce(sum(total_amount) filter (where estatus not in ('lost','inactive')),0)::float as quotation_book_value
         from finalized
       `),
-      () => db.select({ c: COUNT }).from(enquiries).where(and(inArray(enquiries.status, ['sent', 'follow_up', 'negotiation']), isNull(enquiries.deleted_at))),
-      // total clients
-      () => db.select({ c: COUNT }).from(clients).where(isNull(clients.deleted_at)),
-      // converted clients (distinct clients with at least one won/executed enquiry)
-      () => db
-        .select({ c: sql<number>`count(distinct ${enquiries.client_id})::int` })
-        .from(enquiries)
-        .where(and(inArray(enquiries.status, [...WON]), isNull(enquiries.deleted_at))),
-      // lost clients: has enquiries, and none of them is anything other than lost/inactive
-      () => db.execute(sql`
-        select count(*)::int as c
-        from clients c
-        where c.deleted_at is null
-          and exists (select 1 from enquiries e where e.client_id = c.id and e.deleted_at is null)
-          and not exists (
-            select 1 from enquiries e
-            where e.client_id = c.id and e.deleted_at is null
-              and e.status not in ('lost', 'inactive')
-          )
-      `),
-      // Active jobs bucketed by city (free-text site_city → Mumbai / Pune / Other).
+      // Clients: total + "lost" (has enquiries, and every one ended lost/inactive).
       () => db.execute(sql`
         select
-          count(*) filter (where lower(trim(site_city)) = 'mumbai')::int as mumbai,
-          count(*) filter (where lower(trim(site_city)) = 'pune')::int   as pune,
-          count(*) filter (where lower(trim(site_city)) not in ('mumbai','pune'))::int as other
-        from public.enquiries
-        where status in ('job_active','mobilization_scheduled') and deleted_at is null
+          count(*)::int as total_clients,
+          count(*) filter (
+            where exists (select 1 from enquiries e where e.client_id = c.id and e.deleted_at is null)
+              and not exists (
+                select 1 from enquiries e
+                where e.client_id = c.id and e.deleted_at is null and e.status not in ('lost','inactive')
+              )
+          )::int as lost_clients
+        from clients c
+        where c.deleted_at is null
+      `),
+      // The two remaining cross-table counts in a single round-trip.
+      () => db.execute(sql`
+        select
+          (select count(*) from follow_ups where scheduled_date = ${t} and outcome = 'pending')::int as followups_today,
+          (select count(*) from payments where status = 'request_sent')::int as pending_payments
       `),
     ]);
 
-    const lostClients = Number(
-      ((lostClientsRes as unknown as { rows?: Array<{ c: number }> })?.rows?.[0]?.c) ?? 0,
-    );
-    const bv = (bookValues as unknown as {
-      rows?: Array<{ pipeline_value: number; order_book_value: number; quotation_book_value: number }>;
-    })?.rows?.[0];
-    const abc = (activeByCityRes as unknown as {
-      rows?: Array<{ mumbai: number; pune: number; other: number }>;
-    })?.rows?.[0];
+    const rowOf = (r: unknown): Record<string, number> =>
+      (r as { rows?: Array<Record<string, number>> }).rows?.[0] ?? {};
+    const e = rowOf(enqRes);
+    const v = rowOf(valRes);
+    const c = rowOf(clientRes);
+    const m = rowOf(miscRes);
 
     res.json({
-      new_enquiries: newEnq[0]?.c ?? 0,
-      sent_quotes: sentQuotes[0]?.c ?? 0,
-      followups_today: followToday[0]?.c ?? 0,
-      pending_payments: pendingPay[0]?.c ?? 0,
-      active_jobs: activeJobs[0]?.c ?? 0,
-      active_jobs_mumbai: abc?.mumbai ?? 0,
-      active_jobs_pune: abc?.pune ?? 0,
-      active_jobs_other: abc?.other ?? 0,
-      total_enquiries: totalEnq[0]?.c ?? 0,
-      won_enquiries: wonEnq[0]?.c ?? 0,
-      intake_pending: intakePending[0]?.c ?? 0,
-      pipeline_value: bv?.pipeline_value ?? 0,
-      quotation_book_value: bv?.quotation_book_value ?? 0,
-      order_book: bv?.order_book_value ?? 0,
-      pending_quotes: pendingQuotes[0]?.c ?? 0,
-      total_clients: totalClients[0]?.c ?? 0,
-      converted_clients: convertedClients[0]?.c ?? 0,
-      lost_clients: lostClients,
+      new_enquiries: e.new_enquiries ?? 0,
+      sent_quotes: e.sent_quotes ?? 0,
+      followups_today: m.followups_today ?? 0,
+      pending_payments: m.pending_payments ?? 0,
+      active_jobs: e.active_jobs ?? 0,
+      active_jobs_mumbai: e.active_jobs_mumbai ?? 0,
+      active_jobs_pune: e.active_jobs_pune ?? 0,
+      active_jobs_other: e.active_jobs_other ?? 0,
+      total_enquiries: e.total_enquiries ?? 0,
+      won_enquiries: e.won_enquiries ?? 0,
+      intake_pending: e.intake_pending ?? 0,
+      pipeline_value: v.pipeline_value ?? 0,
+      quotation_book_value: v.quotation_book_value ?? 0,
+      order_book: v.order_book_value ?? 0,
+      pending_quotes: e.pending_quotes ?? 0,
+      total_clients: c.total_clients ?? 0,
+      converted_clients: e.converted_clients ?? 0,
+      lost_clients: c.lost_clients ?? 0,
     });
   }),
 );

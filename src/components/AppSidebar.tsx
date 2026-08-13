@@ -19,8 +19,11 @@ const navItems = [
 
 export function AppSidebar() {
   const { pathname } = useLocation();
-  const { user, signOut, profileLoading, organization, isPlatformAdmin } = useAuth();
+  const { user, profile, signOut, profileLoading, organization, isPlatformAdmin } = useAuth();
   const { isAdmin } = useRole();
+  // Prefer the person's name over their email; fall back to the email's local part.
+  const displayName = profile?.full_name?.trim() || user?.email?.split("@")[0] || "User";
+  const displayInitial = (profile?.full_name?.trim()?.[0] || user?.email?.[0] || "U").toUpperCase();
   const features = organization?.features ?? {};
   // Platform owner sees ONLY the Admin Console (no per-org operational nav).
   // Org users see the operational items (admin-only gated by role, others gated
@@ -48,7 +51,17 @@ export function AppSidebar() {
           GG
         </div>
         <div className="hidden lg:block min-w-0">
-          <span className="block font-bold text-white text-sm leading-tight truncate" style={{ fontFamily: "Sora, sans-serif" }}>
+          <span
+            className="block font-bold text-white text-sm leading-tight"
+            style={{
+              fontFamily: "Sora, sans-serif",
+              display: "-webkit-box",
+              WebkitLineClamp: 2,
+              WebkitBoxOrient: "vertical",
+              overflow: "hidden",
+              wordBreak: "break-word",
+            }}
+          >
             {organization?.name ?? "Global Geo"}
           </span>
           <span className="block text-[12px]" style={{ color: "rgba(255,255,255,0.45)" }}>
@@ -127,16 +140,29 @@ export function AppSidebar() {
 
       {/* Bottom */}
       <div className="px-3 py-4 lg:px-4" style={{ borderTop: "1px solid rgba(255,255,255,0.08)" }}>
-        <div className="hidden lg:flex items-center gap-2 mb-3 px-1">
+        <div className="hidden lg:flex items-start gap-2 mb-3 px-1">
           <div
-            className="flex h-7 w-7 items-center justify-center rounded-lg text-[13px] font-bold text-white flex-shrink-0"
+            className="flex h-7 w-7 items-center justify-center rounded-lg text-[13px] font-bold text-white flex-shrink-0 mt-0.5"
             style={{ background: "linear-gradient(135deg, #1565C0, #2979FF)" }}
           >
-            {user?.email ? user.email[0].toUpperCase() : "U"}
+            {displayInitial}
           </div>
-          <p className="truncate text-[13px] flex-1 min-w-0" style={{ color: "rgba(255,255,255,0.5)" }}>
-            {user?.email}
-          </p>
+          <div className="flex-1 min-w-0">
+            <p
+              className="text-[13px] font-semibold leading-tight"
+              style={{ color: "rgba(255,255,255,0.9)", wordBreak: "break-word" }}
+            >
+              {displayName}
+            </p>
+            {organization?.name && (
+              <p
+                className="text-[11px] leading-tight mt-0.5"
+                style={{ color: "rgba(255,255,255,0.45)", wordBreak: "break-word" }}
+              >
+                {organization.name}
+              </p>
+            )}
+          </div>
         </div>
         <button
           onClick={signOut}

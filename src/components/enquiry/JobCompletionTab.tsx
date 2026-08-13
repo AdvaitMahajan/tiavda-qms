@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { apiClient } from "@/lib/apiClient";
 import { uploadToStorage, getSignedUrl } from "@/lib/storage";
@@ -29,6 +29,46 @@ interface StageConfig {
   actualField: "site_completed_actual" | "report_delivered_actual" | "final_bill_raised_actual";
   notesField: "site_completion_notes" | "report_delivery_notes" | "final_bill_notes";
   reminderType: string;
+}
+
+/**
+ * Date input that commits only on blur (not on every keystroke) and never lets a
+ * background refetch reset the field while it's being edited. Binding a native
+ * <input type="date"> straight to server state + firing a save/refetch on each
+ * change wipes the half-typed year — this decouples typing from persistence.
+ */
+function CommitDateInput({
+  value,
+  onCommit,
+  disabled,
+  className,
+}: {
+  value: string | null;
+  onCommit: (v: string | null) => void;
+  disabled?: boolean;
+  className?: string;
+}) {
+  const [local, setLocal] = useState<string>(value ?? "");
+  const focused = useRef(false);
+  // Adopt the server value only when the user isn't actively editing.
+  useEffect(() => {
+    if (!focused.current) setLocal(value ?? "");
+  }, [value]);
+  return (
+    <Input
+      type="date"
+      className={className}
+      value={local}
+      disabled={disabled}
+      onFocus={() => { focused.current = true; }}
+      onChange={(e) => setLocal(e.target.value)}
+      onBlur={() => {
+        focused.current = false;
+        const next = local || null;
+        if ((next ?? "") !== (value ?? "")) onCommit(next);
+      }}
+    />
+  );
 }
 
 const STAGES: StageConfig[] = [
@@ -213,11 +253,10 @@ export function JobCompletionTab({ enquiryId }: { enquiryId: string }) {
             {/* Field work completion date (Execution Team) */}
             <div className="space-y-1.5">
               <Label className="text-[13px]">Field Work Completion Date</Label>
-              <Input
-                type="date"
+              <CommitDateInput
                 className="max-w-[240px]"
-                value={(job.field_work_completion_date as string | null) ?? ""}
-                onChange={(e) => updateField("field_work_completion_date", e.target.value || null)}
+                value={(job.field_work_completion_date as string | null) ?? null}
+                onCommit={(v) => updateField("field_work_completion_date", v)}
               />
               <p className="text-[12px] text-muted-foreground">
                 Set by the Execution Team. Starts a 3-day daily reminder to the Site Supervisor to submit samples.
@@ -330,10 +369,9 @@ export function JobCompletionTab({ enquiryId }: { enquiryId: string }) {
                 <CardContent className="space-y-3 flex flex-col flex-1">
                   <div>
                     <Label className="text-[13px]">Target Date</Label>
-                    <Input
-                      type="date"
-                      value={(job[stage.dateField] as string) ?? ""}
-                      onChange={(e) => handleDateChange(stage, e.target.value)}
+                    <CommitDateInput
+                      value={(job[stage.dateField] as string | null) ?? null}
+                      onCommit={(v) => handleDateChange(stage, v ?? "")}
                       disabled={!!done}
                     />
                   </div>

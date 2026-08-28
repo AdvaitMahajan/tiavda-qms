@@ -16,6 +16,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { StatusBadge } from "@/components/ui/StatusBadge";
+import { normalizePhone, validateIndianMobile } from "@/lib/phone";
 
 function avatarGradient(name: string): string {
   const c = (name?.[0] ?? "?").toUpperCase();
@@ -25,15 +26,6 @@ function avatarGradient(name: string): string {
   return "linear-gradient(135deg,#E65100,#FF8F00)";
 }
 
-function validateIndianMobile(phone: string): boolean {
-  const cleaned = phone.replace(/[\s-]/g, "");
-  return /^(\+91)?[6-9]\d{9}$/.test(cleaned);
-}
-function normalizePhone(phone: string): string {
-  const cleaned = phone.replace(/[\s-]/g, "");
-  if (/^\d{10}$/.test(cleaned)) return "+91" + cleaned;
-  return cleaned;
-}
 
 export default function ClientDetail() {
   const { id } = useParams<{ id: string }>();

@@ -1,6 +1,7 @@
-import { and, asc, desc, eq, ilike, isNull, or, type SQL } from 'drizzle-orm';
+import { and, asc, desc, eq, ilike, isNull, or, sql, type SQL } from 'drizzle-orm';
 import { db, requireOrgId } from '../../db';
 import { clients } from '../../db/schema';
+import { phoneKey } from '../../lib/phone';
 import type { CreateClientInput, UpdateClientInput, ListClientsQuery } from './clients.schema';
 
 /**
@@ -12,7 +13,16 @@ export const clientsRepo = {
   list(q: ListClientsQuery) {
     const conds: SQL[] = [];
     if (!q.include_deleted) conds.push(isNull(clients.deleted_at));
-    if (q.phone) conds.push(eq(clients.phone, q.phone));
+    if (q.phone) {
+      // Match on the last 10 digits, not the raw string — legacy rows were saved
+      // in whatever format they were typed, so exact equality misses duplicates.
+      const key = phoneKey(q.phone);
+      conds.push(
+        key
+          ? sql`right(regexp_replace(${clients.phone}, '\\D', '', 'g'), 10) = ${key}`
+          : eq(clients.phone, q.phone),
+      );
+    }
     if (q.search) {
       const s = `%${q.search}%`;
       const match = or(

@@ -1,15 +1,22 @@
 import { z } from 'zod';
+import { normalizePhone } from '../../lib/phone';
+
+/**
+ * Phone numbers are normalised to E.164 here rather than at each call site, so
+ * every write path — Add Lead, Add Client, Edit Client — stores one format.
+ */
+const phoneField = z.string().transform(normalizePhone);
 
 /** Payload validation for clients. Field names mirror DB columns (snake_case). */
 export const createClientSchema = z.object({
   name: z.string().min(1, 'Name is required'),
-  phone: z.string().min(1, 'Phone is required'),
+  phone: phoneField.pipe(z.string().min(1, 'Phone is required')),
   email: z.string().email().nullish(),
   company: z.string().nullish(),
   city: z.string().min(1, 'City is required'),
   state: z.string().nullish(),
   pincode: z.string().nullish(),
-  whatsapp_number: z.string().nullish(),
+  whatsapp_number: phoneField.nullish(),
   lead_source: z.string().nullish(),
   source: z.string().nullish(),
   service_type_interest: z.string().nullish(),

@@ -16,6 +16,8 @@ import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, Command
 import { Popover as ComboPopover, PopoverContent as ComboPopoverContent, PopoverTrigger as ComboPopoverTrigger } from "@/components/ui/popover";
 import { ChevronsUpDown, Check } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { DuplicateClientPrompt } from "@/components/DuplicateClientPrompt";
+import { normalizePhone, validateIndianMobile, phoneKey } from "@/lib/phone";
 
 type LeadForm = {
   clientMode: "new" | "existing";
@@ -42,6 +44,11 @@ const EMPTY_LEAD: LeadForm = {
   city: "",
   requirement: "",
 };
+
+/** How the user chose to resolve a duplicate phone number. */
+type DupResolution =
+  | { kind: "attach"; client: Tables<"clients"> }
+  | { kind: "separate" };
 
 function ClientCombobox({
   clients,
@@ -109,6 +116,9 @@ export function AddLeadDialog({ open, onOpenChange }: { open: boolean; onOpenCha
   const queryClient = useQueryClient();
   const [leadForm, setLeadForm] = useState<LeadForm>({ ...EMPTY_LEAD });
   const [leadSaving, setLeadSaving] = useState(false);
+  // Clients already on file with this phone number. Non-empty ⇒ the duplicate
+  // prompt is showing and the lead is parked until the user picks a resolution.
+  const [dupMatches, setDupMatches] = useState<Tables<"clients">[]>([]);
 
   const { data: clientsList = [] } = useQuery({
     queryKey: ["clients-for-new-enquiry"],
@@ -116,14 +126,179 @@ export function AddLeadDialog({ open, onOpenChange }: { open: boolean; onOpenCha
     enabled: open,
   });
 
+  /**
+   * Find clients on file with this phone. The API matches the string exactly, so
+   * we also compare the last 10 digits locally — otherwise "+91 98765 43210" and
+   * "9876543210" read as two different people and the duplicate never surfaces.
+   */
+  const findDuplicateClients = async (phone: string): Promise<Tables<"clients">[]> => {
+    const exact = await apiClient.get<Tables<"clients">[]>("/clients", { phone });
+    const digits = phoneKey(phone);
+    const local = digits ? clientsList.filter((c) => phoneKey(c.phone ?? "") === digits) : [];
+    const byId = new Map<string, Tables<"clients">>();
+    for (const c of [...exact, ...local]) byId.set(c.id, c);
+    return [...byId.values()];
+  };
+
   const handleClose = (isOpen: boolean) => {
     if (!isOpen) {
       setLeadForm({ ...EMPTY_LEAD });
+      setDupMatches([]);
     }
     onOpenChange(isOpen);
   };
 
+  /**
+   * Save the lead. `resolution` is null on the first attempt — if the phone is
+   * already on file we stop and let the user choose. Re-entered with "attach"
+   * (second enquiry for that client) or "separate" (a genuinely different client
+   * who happens to share the number).
+   */
+  const submitLead = async (resolution: DupResolution | null) => {
+    setLeadSaving(true);
+    try {
+      const { clientMode, clientId, name, phone, email, company, serviceType, source, city, requirement } = leadForm;
+
+      if (clientMode === "new" && (!name.trim() || !phone.trim() || !company.trim())) {
+        throw new Error("Client name, company name and phone are required.");
+      }
+      if (clientMode === "new" && !validateIndianMobile(phone)) {
+        throw new Error("Enter a valid Indian mobile number.");
+      }
+      if (clientMode === "existing" && !clientId) {
+        throw new Error("Please select a client.");
+      }
+      if (!city.trim()) {
+        throw new Error("City is required.");
+      }
+
+      const leadMeta = {
+        lead_source: source,
+        service_type_interest: serviceType,
+        requirement_notes: requirement.trim() || null,
+      };
+
+      // On an existing client these fields are first-touch history — fill blanks
+      // only. Overwriting them wipes the earlier lead's source and notes, and the
+      // client's city is their own, not this enquiry's site city.
+      const fillBlanks = async (client: Tables<"clients">) => {
+        const patch: Record<string, string> = {};
+        if (!client.email && email.trim()) patch.email = email.trim();
+        if (!client.company && company.trim()) patch.company = company.trim();
+        if (!client.lead_source) patch.lead_source = source;
+        if (!client.service_type_interest) patch.service_type_interest = serviceType;
+        if (!client.requirement_notes && requirement.trim()) patch.requirement_notes = requirement.trim();
+        if (Object.keys(patch).length) await apiClient.patch(`/clients/${client.id}`, patch);
+      };
+
+      let resolvedClient: Tables<"clients"> | null = null;
+
+      if (clientMode === "existing") {
+        resolvedClient = clientsList.find((c) => c.id === clientId) ?? null;
+        if (!resolvedClient) throw new Error("Please select a client.");
+        await fillBlanks(resolvedClient);
+      } else if (resolution?.kind === "attach") {
+        resolvedClient = resolution.client;
+        await fillBlanks(resolvedClient);
+      } else {
+        const normalisedPhone = normalizePhone(phone);
+        if (resolution === null) {
+          const dups = await findDuplicateClients(normalisedPhone);
+          if (dups.length) {
+            setDupMatches(dups); // park the lead until the user decides
+            return;
+          }
+        }
+        resolvedClient = await apiClient.post<Tables<"clients">>("/clients", {
+          name: name.trim(),
+          phone: normalisedPhone,
+          email: email.trim() || null,
+          company: company.trim() || null,
+          city: city.trim(),
+          source: "manual",
+          ...leadMeta,
+        });
+      }
+
+      if (!resolvedClient) throw new Error("Could not resolve the client for this lead.");
+
+      // Create enquiry record so it appears in Kanban immediately
+      const initialStatus = serviceType === "soil_investigation" ? "intake_pending" : "new";
+      const newEnquiry = await apiClient.post<{ id: string; ref_number: string }>("/enquiries", {
+        client_id: resolvedClient.id,
+        site_city: city.trim(),
+        service_type: serviceType,
+        lead_source: source,
+        status: initialStatus,
+        remarks: requirement.trim() || null,
+      });
+
+      // Auto-send intake link for SI leads. Addressed from the resolved client
+      // record, not the form — when attaching (or picking an existing client)
+      // the form's name/email/phone are blank or belong to the new contact.
+      if (serviceType === "soil_investigation") {
+        try {
+          const token = await createIntakeToken(resolvedClient.id, "", newEnquiry.id);
+          const intakeUrl = getIntakeUrl(token);
+          const clientName = resolvedClient.name?.trim() || "Client";
+          const clientEmail = resolvedClient.email?.trim() || null;
+          const clientPhone = resolvedClient.phone?.trim() || null;
+
+          let linkDelivered = false;
+          if (clientEmail) {
+            const { ok } = await sendNotification({
+              to: clientEmail,
+              template: "intake_link",
+              // Initial communication: site address isn't known yet, so company only.
+              subjectPrefix: resolvedClient.company?.trim() || undefined,
+              params: { client_name: clientName, ref_number: newEnquiry.ref_number, intake_url: intakeUrl },
+            });
+            if (ok) linkDelivered = true;
+          }
+
+          if (clientPhone) {
+            const waNumber = clientPhone.startsWith("+") ? clientPhone : `+91${clientPhone.replace(/\D/g, "")}`;
+            try {
+              const r = await apiClient.post<{ error?: string }>("/integrations/whatsapp", {
+                phone_number: waNumber,
+                template_name: "qms_intake_form",
+                parameters: [
+                  { name: "client_name", value: clientName },
+                  { name: "ref_number", value: newEnquiry.ref_number },
+                  { name: "link", value: intakeUrl },
+                ],
+              });
+              if (!r.error) linkDelivered = true;
+            } catch {
+              /* non-blocking */
+            }
+          }
+
+          if (linkDelivered) {
+            toast.success("Intake link sent to the client.");
+          } else {
+            toast.warning("Lead saved, but the intake link could NOT be sent — share it manually from the client page.");
+          }
+        } catch (intakeErr) {
+          console.warn("Auto intake link failed:", intakeErr);
+        }
+      }
+
+      toast.success(`Lead ${newEnquiry.ref_number} captured!`);
+      queryClient.invalidateQueries({ queryKey: ["clients"] });
+      queryClient.invalidateQueries({ queryKey: ["clients-for-new-enquiry"] });
+      queryClient.invalidateQueries({ queryKey: ["enquiries-list"] });
+      handleClose(false);
+      navigate(`/enquiries/${newEnquiry.id}`);
+    } catch (err) {
+      toast.error(err instanceof Error && err.message ? err.message : "Failed to add lead");
+    } finally {
+      setLeadSaving(false);
+    }
+  };
+
   return (
+    <>
     <Dialog open={open} onOpenChange={handleClose}>
       <DialogContent
         className="sm:max-w-[640px] max-h-[90vh] overflow-y-auto p-0 gap-0"
@@ -182,6 +357,7 @@ export function AddLeadDialog({ open, onOpenChange }: { open: boolean; onOpenCha
                 <Input
                   value={leadForm.phone}
                   onChange={(e) => setLeadForm((p) => ({ ...p, phone: e.target.value }))}
+                  onBlur={() => setLeadForm((p) => (p.phone ? { ...p, phone: normalizePhone(p.phone) } : p))}
                   placeholder="+91XXXXXXXXXX"
                   className="h-11"
                   style={{ fontSize: "14px" }}
@@ -291,128 +467,24 @@ export function AddLeadDialog({ open, onOpenChange }: { open: boolean; onOpenCha
             className="flex-1 h-11 text-sm font-semibold rounded-lg"
             style={{ background: "#0F172A", color: "#FFFFFF" }}
             disabled={leadSaving}
-            onClick={async () => {
-              setLeadSaving(true);
-              try {
-                const { clientMode, clientId, name, phone, email, company, serviceType, source, city, requirement } = leadForm;
-
-                if (clientMode === "new" && (!name.trim() || !phone.trim() || !company.trim())) {
-                  throw new Error("Client name, company name and phone are required.");
-                }
-                if (clientMode === "existing" && !clientId) {
-                  throw new Error("Please select a client.");
-                }
-                if (!city.trim()) {
-                  throw new Error("City is required.");
-                }
-
-                const leadMeta = {
-                  lead_source: source,
-                  service_type_interest: serviceType,
-                  requirement_notes: requirement.trim() || null,
-                };
-
-                let resolvedClientId = clientId;
-
-                if (clientMode === "new") {
-                  const trimmedPhone = phone.trim();
-                  const existing = await apiClient.get<{ id: string }[]>("/clients", { phone: trimmedPhone });
-                  if (existing[0]) {
-                    resolvedClientId = existing[0].id;
-                    await apiClient.patch(`/clients/${resolvedClientId}`, { ...leadMeta, city: city.trim() });
-                  } else {
-                    const newClient = await apiClient.post<{ id: string }>("/clients", {
-                      name: name.trim(),
-                      phone: trimmedPhone,
-                      email: email.trim() || null,
-                      company: company.trim() || null,
-                      city: city.trim(),
-                      source: "manual",
-                      ...leadMeta,
-                    });
-                    resolvedClientId = newClient.id;
-                  }
-                } else {
-                  await apiClient.patch(`/clients/${resolvedClientId}`, { ...leadMeta, city: city.trim() });
-                }
-
-                // Create enquiry record so it appears in Kanban immediately
-                const initialStatus = serviceType === "soil_investigation" ? "intake_pending" : "new";
-                const newEnquiry = await apiClient.post<{ id: string; ref_number: string }>("/enquiries", {
-                  client_id: resolvedClientId,
-                  site_city: city.trim(),
-                  service_type: serviceType,
-                  lead_source: source,
-                  status: initialStatus,
-                  remarks: requirement.trim() || null,
-                });
-
-                // Auto-send intake link for SI leads
-                if (serviceType === "soil_investigation" && resolvedClientId) {
-                  try {
-                    const token = await createIntakeToken(resolvedClientId, "", newEnquiry.id);
-                    const intakeUrl = getIntakeUrl(token);
-                    const clientName = name.trim() || "Client";
-                    const clientEmail = email.trim() || null;
-                    const clientPhone = phone.trim() || null;
-
-                    let linkDelivered = false;
-                    if (clientEmail) {
-                      const { ok } = await sendNotification({
-                        to: clientEmail,
-                        template: "intake_link",
-                        // Initial communication: site address isn't known yet, so company only.
-                        subjectPrefix: company.trim() || undefined,
-                        params: { client_name: clientName, ref_number: newEnquiry.ref_number, intake_url: intakeUrl },
-                      });
-                      if (ok) linkDelivered = true;
-                    }
-
-                    if (clientPhone) {
-                      const waNumber = clientPhone.startsWith("+") ? clientPhone : `+91${clientPhone.replace(/\D/g, "")}`;
-                      try {
-                        const r = await apiClient.post<{ error?: string }>("/integrations/whatsapp", {
-                          phone_number: waNumber,
-                          template_name: "qms_intake_form",
-                          parameters: [
-                            { name: "client_name", value: clientName },
-                            { name: "ref_number", value: newEnquiry.ref_number },
-                            { name: "link", value: intakeUrl },
-                          ],
-                        });
-                        if (!r.error) linkDelivered = true;
-                      } catch {
-                        /* non-blocking */
-                      }
-                    }
-
-                    if (linkDelivered) {
-                      toast.success("Intake link sent to the client.");
-                    } else {
-                      toast.warning("Lead saved, but the intake link could NOT be sent — share it manually from the client page.");
-                    }
-                  } catch (intakeErr) {
-                    console.warn("Auto intake link failed:", intakeErr);
-                  }
-                }
-
-                toast.success(`Lead ${newEnquiry.ref_number} captured!`);
-                queryClient.invalidateQueries({ queryKey: ["clients"] });
-                queryClient.invalidateQueries({ queryKey: ["clients-for-new-enquiry"] });
-                queryClient.invalidateQueries({ queryKey: ["enquiries-list"] });
-                handleClose(false);
-                navigate(`/enquiries/${newEnquiry.id}`);
-              } catch (err: any) {
-                toast.error(err.message || "Failed to add lead");
-              } finally {
-                setLeadSaving(false);
-              }
-            }}
+            onClick={() => void submitLead(null)}
           >
             {leadSaving ? "Saving…" : "Add Lead"}
           </Button>
         </div>
       </DialogContent>
     </Dialog>
+
+    <DuplicateClientPrompt
+      matches={dupMatches}
+      phone={normalizePhone(leadForm.phone)}
+      newLabel={leadForm.company.trim() || leadForm.name.trim()}
+      mode="lead"
+      busy={leadSaving}
+      onCancel={() => setDupMatches([])}
+      onUseExisting={(client) => void submitLead({ kind: "attach", client })}
+      onCreateSeparate={() => void submitLead({ kind: "separate" })}
+    />
+    </>
   );
 }

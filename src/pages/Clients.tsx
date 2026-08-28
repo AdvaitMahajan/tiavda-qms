@@ -10,16 +10,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { SkeletonRow } from "@/components/ui/SkeletonLoader";
-
-function validateIndianMobile(phone: string): boolean {
-  const cleaned = phone.replace(/[\s-]/g, "");
-  return /^(\+91)?[6-9]\d{9}$/.test(cleaned);
-}
-function normalizePhone(phone: string): string {
-  const cleaned = phone.replace(/[\s-]/g, "");
-  if (/^\d{10}$/.test(cleaned)) return "+91" + cleaned;
-  return cleaned;
-}
+import { DuplicateClientPrompt } from "@/components/DuplicateClientPrompt";
+import { normalizePhone, validateIndianMobile, phoneKey } from "@/lib/phone";
 
 function avatarGradient(name: string): string {
   const c = (name?.[0] ?? "?").toUpperCase();
@@ -41,6 +33,8 @@ export default function Clients() {
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
   const [viewHover, setViewHover] = useState<string | null>(null);
+  // Clients sharing the phone being saved. Non-empty ⇒ duplicate prompt is open.
+  const [dupMatches, setDupMatches] = useState<Tables<"clients">[]>([]);
 
   const { data: clients = [], isLoading } = useQuery({
     queryKey: ["clients"],
@@ -121,10 +115,23 @@ export default function Clients() {
     return Object.keys(errs).length === 0;
   };
 
-  const handleSave = async () => {
+  /**
+   * Save the client. On the first attempt (`force` false) a number already on
+   * file parks the save and opens the duplicate prompt; the user either opens
+   * the existing record or confirms this is a separate client on a shared line.
+   */
+  const handleSave = async (force = false) => {
     if (!validateForm()) return;
     setSaving(true);
     try {
+      if (!force) {
+        const key = phoneKey(form.phone);
+        const matches = key ? clients.filter((c) => phoneKey(c.phone) === key) : [];
+        if (matches.length) {
+          setDupMatches(matches); // park until the user decides
+          return;
+        }
+      }
       await apiClient.post("/clients", {
         name: form.name.trim(), phone: normalizePhone(form.phone),
         email: form.email.trim() || null, company: form.company.trim() || null,
@@ -133,7 +140,8 @@ export default function Clients() {
         whatsapp_number: form.whatsapp_number.trim() ? normalizePhone(form.whatsapp_number) : null,
         notes: form.notes.trim() || null, source: form.source.trim() || "manual",
       });
-      toast.success("Client added"); setPanelOpen(false); setForm(emptyForm);
+      toast.success("Client added");
+      setDupMatches([]); setPanelOpen(false); setForm(emptyForm);
       queryClient.invalidateQueries({ queryKey: ["clients"] });
     } catch (e) {
       toast.error((e as Error)?.message || "Failed to add client");
@@ -424,7 +432,7 @@ export default function Clients() {
             style={{ background: "#F8FAFC", borderTop: "1px solid #E0E7EF", margin: "0 -24px -24px", padding: "16px 24px" }}
           >
             <button
-              onClick={handleSave}
+              onClick={() => void handleSave()}
               disabled={saving}
               className="w-full py-2.5 rounded-xl text-sm font-semibold transition-all disabled:opacity-50"
               style={{
@@ -438,6 +446,17 @@ export default function Clients() {
           </div>
         </SheetContent>
       </Sheet>
+
+      <DuplicateClientPrompt
+        matches={dupMatches}
+        phone={normalizePhone(form.phone)}
+        newLabel={form.company.trim() || form.name.trim()}
+        mode="client"
+        busy={saving}
+        onCancel={() => setDupMatches([])}
+        onUseExisting={(c) => { setDupMatches([]); setPanelOpen(false); navigate(`/clients/${c.id}`); }}
+        onCreateSeparate={() => void handleSave(true)}
+      />
     </div>
   );
 }

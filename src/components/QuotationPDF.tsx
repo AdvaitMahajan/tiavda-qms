@@ -1,7 +1,8 @@
 import { Document, Page, View, Text, StyleSheet } from "@react-pdf/renderer";
 import { PdfLetterhead } from "@/components/pdf/PdfLetterhead";
+import { PdfOfficeFooter } from "@/components/pdf/PdfOfficeFooter";
 import type { CompanyInfo } from "@/lib/templateRegistry";
-import { SECTION_LABELS } from "@/lib/quotationEngine";
+import { SECTION_LABELS, visibleItems } from "@/lib/quotationEngine";
 
 const navy = "#0F2A47";
 const gold = "#D4930A";
@@ -93,9 +94,19 @@ const s = StyleSheet.create({
   paymentBlock: { marginTop: 10, padding: 8, backgroundColor: sectionBg, borderRadius: 3 },
   paymentText: { fontSize: 10, fontFamily: "Helvetica-Bold", color: navy, textAlign: "center" },
 
-  notes: { marginTop: 12 },
-  noteTitle: { fontSize: 10, fontFamily: "Helvetica-Bold", marginBottom: 4, color: navy },
-  noteLine: { fontSize: 8, color: muted, marginBottom: 2 },
+  notes: { marginTop: 16 },
+  noteTitle: {
+    fontSize: 10,
+    fontFamily: "Helvetica-Bold",
+    marginBottom: 6,
+    color: navy,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
+  // Hanging indent so wrapped terms line up under the text, not the number.
+  termRow: { flexDirection: "row", marginBottom: 3 },
+  termNum: { fontSize: 8, color: muted, width: 16 },
+  termText: { fontSize: 8, color: muted, flex: 1, lineHeight: 1.4 },
 
   signatoryBlock: {
     marginTop: 50,
@@ -134,7 +145,7 @@ const inr = (n: number) =>
 const fmtDate = () =>
   new Date().toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
 
-type LineItem = { section?: string; description: string; unit: string; qty: number; rate: number; amount: number };
+type LineItem = { section?: string; description: string; unit: string; qty: number; rate: number; amount: number; hidden?: boolean };
 
 interface Props {
   quotation: {
@@ -160,17 +171,24 @@ interface Props {
   enquiry: { ref_number: string };
   companyInfo?: CompanyInfo | null;
   validityDays?: number;
+  /** Rendered as the Terms & Conditions list at the end of the quotation. */
   terms?: string[];
   paymentTerms?: string;
   footerText?: string;
+  /** Office contact numbers printed under the address at the foot. */
+  contactNumbers?: string[];
 }
 
 const colW = ["6%", "30%", "12%", "12%", "18%", "22%"] as const;
 
-export default function QuotationPDF({ quotation, client, enquiry, companyInfo, validityDays = 30, terms, paymentTerms, footerText }: Props) {
-  const items: LineItem[] = typeof quotation.line_items === "string"
+export default function QuotationPDF({ quotation, client, enquiry, companyInfo, validityDays = 30, terms, paymentTerms, footerText, contactNumbers }: Props) {
+  const allItems: LineItem[] = typeof quotation.line_items === "string"
     ? JSON.parse(quotation.line_items)
     : quotation.line_items;
+
+  // Items marked as out of scope are suppressed from the client-facing document
+  // and from every total; they stay on the saved record so they can be restored.
+  const items = visibleItems(allItems);
 
   const hasSections = items.some((it) => it.section);
 
@@ -185,12 +203,12 @@ export default function QuotationPDF({ quotation, client, enquiry, companyInfo, 
   return (
     <Document>
       <Page size="A4" style={s.page}>
-        <PdfLetterhead company={companyInfo} />
+        <PdfLetterhead company={companyInfo} variant="banner" />
         <Text style={s.docTitle}>GEOTECHNICAL INVESTIGATION QUOTATION</Text>
 
         <View style={s.twoCol}>
           <View style={s.col}>
-            <Text style={s.label}>Bill To</Text>
+            {/* No "Bill To" heading — the client's details stand on their own. */}
             <Text style={[s.value, s.bold]}>{client.name}</Text>
             {client.company && <Text style={s.value}>{client.company}</Text>}
             <Text style={s.value}>{client.phone}</Text>
@@ -328,20 +346,28 @@ export default function QuotationPDF({ quotation, client, enquiry, companyInfo, 
           </Text>
         </View>
 
-        {/* Notes */}
-        <View style={s.notes}>
-          <Text style={s.noteTitle}>Notes:</Text>
-          {notesList.map((t, i) => (
-            <Text key={i} style={s.noteLine}>{i + 1}. {t}</Text>
-          ))}
-        </View>
-
-        {/* Signatory — in document flow after notes */}
+        {/* Signatory — in document flow after the totals */}
         <View style={s.signatoryBlock} wrap={false}>
           <View style={s.sigLine} />
           <Text style={s.sigLabel}>Authorized Signatory</Text>
           <Text style={s.sigCompany}>{companyInfo?.name || "The Company"}</Text>
         </View>
+
+        {/* Terms & Conditions — last section of the document, per the template */}
+        {notesList.length > 0 && (
+          <View style={s.notes} break={notesList.length > 12}>
+            <Text style={s.noteTitle}>Terms &amp; Conditions</Text>
+            {notesList.map((t, i) => (
+              <View key={i} style={s.termRow}>
+                <Text style={s.termNum}>{i + 1}.</Text>
+                <Text style={s.termText}>{t}</Text>
+              </View>
+            ))}
+          </View>
+        )}
+
+        {/* Office address and contact numbers */}
+        <PdfOfficeFooter company={companyInfo} contactNumbers={contactNumbers} />
 
         {/* Fixed footer — repeats on every page */}
         <View style={s.pageFooter} fixed>

@@ -1,6 +1,8 @@
 import { Document, Page, View, Text, StyleSheet } from "@react-pdf/renderer";
 import { PdfLetterhead } from "@/components/pdf/PdfLetterhead";
 import type { CompanyInfo } from "@/lib/templateRegistry";
+import { visibleItems } from "@/lib/quotationEngine";
+import { PdfOfficeFooter } from "@/components/pdf/PdfOfficeFooter";
 
 const navy = "#0F2A47";
 const gold = "#D4930A";
@@ -76,8 +78,10 @@ const s = StyleSheet.create({
   paymentText: { fontSize: 10, fontFamily: "Helvetica-Bold", color: navy, textAlign: "center" },
 
   notes: { marginTop: 12 },
-  noteTitle: { fontSize: 10, fontFamily: "Helvetica-Bold", marginBottom: 4, color: navy },
-  noteLine: { fontSize: 8, color: muted, marginBottom: 2 },
+  noteTitle: { fontSize: 10, fontFamily: "Helvetica-Bold", marginBottom: 6, color: navy, textTransform: "uppercase", letterSpacing: 0.5 },
+  termRow: { flexDirection: "row", marginBottom: 3 },
+  termNum: { fontSize: 8, color: muted, width: 16 },
+  termText: { fontSize: 8, color: muted, flex: 1, lineHeight: 1.4 },
 
   signatoryBlock: {
     marginTop: 50,
@@ -116,7 +120,7 @@ const inr = (n: number) =>
 const fmtDate = () =>
   new Date().toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
 
-type LineItem = { description: string; unit: string; qty: number; rate: number; amount: number };
+type LineItem = { description: string; unit: string; qty: number; rate: number; amount: number; hidden?: boolean };
 
 interface Props {
   quotation: {
@@ -142,29 +146,34 @@ interface Props {
   terms?: string[];
   paymentTerms?: string;
   footerText?: string;
+  /** Office contact numbers printed under the address at the foot. */
+  contactNumbers?: string[];
 }
 
 const colW = ["8%", "38%", "12%", "10%", "16%", "16%"] as const;
 
 export default function ConsultancyPDF({
   quotation, client, enquiry, companyInfo, projectScope,
-  validityDays = 30, terms, paymentTerms, footerText,
+  validityDays = 30, terms, paymentTerms, footerText, contactNumbers,
 }: Props) {
-  const items: LineItem[] = typeof quotation.line_items === "string"
-    ? JSON.parse(quotation.line_items)
-    : quotation.line_items;
+  // Items marked out of scope are suppressed from the client-facing document.
+  const items: LineItem[] = visibleItems(
+    typeof quotation.line_items === "string"
+      ? JSON.parse(quotation.line_items)
+      : quotation.line_items,
+  );
 
   const notesList = terms && terms.length > 0 ? terms : [];
 
   return (
     <Document>
       <Page size="A4" style={s.page}>
-        <PdfLetterhead company={companyInfo} />
+        <PdfLetterhead company={companyInfo} variant="banner" />
         <Text style={s.docTitle}>CONSULTANCY SERVICES QUOTATION</Text>
 
         <View style={s.twoCol}>
           <View style={s.col}>
-            <Text style={s.label}>Bill To</Text>
+            {/* No "Bill To" heading — the client's details stand on their own. */}
             <Text style={[s.value, s.bold]}>{client.name}</Text>
             {client.company && <Text style={s.value}>{client.company}</Text>}
             <Text style={s.value}>{client.phone}</Text>
@@ -265,20 +274,28 @@ export default function ConsultancyPDF({
           </Text>
         </View>
 
-        {/* Notes */}
-        <View style={s.notes}>
-          <Text style={s.noteTitle}>Notes:</Text>
-          {notesList.map((t, i) => (
-            <Text key={i} style={s.noteLine}>{i + 1}. {t}</Text>
-          ))}
-        </View>
-
-        {/* Signatory — in document flow after notes */}
+        {/* Signatory — in document flow after the totals */}
         <View style={s.signatoryBlock} wrap={false}>
           <View style={s.sigLine} />
           <Text style={s.sigLabel}>Authorized Signatory</Text>
           <Text style={s.sigCompany}>{companyInfo?.name || "The Company"}</Text>
         </View>
+
+        {/* Terms & Conditions — last section of the document */}
+        {notesList.length > 0 && (
+          <View style={s.notes}>
+            <Text style={s.noteTitle}>Terms &amp; Conditions</Text>
+            {notesList.map((t, i) => (
+              <View key={i} style={s.termRow}>
+                <Text style={s.termNum}>{i + 1}.</Text>
+                <Text style={s.termText}>{t}</Text>
+              </View>
+            ))}
+          </View>
+        )}
+
+        {/* Office address and contact numbers */}
+        <PdfOfficeFooter company={companyInfo} contactNumbers={contactNumbers} />
 
         {/* Fixed footer — repeats on every page */}
         <View style={s.pageFooter} fixed>

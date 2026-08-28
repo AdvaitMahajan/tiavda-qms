@@ -11,7 +11,9 @@ import { RateMatrixGrid } from "@/components/settings/RateMatrixGrid";
 
 const BOQ_RATES = collectBoqRateKeys(DEFAULT_TEMPLATES);
 
-const NOTE_KEYS = Array.from({ length: 10 }, (_, i) => `quotation_note_${i + 1}`);
+// Terms & conditions printed at the end of an SI quotation. Raised from 10 to 25
+// so a full template's terms fit without being trimmed.
+const NOTE_KEYS = Array.from({ length: 25 }, (_, i) => `quotation_note_${i + 1}`);
 const CONSULTANCY_NOTE_KEYS = Array.from({ length: 5 }, (_, i) => `consultancy_note_${i + 1}`);
 const CONSULTANCY_ITEM_KEYS = Array.from({ length: 5 }, (_, i) => `consultancy_item_${i + 1}_desc`);
 const BOQ1_NOTE_KEYS = Array.from({ length: 8 }, (_, i) => `boq1_note_${i + 1}`);
@@ -25,6 +27,7 @@ const SAVE_KEYS = [
   ...NOTE_KEYS,
   "quotation_payment_terms",
   "quotation_footer_text",
+  "quotation_contact_numbers",
   ...CONSULTANCY_NOTE_KEYS,
   ...CONSULTANCY_ITEM_KEYS,
   "consultancy_payment_terms",
@@ -44,6 +47,7 @@ const DEFAULTS: Record<string, string> = {
   ...Object.fromEntries(NOTE_KEYS.map((k) => [k, ""])),
   quotation_payment_terms: "",
   quotation_footer_text: "",
+  quotation_contact_numbers: "8291917570, 8828827161",
   ...Object.fromEntries(CONSULTANCY_NOTE_KEYS.map((k) => [k, ""])),
   ...Object.fromEntries(CONSULTANCY_ITEM_KEYS.map((k) => [k, ""])),
   consultancy_payment_terms: "",
@@ -421,16 +425,23 @@ export default function QuotationConfigPage() {
           </div>
 
           <div style={cardStyle}>
-            <SettingsCardHeader Icon={FileText} iconBg="#F3E8FF" iconColor="#6A1B9A" title="SI Notes & Terms" />
+            <SettingsCardHeader Icon={FileText} iconBg="#F3E8FF" iconColor="#6A1B9A" title="SI Terms & Conditions" />
             <p style={{ fontSize: "13px", color: "#546E7A", padding: "8px 24px 12px" }}>
-              Notes and payment terms printed on generated SI quotation PDFs
+              Printed as the numbered Terms &amp; Conditions list at the end of SI quotation PDFs. Leave a
+              row blank to skip it — blanks are not numbered on the PDF.
             </p>
             <div style={{ padding: "0 24px 20px", display: "flex", flexDirection: "column", gap: "12px" }}>
               {NOTE_KEYS.map((key, i) => (
-                <PremiumInput key={key} label={`Note ${i + 1}`} value={s[key] ?? ""} onChange={set(key)} />
+                <PremiumInput key={key} label={`Term ${i + 1}`} value={s[key] ?? ""} onChange={set(key)} />
               ))}
               <PremiumInput label="Payment Terms" value={s.quotation_payment_terms ?? ""} onChange={set("quotation_payment_terms")} helper="Displayed on the PDF below the total" />
               <PremiumInput label="Footer Text" value={s.quotation_footer_text} onChange={set("quotation_footer_text")} helper="Appears at the bottom of the PDF" />
+              <PremiumInput
+                label="Office Contact Numbers"
+                value={s.quotation_contact_numbers ?? ""}
+                onChange={set("quotation_contact_numbers")}
+                helper="Comma-separated. Printed under the office address at the foot of the quotation."
+              />
             </div>
           </div>
 

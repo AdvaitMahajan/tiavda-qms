@@ -14,7 +14,7 @@ import QuotationPDF from "@/components/QuotationPDF";
 import ConsultancyPDF from "@/components/ConsultancyPDF";
 import BOQTemplatePDF from "@/components/BOQTemplatePDF";
 import { SECTION_LABELS } from "@/lib/quotationEngine";
-import { TEMPLATE_LABELS, TEMPLATE_IDS, isBoqTemplate, getCompanyInfoFromSettings } from "@/lib/templateRegistry";
+import { TEMPLATE_LABELS, TEMPLATE_IDS, isBoqTemplate, getCompanyInfoFromSettings, parseContactNumbers } from "@/lib/templateRegistry";
 import { getTemplateById } from "@/lib/templateDefaults";
 import { PaymentsTab } from "@/components/enquiry/PaymentsTab";
 import { CommunicationTab } from "@/components/enquiry/CommunicationTab";
@@ -613,7 +613,7 @@ export default function EnquiryDetail() {
         allNoteKeys = Array.from({ length: 5 }, (_, i) => `consultancy_note_${i + 1}`);
         paymentTermsKey = "consultancy_payment_terms";
       } else {
-        allNoteKeys = Array.from({ length: 10 }, (_, i) => `quotation_note_${i + 1}`);
+        allNoteKeys = Array.from({ length: 25 }, (_, i) => `quotation_note_${i + 1}`);
         paymentTermsKey = "quotation_payment_terms";
       }
 
@@ -623,7 +623,7 @@ export default function EnquiryDetail() {
         "bank_account_number", "bank_account_type", "bank_branch", "bank_ifsc",
       ];
       const pdfSettings = await apiClient.get<{ key: string; value: string }[]>("/settings", {
-        keys: ["quotation_validity_days", ...allNoteKeys, paymentTermsKey, "quotation_footer_text", ...COMPANY_KEYS].join(","),
+        keys: ["quotation_validity_days", ...allNoteKeys, paymentTermsKey, "quotation_footer_text", "quotation_contact_numbers", ...COMPANY_KEYS].join(","),
       });
       const pdfSettingsMap: Record<string, string> = {};
       pdfSettings?.forEach((r) => { pdfSettingsMap[r.key] = r.value; });
@@ -631,6 +631,7 @@ export default function EnquiryDetail() {
       const notes = allNoteKeys.map((k) => pdfSettingsMap[k]).filter(Boolean);
       const paymentTerms = pdfSettingsMap[paymentTermsKey] || undefined;
       const footerText = pdfSettingsMap.quotation_footer_text || undefined;
+      const contactNumbers = parseContactNumbers(pdfSettingsMap.quotation_contact_numbers);
 
       const consultancyData = (enquiry as any).consultancy_data;
       const projectScope = consultancyData?.scope || undefined;
@@ -656,6 +657,7 @@ export default function EnquiryDetail() {
             terms={notes.length > 0 ? notes : undefined}
             paymentTerms={paymentTerms}
             footerText={footerText}
+            contactNumbers={contactNumbers}
           />
         );
       } else if (isConsultancyQuote) {
@@ -670,6 +672,7 @@ export default function EnquiryDetail() {
             terms={notes.length > 0 ? notes : undefined}
             paymentTerms={paymentTerms}
             footerText={footerText}
+            contactNumbers={contactNumbers}
           />
         );
       } else {
@@ -683,6 +686,7 @@ export default function EnquiryDetail() {
             terms={notes.length > 0 ? notes : undefined}
             paymentTerms={paymentTerms}
             footerText={footerText}
+            contactNumbers={contactNumbers}
           />
         );
       }

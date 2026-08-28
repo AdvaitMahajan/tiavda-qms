@@ -1,6 +1,8 @@
 import { Document, Page, View, Text, StyleSheet } from "@react-pdf/renderer";
 import { PdfLetterhead } from "@/components/pdf/PdfLetterhead";
 import type { TemplateDefinition, CompanyInfo, ProjectHeader } from "@/lib/templateRegistry";
+import { visibleItems } from "@/lib/quotationEngine";
+import { PdfOfficeFooter } from "@/components/pdf/PdfOfficeFooter";
 
 const navy = "#0F2A47";
 const gold = "#D4930A";
@@ -53,8 +55,11 @@ const s = StyleSheet.create({
   paymentLine: { fontSize: 9, color: "#1E293B", marginBottom: 2 },
 
   notes: { marginTop: 12 },
-  noteTitle: { fontSize: 10, fontFamily: "Helvetica-Bold", marginBottom: 4, color: navy },
+  noteTitle: { fontSize: 10, fontFamily: "Helvetica-Bold", marginBottom: 6, color: navy, textTransform: "uppercase", letterSpacing: 0.5 },
   noteLine: { fontSize: 8, color: muted, marginBottom: 2 },
+  termRow: { flexDirection: "row", marginBottom: 3 },
+  termNum: { fontSize: 8, color: muted, width: 16 },
+  termText: { fontSize: 8, color: muted, flex: 1, lineHeight: 1.4 },
 
   companyBlock: { marginTop: 16, borderTopWidth: 1, borderTopColor: borderColor, paddingTop: 10 },
   companyName: { fontSize: 11, fontFamily: "Helvetica-Bold", color: navy, marginBottom: 4 },
@@ -100,6 +105,7 @@ type LineItem = {
   amount: number;
   remark?: string;
   is_qro?: boolean;
+  hidden?: boolean;
 };
 
 interface Props {
@@ -127,6 +133,8 @@ interface Props {
   terms?: string[];
   paymentTerms?: string;
   footerText?: string;
+  /** Office contact numbers printed under the address at the foot. */
+  contactNumbers?: string[];
 }
 
 export default function BOQTemplatePDF({
@@ -140,11 +148,14 @@ export default function BOQTemplatePDF({
   terms,
   paymentTerms,
   footerText,
+  contactNumbers,
 }: Props) {
-  const items: LineItem[] =
+  // Items marked out of scope are suppressed from the client-facing document.
+  const items: LineItem[] = visibleItems(
     typeof quotation.line_items === "string"
       ? JSON.parse(quotation.line_items)
-      : quotation.line_items;
+      : quotation.line_items,
+  );
 
   const layout = template.layout;
   const hasRemarks = layout.hasRemarks;
@@ -166,7 +177,7 @@ export default function BOQTemplatePDF({
 
   const renderDetailPage = () => (
     <Page size="A4" style={s.page}>
-      <PdfLetterhead company={companyInfo} />
+      <PdfLetterhead company={companyInfo} variant="banner" />
       <Text style={s.docTitle}>{layout.title}</Text>
       {layout.hasSummaryPage && (
         <Text style={s.scopeLine}>SCOPE: Bill of Quantities for Carrying Out Soil Investigation Works</Text>
@@ -185,7 +196,7 @@ export default function BOQTemplatePDF({
       {!layout.hasProjectHeader && (
         <View style={s.twoCol}>
           <View style={s.col}>
-            <Text style={s.label}>Bill To</Text>
+            {/* No "Bill To" heading — the client's details stand on their own. */}
             <Text style={[s.value, s.bold]}>{client.name}</Text>
             {client.company && <Text style={s.value}>{client.company}</Text>}
             <Text style={s.value}>{client.phone}</Text>
@@ -324,9 +335,12 @@ export default function BOQTemplatePDF({
 
       {notesList.length > 0 && (
         <View style={s.notes}>
-          <Text style={s.noteTitle}>Notes:</Text>
+          <Text style={s.noteTitle}>Terms &amp; Conditions</Text>
           {notesList.map((t, i) => (
-            <Text key={i} style={s.noteLine}>{i + 1}. {t}</Text>
+            <View key={i} style={s.termRow}>
+              <Text style={s.termNum}>{i + 1}.</Text>
+              <Text style={s.termText}>{t}</Text>
+            </View>
           ))}
         </View>
       )}
@@ -384,6 +398,9 @@ export default function BOQTemplatePDF({
           <Text style={s.sigCompany}>{companyInfo?.name || "The Company"}</Text>
         </View>
       )}
+
+      {/* Office address and contact numbers */}
+      <PdfOfficeFooter company={companyInfo} contactNumbers={contactNumbers} />
 
       <View style={s.pageFooter} fixed>
         <View style={s.footerRow}>

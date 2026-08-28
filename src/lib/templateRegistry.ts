@@ -228,6 +228,17 @@ export function getCompanyInfoFromSettings(
   };
 }
 
+/**
+ * Office contact numbers for the foot of a quotation, from the comma-separated
+ * `quotation_contact_numbers` setting.
+ */
+export function parseContactNumbers(raw: string | null | undefined): string[] {
+  return (raw ?? "")
+    .split(",")
+    .map((n) => n.trim())
+    .filter(Boolean);
+}
+
 export function isBoqTemplate(templateType: string): boolean {
   return (
     templateType === TEMPLATE_IDS.BOQ_TYPE_1 ||

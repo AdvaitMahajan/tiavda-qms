@@ -8,7 +8,18 @@ export type LineItem = {
   remark?: string;
   is_qro?: boolean;
   subsection?: string;
+  /**
+   * Suppressed from the client-facing PDF and from every total. The row is kept
+   * on the record (rather than deleted) so an item that is out of scope for this
+   * quotation can be brought back without rebuilding it.
+   */
+  hidden?: boolean;
 };
+
+/** Rows that actually appear on the quotation and count toward the totals. */
+export function visibleItems<T extends { hidden?: boolean }>(items: T[]): T[] {
+  return items.filter((it) => !it.hidden);
+}
 
 export type Variant = "standard" | "conservative" | "extended" | "minimal";
 
@@ -394,7 +405,7 @@ export function computeTotals(items: LineItem[]): {
 } {
   const sections: Record<string, number> = {};
   let subtotal = 0;
-  for (const item of items) {
+  for (const item of visibleItems(items)) {
     subtotal += item.amount;
     sections[item.section] = (sections[item.section] ?? 0) + item.amount;
   }
@@ -407,7 +418,7 @@ export type DiscountConfig = {
 };
 
 export function computeTotalsWithDiscount(
-  items: { amount: number; section?: string }[],
+  items: { amount: number; section?: string; hidden?: boolean }[],
   discount: DiscountConfig,
   gstRate: number,
 ): {
@@ -420,7 +431,7 @@ export function computeTotalsWithDiscount(
 } {
   const sections: Record<string, number> = {};
   let subtotal = 0;
-  for (const item of items) {
+  for (const item of visibleItems(items)) {
     subtotal += item.amount;
     if (item.section) {
       sections[item.section] = (sections[item.section] ?? 0) + item.amount;

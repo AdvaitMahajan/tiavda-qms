@@ -3,7 +3,7 @@ import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { apiClient } from "@/lib/apiClient";
 import { useRole } from "@/hooks/useRole";
 import { toast } from "sonner";
-import { ArrowLeft, Plus, Trash2, Eye, Save, RefreshCw, Loader2, Download } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, Eye, EyeOff, Save, RefreshCw, Loader2, Download } from "lucide-react";
 import { formatCurrency } from "@/lib/utils";
 import {
   buildLineItems,
@@ -31,6 +31,7 @@ import {
   isBoqTemplate,
   buildTemplateLineItems,
   getCompanyInfoFromSettings,
+  parseContactNumbers,
   collectBoqRateKeys,
   type ProjectHeader,
 } from "@/lib/templateRegistry";
@@ -47,6 +48,8 @@ type BuilderItem = {
   amount: number;
   remark?: string;
   is_qro?: boolean;
+  /** Out of scope for this quotation: kept on the record, off the PDF and totals. */
+  hidden?: boolean;
 };
 
 type Enquiry = {
@@ -361,8 +364,8 @@ export default function QuotationBuilder() {
         ...Array.from({ length: 5 }, (_, i) => `boq2_note_${i + 1}`),
         ...Array.from({ length: 10 }, (_, i) => `boq3_note_${i + 1}`),
         "boq1_payment_terms", "boq2_payment_terms", "boq3_payment_terms",
-        "quotation_validity_days", "quotation_footer_text",
-        ...Array.from({ length: 10 }, (_, i) => `quotation_note_${i + 1}`),
+        "quotation_validity_days", "quotation_footer_text", "quotation_contact_numbers",
+        ...Array.from({ length: 25 }, (_, i) => `quotation_note_${i + 1}`),
         "quotation_payment_terms",
       ];
       const settingsRows = await apiClient.get<{ key: string; value: string }[]>("/settings", {
@@ -608,6 +611,17 @@ export default function QuotationBuilder() {
     setManuallyEdited(true);
   };
 
+  /**
+   * Suppress or restore a line item. Unlike delete this keeps the row — with its
+   * description, qty and rate — so an item that is out of scope for this
+   * quotation can be brought back without re-entering it. Suppressed rows are
+   * dropped from the PDF and from every total.
+   */
+  const toggleItemHidden = (id: string) => {
+    setItems((prev) => prev.map((it) => (it.id === id ? { ...it, hidden: !it.hidden } : it)));
+    setManuallyEdited(true);
+  };
+
   const addItem = (section?: string) => {
     setItems((prev) => {
       const newItem: BuilderItem = {
@@ -783,10 +797,11 @@ export default function QuotationBuilder() {
             terms={boqNotes.length > 0 ? boqNotes : undefined}
             paymentTerms={boqPayTerms}
             footerText={footerText}
+            contactNumbers={parseContactNumbers(allSettings.quotation_contact_numbers)}
           />,
         ).toBlob();
       } else if (isSI) {
-        const siNotes = Array.from({ length: 10 }, (_, i) => allSettings[`quotation_note_${i + 1}`]).filter(Boolean);
+        const siNotes = Array.from({ length: 25 }, (_, i) => allSettings[`quotation_note_${i + 1}`]).filter(Boolean);
         const siPayTerms = allSettings.quotation_payment_terms || undefined;
         blob = await pdf(
           <QuotationPDF
@@ -798,6 +813,7 @@ export default function QuotationBuilder() {
             terms={siNotes.length > 0 ? siNotes : undefined}
             paymentTerms={siPayTerms}
             footerText={footerText}
+            contactNumbers={parseContactNumbers(allSettings.quotation_contact_numbers)}
           />,
         ).toBlob();
       } else {
@@ -808,6 +824,7 @@ export default function QuotationBuilder() {
             enquiry={enqObj}
             companyInfo={getCompanyInfoFromSettings(allSettings)}
             projectScope={projectScope}
+            contactNumbers={parseContactNumbers(allSettings.quotation_contact_numbers)}
           />,
         ).toBlob();
       }
@@ -861,9 +878,23 @@ export default function QuotationBuilder() {
   }
 
   const showRemarks = isBoq && currentTemplate?.layout.hasRemarks;
+  // Trailing two 32px columns are the suppress and delete buttons.
   const gridCols = showRemarks
-    ? "1fr 80px 80px 100px 110px 100px 36px"
-    : "1fr 80px 80px 100px 110px 36px";
+    ? "1fr 80px 80px 100px 110px 100px 32px 32px"
+    : "1fr 80px 80px 100px 110px 32px 32px";
+
+  // Flat (consultancy) table: same trailing suppress + delete buttons as the
+  // sectioned table, so both use renderBuilderRow.
+  const FLAT_GRID_COLS = "1fr 80px 80px 100px 110px 32px 32px";
+
+  const iconBtnStyle = (color: string): React.CSSProperties => ({
+    background: "none",
+    border: "none",
+    cursor: "pointer",
+    padding: "4px",
+    color,
+    opacity: 0.5,
+  });
 
   const renderBuilderRow = (item: BuilderItem, i: number, gc: string, hasRem: boolean | undefined) => (
     <div
@@ -874,8 +905,11 @@ export default function QuotationBuilder() {
         gap: "0",
         padding: "4px 20px",
         borderBottom: "1px solid #F0F4F8",
-        background: i % 2 === 1 ? "#FAFBFC" : "white",
+        background: item.hidden ? "#F1F5F9" : i % 2 === 1 ? "#FAFBFC" : "white",
         alignItems: "center",
+        // Suppressed rows stay editable but read as struck from the quotation.
+        opacity: item.hidden ? 0.45 : 1,
+        textDecoration: item.hidden ? "line-through" : "none",
       }}
     >
       <SmallInput
@@ -929,17 +963,24 @@ export default function QuotationBuilder() {
         />
       )}
       <button
+        onClick={() => toggleItemHidden(item.id)}
+        title={item.hidden ? "Include in quotation" : "Suppress from quotation"}
+        aria-label={item.hidden ? "Include in quotation" : "Suppress from quotation"}
+        style={iconBtnStyle(item.hidden ? "#15673A" : "#64748B")}
+        onMouseEnter={(e) => ((e.currentTarget as HTMLElement).style.opacity = "1")}
+        onMouseLeave={(e) => ((e.currentTarget as HTMLElement).style.opacity = "0.5")}
+      >
+        {item.hidden
+          ? <EyeOff style={{ width: 14, height: 14 }} />
+          : <Eye style={{ width: 14, height: 14 }} />}
+      </button>
+      <button
         onClick={() => removeItem(item.id)}
-        style={{
-          background: "none",
-          border: "none",
-          cursor: "pointer",
-          padding: "4px",
-          color: "#B91C1C",
-          opacity: 0.5,
-        }}
-        onMouseEnter={(e) => ((e.target as HTMLElement).style.opacity = "1")}
-        onMouseLeave={(e) => ((e.target as HTMLElement).style.opacity = "0.5")}
+        title="Delete item"
+        aria-label="Delete item"
+        style={iconBtnStyle("#B91C1C")}
+        onMouseEnter={(e) => ((e.currentTarget as HTMLElement).style.opacity = "1")}
+        onMouseLeave={(e) => ((e.currentTarget as HTMLElement).style.opacity = "0.5")}
       >
         <Trash2 style={{ width: 14, height: 14 }} />
       </button>
@@ -1475,7 +1516,9 @@ export default function QuotationBuilder() {
                 // Sectioned table for SI
                 sections.map((sec) => {
                   const sectionItems = items.filter((it) => it.section === sec);
-                  const sectionTotal = sectionItems.filter((it) => !it.is_qro).reduce((s, it) => s + it.amount, 0);
+                  const sectionTotal = sectionItems
+                    .filter((it) => !it.is_qro && !it.hidden)
+                    .reduce((s, it) => s + it.amount, 0);
                   const subsections = [...new Set(sectionItems.filter((it) => it.subsection).map((it) => it.subsection!))];
                   return (
                     <div key={sec}>
@@ -1526,6 +1569,7 @@ export default function QuotationBuilder() {
                         <span style={{ ...colHeaderStyle, textAlign: "right" }}>Amount</span>
                         {showRemarks && <span style={colHeaderStyle}>Remark</span>}
                         <span />
+                        <span />
                       </div>
                       {/* Subsection headers + Rows */}
                       {subsections.length > 0
@@ -1575,7 +1619,7 @@ export default function QuotationBuilder() {
                   <div
                     style={{
                       display: "grid",
-                      gridTemplateColumns: "1fr 80px 80px 100px 110px 36px",
+                      gridTemplateColumns: FLAT_GRID_COLS,
                       gap: "0",
                       padding: "8px 20px",
                       background: "#1E293B",
@@ -1593,75 +1637,9 @@ export default function QuotationBuilder() {
                       Amount
                     </span>
                     <span />
+                    <span />
                   </div>
-                  {items.map((item, i) => (
-                    <div
-                      key={item.id}
-                      style={{
-                        display: "grid",
-                        gridTemplateColumns: "1fr 80px 80px 100px 110px 36px",
-                        gap: "0",
-                        padding: "4px 20px",
-                        borderBottom: "1px solid #F0F4F8",
-                        background: i % 2 === 1 ? "#FAFBFC" : "white",
-                        alignItems: "center",
-                      }}
-                    >
-                      <SmallInput
-                        value={item.description}
-                        onChange={(v) => updateItem(item.id, "description", v)}
-                        style={{ width: "100%" }}
-                      />
-                      <SmallInput
-                        value={item.unit}
-                        onChange={(v) => updateItem(item.id, "unit", v)}
-                        style={{ width: "70px" }}
-                      />
-                      <SmallInput
-                        value={item.qty}
-                        onChange={(v) => updateItem(item.id, "qty", parseFloat(v) || 0)}
-                        type="number"
-                        style={{ width: "70px", textAlign: "right" }}
-                      />
-                      <SmallInput
-                        value={item.rate}
-                        onChange={(v) => updateItem(item.id, "rate", parseFloat(v) || 0)}
-                        type="number"
-                        style={{ width: "90px", textAlign: "right" }}
-                      />
-                      <div
-                        style={{
-                          textAlign: "right",
-                          fontSize: "14px",
-                          fontWeight: 600,
-                          color: "#0A1929",
-                          fontFamily: "JetBrains Mono, monospace",
-                          padding: "0 4px",
-                        }}
-                      >
-                        {formatCurrency(item.amount)}
-                      </div>
-                      <button
-                        onClick={() => removeItem(item.id)}
-                        style={{
-                          background: "none",
-                          border: "none",
-                          cursor: "pointer",
-                          padding: "4px",
-                          color: "#B91C1C",
-                          opacity: 0.5,
-                        }}
-                        onMouseEnter={(e) =>
-                          ((e.target as HTMLElement).style.opacity = "1")
-                        }
-                        onMouseLeave={(e) =>
-                          ((e.target as HTMLElement).style.opacity = "0.5")
-                        }
-                      >
-                        <Trash2 style={{ width: 14, height: 14 }} />
-                      </button>
-                    </div>
-                  ))}
+                  {items.map((item, i) => renderBuilderRow(item, i, FLAT_GRID_COLS, false))}
                   <div style={{ padding: "8px 20px" }}>
                     <button
                       onClick={() => addItem()}

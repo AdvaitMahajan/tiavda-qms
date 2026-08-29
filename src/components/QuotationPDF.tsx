@@ -1,4 +1,5 @@
 import { Document, Page, View, Text, StyleSheet } from "@react-pdf/renderer";
+import "@/components/pdf/pdfSetup";
 import { PdfLetterhead } from "@/components/pdf/PdfLetterhead";
 import { PdfOfficeFooter } from "@/components/pdf/PdfOfficeFooter";
 import type { CompanyInfo } from "@/lib/templateRegistry";
@@ -66,6 +67,10 @@ const s = StyleSheet.create({
 
   tdRow: { flexDirection: "row", padding: 5, borderBottomWidth: 0.5, borderBottomColor: borderColor },
   tdText: { fontSize: 9 },
+  // Yoga defaults flexShrink to 0, so a long description lays out wider than its
+  // column and runs into the Unit value ("…drillingLS"). Allowing the cell to
+  // shrink keeps it inside its width; the padding leaves a gutter between columns.
+  cell: { flexShrink: 1, paddingRight: 6 },
 
   sectionTotalRow: {
     flexDirection: "row",
@@ -243,8 +248,8 @@ export default function QuotationPDF({ quotation, client, enquiry, companyInfo, 
                   </View>
                   <View style={s.thRow}>
                     <Text style={[s.thText, { width: colW[0], textAlign: "center" }]}>Sr</Text>
-                    <Text style={[s.thText, { width: colW[1] }]}>Description</Text>
-                    <Text style={[s.thText, { width: colW[2] }]}>Unit</Text>
+                    <Text style={[s.thText, s.cell, { width: colW[1] }]}>Description</Text>
+                    <Text style={[s.thText, s.cell, { width: colW[2] }]}>Unit</Text>
                     <Text style={[s.thText, { width: colW[3], textAlign: "right" }]}>Qty</Text>
                     <Text style={[s.thText, { width: colW[4], textAlign: "right" }]}>Rate</Text>
                     <Text style={[s.thText, { width: colW[5], textAlign: "right" }]}>Amount</Text>
@@ -254,8 +259,8 @@ export default function QuotationPDF({ quotation, client, enquiry, companyInfo, 
                     return (
                       <View key={i} style={[s.tdRow, i % 2 === 1 ? { backgroundColor: altRow } : {}]}>
                         <Text style={[s.tdText, { width: colW[0], textAlign: "center" }]}>{srNo}</Text>
-                        <Text style={[s.tdText, { width: colW[1] }]}>{item.description}</Text>
-                        <Text style={[s.tdText, { width: colW[2] }]}>{item.unit}</Text>
+                        <Text style={[s.tdText, s.cell, { width: colW[1] }]}>{item.description}</Text>
+                        <Text style={[s.tdText, s.cell, { width: colW[2] }]}>{item.unit}</Text>
                         <Text style={[s.tdText, { width: colW[3], textAlign: "right" }]}>{item.qty}</Text>
                         <Text style={[s.tdText, { width: colW[4], textAlign: "right" }]}>{inr(item.rate)}</Text>
                         <Text style={[s.tdText, { width: colW[5], textAlign: "right" }]}>{inr(item.amount)}</Text>
@@ -277,16 +282,16 @@ export default function QuotationPDF({ quotation, client, enquiry, companyInfo, 
         ) : (
           <>
             <View style={s.thRow}>
-              <Text style={[s.thText, { width: "35%" }]}>Description</Text>
-              <Text style={[s.thText, { width: "12%" }]}>Unit</Text>
+              <Text style={[s.thText, s.cell, { width: "35%" }]}>Description</Text>
+              <Text style={[s.thText, s.cell, { width: "12%" }]}>Unit</Text>
               <Text style={[s.thText, { width: "13%", textAlign: "right" }]}>Qty</Text>
               <Text style={[s.thText, { width: "18%", textAlign: "right" }]}>Rate</Text>
               <Text style={[s.thText, { width: "22%", textAlign: "right" }]}>Amount</Text>
             </View>
             {items.map((item, i) => (
               <View key={i} style={[s.tdRow, i % 2 === 1 ? { backgroundColor: altRow } : {}]}>
-                <Text style={[s.tdText, { width: "35%" }]}>{item.description}</Text>
-                <Text style={[s.tdText, { width: "12%" }]}>{item.unit}</Text>
+                <Text style={[s.tdText, s.cell, { width: "35%" }]}>{item.description}</Text>
+                <Text style={[s.tdText, s.cell, { width: "12%" }]}>{item.unit}</Text>
                 <Text style={[s.tdText, { width: "13%", textAlign: "right" }]}>{item.qty}</Text>
                 <Text style={[s.tdText, { width: "18%", textAlign: "right" }]}>{inr(item.rate)}</Text>
                 <Text style={[s.tdText, { width: "22%", textAlign: "right" }]}>{inr(item.amount)}</Text>

@@ -1,4 +1,5 @@
 import { Document, Page, View, Text, StyleSheet } from "@react-pdf/renderer";
+import "@/components/pdf/pdfSetup";
 import { PdfLetterhead } from "@/components/pdf/PdfLetterhead";
 import type { CompanyInfo } from "@/lib/templateRegistry";
 import { visibleItems } from "@/lib/quotationEngine";

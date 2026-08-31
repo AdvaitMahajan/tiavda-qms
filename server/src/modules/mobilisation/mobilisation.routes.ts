@@ -8,6 +8,9 @@ import { authenticate, getAuth } from '../../middleware/auth';
 import { requireNotViewer, requireFeature } from '../../middleware/roles';
 import { asyncHandler, getParam } from '../../lib/http';
 import { badRequest, notFound } from '../../lib/errors';
+import { enquiries, clients, profiles } from '../../db/schema';
+import { sendEmail } from '../../integrations/email';
+import { teamInboxes } from '../../integrations/internal-recipients';
 
 const createSchema = z.object({
   enquiry_id: z.string().uuid(),
@@ -69,13 +72,66 @@ mobilisationRouter.get(
   }),
 );
 
+
+/**
+ * Email the shared team inbox that a mobilisation has been assigned, naming the
+ * assignee. The team is notified through one address rather than individually,
+ * so who the job belongs to has to be in the message itself.
+ *
+ * Best-effort: a mobilisation must save even if the mail fails.
+ */
+async function notifyMobilisationAssigned(orgId: string, mobRow: typeof mobilisation.$inferSelect) {
+  try {
+    if (!mobRow.team_lead_id) return;
+    const inboxes = await teamInboxes(orgId);
+    if (inboxes.length === 0) return;
+
+    const [assignee] = await db
+      .select({ full_name: profiles.full_name, email: profiles.email })
+      .from(profiles)
+      .where(eq(profiles.id, mobRow.team_lead_id))
+      .limit(1);
+    const [enq] = await db
+      .select({ ref_number: enquiries.ref_number, site_city: enquiries.site_city, client_id: enquiries.client_id })
+      .from(enquiries)
+      .where(eq(enquiries.id, mobRow.enquiry_id))
+      .limit(1);
+    if (!enq) return;
+    const [client] = enq.client_id
+      ? await db.select({ name: clients.name }).from(clients).where(eq(clients.id, enq.client_id)).limit(1)
+      : [];
+
+    await sendEmail({
+      to: inboxes,
+      orgId,
+      template: 'mobilisation_assigned',
+      params: {
+        ref_number: enq.ref_number,
+        assignee_name: assignee?.full_name?.trim() || assignee?.email || 'Unassigned',
+        date: mobRow.mobilisation_date,
+        time: mobRow.mobilisation_time,
+        city: enq.site_city ?? '—',
+        client_name: client?.name ?? null,
+        team: mobRow.team_description,
+        equipment: mobRow.equipment_notes,
+        contact_name: mobRow.site_contact_name,
+        contact_phone: mobRow.site_contact_phone,
+      },
+    });
+  } catch {
+    /* never block the save on a notification */
+  }
+}
+
 mobilisationRouter.post(
   '/',
   requireNotViewer,
   asyncHandler(async (req, res) => {
     const body = createSchema.parse(req.body);
-    const rows = await db.insert(mobilisation).values({ ...body, org_id: requireOrgId() }).returning();
+    const orgId = requireOrgId();
+    const rows = await db.insert(mobilisation).values({ ...body, org_id: orgId }).returning();
     res.status(201).json(rows[0]);
+    if (rows[0]) void notifyMobilisationAssigned(orgId, rows[0]);
   }),
 );
 
@@ -84,9 +140,12 @@ mobilisationRouter.patch(
   requireNotViewer,
   asyncHandler(async (req, res) => {
     const body = updateSchema.parse(req.body);
+    const orgId = requireOrgId();
     const rows = await db.update(mobilisation).set(body).where(eq(mobilisation.id, getParam(req, 'id'))).returning();
     if (!rows[0]) throw notFound('Mobilisation not found');
     res.json(rows[0]);
+    // Only on a change of assignee — not on every date tweak or status update.
+    if (body.team_lead_id !== undefined) void notifyMobilisationAssigned(orgId, rows[0]);
   }),
 );
 

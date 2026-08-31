@@ -82,6 +82,13 @@ export interface TemplateParams {
   mobilisation_revised: { client_name: string; ref_number: string; date: string; city: string; confirm_url: string };
   followup_reminder: { ref_number: string; client_name?: string; scheduled_date: string; notes?: string | null; is_overdue?: boolean };
   job_reminder: { ref_number: string; client_name?: string; type_label: string; days_before: number | string; target_date: string };
+  /** Staff alert when a mobilisation is assigned. Goes to the shared team inbox,
+   *  so the assignee's name is in the subject and body rather than the address. */
+  mobilisation_assigned: {
+    ref_number: string; assignee_name: string; date: string; time?: string | null;
+    city: string; client_name?: string | null; team?: string | null;
+    equipment?: string | null; contact_name?: string | null; contact_phone?: string | null;
+  };
   site_visit_today: {
     ref_number: string; geologist_name: string; client_name: string; client_phone: string;
     client_email?: string | null; site_address: string; structure_type?: string | null;
@@ -317,6 +324,30 @@ const TEMPLATES: { [K in TemplateKey]: (p: TemplateParams[K]) => RenderedEmail }
           ${detailRow('Target Date', esc(p.target_date))}
         </table>
         <p style="color:${BRAND.muted};font-size:12px;margin-top:18px;">This is an automated reminder from QMS.</p>`,
+    }),
+  }),
+
+  mobilisation_assigned: (p) => ({
+    subject: `Mobilisation assigned to ${p.assignee_name} — ${p.ref_number} — ${p.date}`,
+    html: layout({
+      heading: 'Mobilisation Assigned',
+      subheading: p.ref_number,
+      body: `
+        <p style="margin:0 0 12px;">Mobilisation has been assigned to
+          <strong>${esc(p.assignee_name)}</strong>.</p>
+        <table style="width:100%;border-collapse:collapse;">
+          ${detailRow('Assigned To', esc(p.assignee_name))}
+          ${detailRow('Enquiry', esc(p.ref_number))}
+          ${detailRow('Client', esc(p.client_name || '—'))}
+          ${detailRow('Date', esc(p.date))}
+          ${p.time ? detailRow('Time', esc(p.time)) : ''}
+          ${detailRow('City', esc(p.city))}
+          ${p.team ? detailRow('Team', esc(p.team)) : ''}
+          ${p.equipment ? detailRow('Equipment', esc(p.equipment)) : ''}
+          ${p.contact_name ? detailRow('Site Contact', esc(p.contact_name)) : ''}
+          ${p.contact_phone ? detailRow('Contact Phone', esc(p.contact_phone)) : ''}
+        </table>
+        <p style="color:${BRAND.muted};font-size:12px;margin-top:18px;">Automated notification from QMS.</p>`,
     }),
   }),
 

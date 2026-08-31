@@ -268,12 +268,13 @@ export default function ConsultancyPDF({
           </View>
         </View>
 
-        {/* Payment terms */}
-        <View style={s.paymentBlock}>
-          <Text style={s.paymentText}>
-            Payment Terms: {paymentTerms ?? ""}
-          </Text>
-        </View>
+        {/* Payment terms — only when set; otherwise an unconfigured setting
+            prints a bare grey "Payment Terms:" bar with nothing after it. */}
+        {paymentTerms?.trim() ? (
+          <View style={s.paymentBlock}>
+            <Text style={s.paymentText}>Payment Terms: {paymentTerms.trim()}</Text>
+          </View>
+        ) : null}
 
         {/* Signatory — in document flow after the totals */}
         <View style={s.signatoryBlock} wrap={false}>

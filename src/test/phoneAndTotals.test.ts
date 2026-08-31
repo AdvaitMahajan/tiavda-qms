@@ -48,6 +48,13 @@ describe("suppressed line items", () => {
     expect(t.sections.B).toBe(7200);
   });
 
+  it("keeps the stored subtotal equal to what the PDF's visible rows add up to", () => {
+    // The PDF prints the stored subtotal but only the visible rows, so the two
+    // must agree — counting a suppressed item would show a total no line explains.
+    const printed = visibleItems(items).reduce((s, it) => s + it.amount, 0);
+    expect(computeTotals(items).subtotal).toBe(printed);
+  });
+
   it("excludes hidden rows from discount, GST and grand total", () => {
     const t = computeTotalsWithDiscount(items, { type: "percentage", value: 10 }, 18);
     expect(t.subtotal).toBe(45450);

@@ -13,7 +13,7 @@ import { pdf } from "@react-pdf/renderer";
 import QuotationPDF from "@/components/QuotationPDF";
 import ConsultancyPDF from "@/components/ConsultancyPDF";
 import BOQTemplatePDF from "@/components/BOQTemplatePDF";
-import { SECTION_LABELS } from "@/lib/quotationEngine";
+import { SECTION_LABELS, visibleItems } from "@/lib/quotationEngine";
 import { TEMPLATE_LABELS, TEMPLATE_IDS, isBoqTemplate, getCompanyInfoFromSettings, parseContactNumbers } from "@/lib/templateRegistry";
 import { getTemplateById } from "@/lib/templateDefaults";
 import { PaymentsTab } from "@/components/enquiry/PaymentsTab";
@@ -31,7 +31,7 @@ import { Label } from "@/components/ui/label";
 import {
   Loader2, ChevronDown, ChevronUp, Download, Send, AlertTriangle, RefreshCw,
   ArrowLeft, CheckCircle2, MapPin, Phone, Mail, MessageCircle, XCircle,
-  UserCircle, Pencil, Save, Trophy,
+  UserCircle, Pencil, Save, Trophy, Eye, EyeOff,
 } from "lucide-react";
 import type { Tables } from "@/integrations/supabase/types";
 import { createFollowUpCadence, cancelPendingFollowUps } from "@/lib/followUpCadence";
@@ -40,7 +40,7 @@ type Enquiry = Tables<"enquiries">;
 type Client = Tables<"clients">;
 type Quotation = Tables<"quotations">;
 
-type LineItem = { section?: string; description: string; unit: string; qty: number; rate: number; amount: number };
+type LineItem = { section?: string; description: string; unit: string; qty: number; rate: number; amount: number; hidden?: boolean };
 
 const soilTypeLabels: Record<string, string> = {
   soil: "Soil",
@@ -263,11 +263,20 @@ function VariantCard({
                 <div className="p-2 text-right col-span-1">Unit</div>
                 <div className="p-2 text-right col-span-2">Qty</div>
                 <div className="p-2 text-right col-span-2">Rate</div>
-                <div className="p-2 text-right col-span-2">Amount</div>
-                <div className="p-2 col-span-1"></div>
+                <div className="p-2 text-right col-span-1">Amount</div>
+                <div className="p-2 col-span-2"></div>
               </div>
               {editItems.map((item, i) => (
-                <div key={i} className="grid grid-cols-12 gap-0 items-center" style={{ background: i % 2 === 1 ? "#F8FAFC" : "#FFFFFF" }}>
+                <div
+                  key={i}
+                  className="grid grid-cols-12 gap-0 items-center"
+                  style={{
+                    background: item.hidden ? "#F1F5F9" : i % 2 === 1 ? "#F8FAFC" : "#FFFFFF",
+                    // Suppressed rows stay editable but read as struck from the quotation.
+                    opacity: item.hidden ? 0.45 : 1,
+                    textDecoration: item.hidden ? "line-through" : "none",
+                  }}
+                >
                   <div className="p-1.5 col-span-4">
                     <input className="w-full px-1.5 py-1 text-[13px] rounded border" style={{ borderColor: "#E0E7EF" }}
                       value={item.description} onChange={(e) => { const u = [...editItems]; u[i] = { ...u[i], description: e.target.value }; setEditItems(u); }} />
@@ -284,9 +293,18 @@ function VariantCard({
                     <input type="number" className="w-full px-1 py-1 text-[13px] rounded border text-right font-mono" style={{ borderColor: "#E0E7EF" }}
                       value={item.rate} onChange={(e) => { const u = [...editItems]; const rate = parseFloat(e.target.value) || 0; u[i] = { ...u[i], rate, amount: +(u[i].qty * rate).toFixed(2) }; setEditItems(u); }} />
                   </div>
-                  <div className="p-1.5 col-span-2 text-right font-mono">{formatCurrency(item.amount)}</div>
-                  <div className="p-1.5 col-span-1 text-center">
-                    <button onClick={() => setEditItems(editItems.filter((_, j) => j !== i))} className="text-red-500 hover:text-red-700 text-[13px]">✕</button>
+                  <div className="p-1.5 col-span-1 text-right font-mono">{formatCurrency(item.amount)}</div>
+                  <div className="p-1.5 col-span-2 flex items-center justify-center gap-1">
+                    <button
+                      title={item.hidden ? "Include in quotation" : "Hide from quotation"}
+                      aria-label={item.hidden ? "Include in quotation" : "Hide from quotation"}
+                      onClick={() => { const u = [...editItems]; u[i] = { ...u[i], hidden: !u[i].hidden }; setEditItems(u); }}
+                      className="text-[13px] px-1"
+                      style={{ color: item.hidden ? "#15673A" : "#64748B" }}
+                    >
+                      {item.hidden ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </button>
+                    <button onClick={() => setEditItems(editItems.filter((_, j) => j !== i))} className="text-red-500 hover:text-red-700 text-[13px] px-1">✕</button>
                   </div>
                 </div>
               ))}
@@ -570,12 +588,16 @@ export default function EnquiryDetail() {
   const handleSaveLineItems = async (quotationId: string, newItems: LineItem[]) => {
     const qRow = await apiClient.get<Quotation>(`/quotations/${quotationId}`);
     const gstPct = Number(qRow?.gst_rate) || 0;
-    const subtotal = newItems.reduce((sum, it) => sum + it.amount, 0);
+    // Suppressed rows are saved with the quotation but must not reach any total —
+    // the PDF prints these stored figures, so counting a hidden item here would
+    // show a total that none of the visible lines add up to.
+    const counted = visibleItems(newItems);
+    const subtotal = counted.reduce((sum, it) => sum + it.amount, 0);
     const gstAmount = +(subtotal * (gstPct / 100)).toFixed(2);
     const total = +(subtotal + gstAmount).toFixed(2);
-    const mobilisationCost = newItems.find((it) => it.description.toLowerCase().includes("mobilis"))?.amount ?? 0;
-    const drillingCost = newItems.filter((it) => it.description.toLowerCase().includes("drill") || it.description.toLowerCase().includes("core")).reduce((s, it) => s + it.amount, 0);
-    const reportingCost = newItems.filter((it) => it.section === "D" || it.description.toLowerCase().includes("report") || it.description.toLowerCase().includes("boring log")).reduce((s, it) => s + it.amount, 0);
+    const mobilisationCost = counted.find((it) => it.description.toLowerCase().includes("mobilis"))?.amount ?? 0;
+    const drillingCost = counted.filter((it) => it.description.toLowerCase().includes("drill") || it.description.toLowerCase().includes("core")).reduce((s, it) => s + it.amount, 0);
+    const reportingCost = counted.filter((it) => it.section === "D" || it.description.toLowerCase().includes("report") || it.description.toLowerCase().includes("boring log")).reduce((s, it) => s + it.amount, 0);
     try {
       await apiClient.patch(`/quotations/${quotationId}`, {
         line_items: JSON.stringify(newItems),

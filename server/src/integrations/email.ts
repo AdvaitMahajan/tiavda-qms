@@ -2,6 +2,7 @@ import { currentOrgId } from '../db';
 import { supabaseAdmin } from '../lib/supabase';
 import { resolveEmailCreds } from '../lib/org-integrations';
 import { renderEmail, type TemplateKey, type TemplateParams } from './email-templates';
+import { isInternalTemplate, teamInboxes } from './internal-recipients';
 
 export interface SendEmailInput {
   to: string | string[];
@@ -69,7 +70,21 @@ export async function sendEmail(input: SendEmailInput): Promise<SendEmailResult>
     attachment = [{ content: buffer.toString('base64'), name: 'quotation.pdf' }];
   }
 
-  const recipients = (Array.isArray(to) ? to : [to]).filter(Boolean).map((email) => ({ email }));
+  // Staff-facing notifications also go to the shared team inbox, so the team
+  // sees them without every alert having to name individuals. De-duplicated
+  // case-insensitively in case the inbox is already an explicit recipient.
+  const addressed = (Array.isArray(to) ? to : [to]).filter(Boolean);
+  if (isInternalTemplate(template)) addressed.push(...(await teamInboxes(orgId)));
+  const seen = new Set<string>();
+  const recipients = addressed
+    .filter((email) => {
+      const key = email.trim().toLowerCase();
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .map((email) => ({ email: email.trim() }));
+  if (recipients.length === 0) return { success: false, error: 'Missing "to" recipient' };
   const payload: Record<string, unknown> = {
     sender: { email: senderEmail, name: senderName },
     to: recipients,

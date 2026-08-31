@@ -20,7 +20,7 @@ import { ROLE_LABELS, ROLE_COLORS, type UserRole } from "@/lib/permissions";
 
 const BUNDLE_KEYS = [
   "company_name", "company_state", "gst_number", "gst_rate", "company_pan", "company_address",
-  "admin_email", "admin_whatsapp",
+  "admin_email", "admin_whatsapp", "team_notification_emails",
   "bank_account_name", "bank_name", "bank_account_number",
   "bank_account_type", "bank_ifsc", "bank_branch", "bank_upi",
 ] as const;
@@ -35,7 +35,7 @@ const AUTOMATION_KEYS = [
 
 const DEFAULTS: Record<string, string> = {
   company_name: "", company_state: "", gst_number: "", gst_rate: "18", company_pan: "", company_address: "",
-  admin_email: "", admin_whatsapp: "",
+  admin_email: "", admin_whatsapp: "", team_notification_emails: "",
   bank_account_name: "", bank_name: "", bank_account_number: "",
   bank_account_type: "Current", bank_ifsc: "", bank_branch: "", bank_upi: "",
   auto_followup_after_quote: "true", auto_followup_days: "3",
@@ -148,6 +148,12 @@ export default function SettingsPage() {
               <PremiumInput label="Company Address" value={s.company_address} onChange={set("company_address")} as="textarea" />
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <PremiumInput label="Admin Email" value={s.admin_email} onChange={set("admin_email")} type="email" />
+                <PremiumInput
+                  label="Team Notification Email(s)"
+                  value={s.team_notification_emails}
+                  onChange={set("team_notification_emails")}
+                  helper="Comma-separated. Copied on every staff notification (new enquiry, follow-up, site visit, reminders, weekly summary). Client emails are not sent here."
+                />
                 <PremiumInput label="Admin WhatsApp" value={s.admin_whatsapp} onChange={set("admin_whatsapp")} placeholder="+91XXXXXXXXXX" />
               </div>
             </div>

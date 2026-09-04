@@ -35,13 +35,16 @@ const LINE_ITEMS = [
 ];
 
 const TERMS = [
-  "This quotation is valid for 30 days from the date of issue.",
-  "Rates quoted are exclusive of GST, which will be charged at the prevailing rate.",
-  "Water and electricity required for the work shall be provided free of cost at site by the client.",
-  "Any boreholes executed beyond the quoted scope will be charged at the same unit rates.",
-  "Mobilisation charges are applicable per mobilisation; repeat mobilisation due to site unavailability will be charged separately.",
-  "Clearing of site, levelling and providing access to borehole locations is in the client's scope.",
-  "Payment terms: 50% advance along with the work order, balance on submission of the final report.",
+  "The provision of water for drilling purposes at borehole location to be made by the client.",
+  "Clean place to make hutment or room for labour's accomodation (at site) should be arranged by client.",
+  "If the height of the proposed structure exceeds 120 meters, the investigation is required to be carried out in accordance with HRC norms. In this regard, the borehole depth shall be maintained at a minimum of 50 meters.",
+  "Upon approval of the quotation, work will commence within three to four days, contingent upon receipt of the formal work order, advance payment, and site clearance. Please be advised that the final report will be issued only upon receipt of the final payment.",
+  "Clear access to the borehole location provided by client.",
+  "The Reduced Levels of Borehole point provided by client before completion of field work.",
+  "Permission from authorities to work in project area shall be taken by client",
+  "Any disturbance due to local problems shall be tackled by the client. Additional charges shall be applied for demobilisation of equipment",
+  "The rates presented herewith are valid only for a period of 30 days from the date of quotation",
+  "The quantities presented herewith are assumed on the basis of working in the general project area. Actual quantites may vary and the final billing shall be done on the basis of actual quantities only.",
 ];
 
 describe("QuotationPDF", () => {
@@ -63,7 +66,7 @@ describe("QuotationPDF", () => {
       companyInfo: COMPANY,
       validityDays: 30,
       terms: TERMS,
-      paymentTerms: "50% advance with work order, balance on report submission",
+      paymentTerms: "50% of quoted charges along with work order  |  40% on completion of field work & before submission of report  |  10% on submission of report",
       footerText: "Geotechnical Engineering Consultants",
       contactNumbers: ["8291917570", "8828827161"],
     });

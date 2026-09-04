@@ -12,6 +12,8 @@ const muted = "#546E7A";
 const borderColor = "#CBD5E1";
 
 const s = StyleSheet.create({
+  // Sits in the bottom-left corner rather than centred, as the client asked.
+  // Switch every textAlign below to "center" to put it back in the middle.
   wrap: { marginTop: 18, paddingTop: 8, borderTopWidth: 1, borderTopColor: borderColor },
   heading: {
     fontSize: 9,
@@ -20,11 +22,11 @@ const s = StyleSheet.create({
     textTransform: "uppercase",
     letterSpacing: 0.5,
     marginBottom: 4,
-    textAlign: "center",
+    textAlign: "left",
   },
-  line: { fontSize: 9, color: "#1E293B", textAlign: "center", marginBottom: 2 },
-  contact: { fontSize: 9, fontFamily: "Helvetica-Bold", color: navy, textAlign: "center", marginTop: 3 },
-  meta: { fontSize: 8, color: muted, textAlign: "center", marginTop: 3 },
+  line: { fontSize: 9, color: "#1E293B", textAlign: "left", marginBottom: 2 },
+  contact: { fontSize: 9, fontFamily: "Helvetica-Bold", color: navy, textAlign: "left", marginTop: 3 },
+  meta: { fontSize: 8, color: muted, textAlign: "left", marginTop: 3 },
 });
 
 export function PdfOfficeFooter({

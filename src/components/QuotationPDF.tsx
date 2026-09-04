@@ -112,6 +112,8 @@ const s = StyleSheet.create({
   termRow: { flexDirection: "row", marginBottom: 3 },
   termNum: { fontSize: 8, color: muted, width: 16 },
   termText: { fontSize: 8, color: muted, flex: 1, lineHeight: 1.4 },
+  payTermsBlock: { marginTop: 8 },
+  payTermsTitle: { fontSize: 9, fontFamily: "Helvetica-Bold", color: navy, marginBottom: 4 },
 
   signatoryBlock: {
     marginTop: 50,
@@ -203,6 +205,14 @@ export default function QuotationPDF({ quotation, client, enquiry, companyInfo, 
 
   const notesList = terms && terms.length > 0 ? terms : [];
 
+  // The payment terms setting holds the stages on one line; split so they print
+  // as a. / b. / c. under the notes, the way the firm's own template shows them.
+  const paymentLines = (paymentTerms ?? "")
+    .split("|")
+    .flatMap((part) => part.split(/\r?\n/))
+    .map((t) => t.trim())
+    .filter(Boolean);
+
   let srNo = 0;
 
   return (
@@ -213,9 +223,10 @@ export default function QuotationPDF({ quotation, client, enquiry, companyInfo, 
 
         <View style={s.twoCol}>
           <View style={s.col}>
-            {/* No "Bill To" heading — the client's details stand on their own. */}
-            <Text style={[s.value, s.bold]}>{client.name}</Text>
-            {client.company && <Text style={s.value}>{client.company}</Text>}
+            {/* No "Bill To" heading — the client's details stand on their own.
+                Company/organisation leads, then the contact person, as asked. */}
+            <Text style={[s.value, s.bold]}>{client.company || client.name}</Text>
+            {client.company && client.name ? <Text style={s.value}>{client.name}</Text> : null}
             <Text style={s.value}>{client.phone}</Text>
             {client.email && <Text style={s.value}>{client.email}</Text>}
             <Text style={s.value}>{client.city}</Text>
@@ -345,14 +356,6 @@ export default function QuotationPDF({ quotation, client, enquiry, companyInfo, 
         </View>
 
         {/* Payment terms */}
-        {/* Only when set — an unconfigured setting otherwise prints a bare
-            grey "Payment Terms:" bar with nothing after it. */}
-        {paymentTerms?.trim() ? (
-          <View style={s.paymentBlock}>
-            <Text style={s.paymentText}>Payment Terms: {paymentTerms.trim()}</Text>
-          </View>
-        ) : null}
-
         {/* Signatory — in document flow after the totals */}
         <View style={s.signatoryBlock} wrap={false}>
           <View style={s.sigLine} />
@@ -360,21 +363,34 @@ export default function QuotationPDF({ quotation, client, enquiry, companyInfo, 
           <Text style={s.sigCompany}>{companyInfo?.name || "The Company"}</Text>
         </View>
 
-        {/* Terms & Conditions — last section of the document, per the template */}
-        {notesList.length > 0 && (
-          <View style={s.notes} break={notesList.length > 12}>
-            <Text style={s.noteTitle}>Terms &amp; Conditions</Text>
+        {/* Office address and contact numbers — the Notes follow it. */}
+        <PdfOfficeFooter company={companyInfo} contactNumbers={contactNumbers} />
+
+        {/* Notes, including Terms of Payment — sits below the address, and
+            wrap={false} carries the whole block to the next page rather than
+            splitting it when the remaining space is too small. */}
+        {(notesList.length > 0 || paymentLines.length > 0) && (
+          <View style={s.notes} wrap={false}>
+            <Text style={s.noteTitle}>Notes</Text>
             {notesList.map((t, i) => (
               <View key={i} style={s.termRow}>
                 <Text style={s.termNum}>{i + 1}.</Text>
                 <Text style={s.termText}>{t}</Text>
               </View>
             ))}
+            {paymentLines.length > 0 && (
+              <View style={s.payTermsBlock}>
+                <Text style={s.payTermsTitle}>Terms of Payment</Text>
+                {paymentLines.map((t, i) => (
+                  <View key={i} style={s.termRow}>
+                    <Text style={s.termNum}>{String.fromCharCode(97 + i)}.</Text>
+                    <Text style={s.termText}>{t}</Text>
+                  </View>
+                ))}
+              </View>
+            )}
           </View>
         )}
-
-        {/* Office address and contact numbers */}
-        <PdfOfficeFooter company={companyInfo} contactNumbers={contactNumbers} />
 
         {/* Fixed footer — repeats on every page */}
         <View style={s.pageFooter} fixed>

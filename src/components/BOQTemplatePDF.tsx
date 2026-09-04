@@ -197,8 +197,8 @@ export default function BOQTemplatePDF({
       {!layout.hasProjectHeader && (
         <View style={s.twoCol}>
           <View style={s.col}>
-            {/* No "Bill To" heading — the client's details stand on their own. */}
-            <Text style={[s.value, s.bold]}>{client.name}</Text>
+            {/* Company/organisation leads, then the contact person, as asked. */}
+            <Text style={[s.value, s.bold]}>{client.company || client.name}</Text>
             {client.company && <Text style={s.value}>{client.company}</Text>}
             <Text style={s.value}>{client.phone}</Text>
             {client.email && <Text style={s.value}>{client.email}</Text>}

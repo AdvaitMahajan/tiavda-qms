@@ -174,9 +174,9 @@ export default function ConsultancyPDF({
 
         <View style={s.twoCol}>
           <View style={s.col}>
-            {/* No "Bill To" heading — the client's details stand on their own. */}
-            <Text style={[s.value, s.bold]}>{client.name}</Text>
-            {client.company && <Text style={s.value}>{client.company}</Text>}
+            {/* Company/organisation leads, then the contact person, as asked. */}
+            <Text style={[s.value, s.bold]}>{client.company || client.name}</Text>
+            {client.company && client.name ? <Text style={s.value}>{client.name}</Text> : null}
             <Text style={s.value}>{client.phone}</Text>
             {client.email && <Text style={s.value}>{client.email}</Text>}
             <Text style={s.value}>{client.city}</Text>
@@ -283,10 +283,14 @@ export default function ConsultancyPDF({
           <Text style={s.sigCompany}>{companyInfo?.name || "The Company"}</Text>
         </View>
 
-        {/* Terms & Conditions — last section of the document */}
+        {/* Office address and contact numbers */}
+        <PdfOfficeFooter company={companyInfo} contactNumbers={contactNumbers} />
+
+        {/* Notes — below the office address; wrap={false} carries the whole
+            block to the next page rather than splitting it. */}
         {notesList.length > 0 && (
-          <View style={s.notes}>
-            <Text style={s.noteTitle}>Terms &amp; Conditions</Text>
+          <View style={s.notes} wrap={false}>
+            <Text style={s.noteTitle}>Notes</Text>
             {notesList.map((t, i) => (
               <View key={i} style={s.termRow}>
                 <Text style={s.termNum}>{i + 1}.</Text>
@@ -295,9 +299,6 @@ export default function ConsultancyPDF({
             ))}
           </View>
         )}
-
-        {/* Office address and contact numbers */}
-        <PdfOfficeFooter company={companyInfo} contactNumbers={contactNumbers} />
 
         {/* Fixed footer — repeats on every page */}
         <View style={s.pageFooter} fixed>

@@ -14,6 +14,7 @@ const INTERNAL_TEMPLATES: ReadonlySet<TemplateKey> = new Set<TemplateKey>([
   'followup_digest',
   'job_reminder',
   'mobilisation_assigned',
+  'site_visit_assigned',
   'site_visit_today',
   'weekly_summary',
 ]);

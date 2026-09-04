@@ -82,6 +82,12 @@ export interface TemplateParams {
   mobilisation_revised: { client_name: string; ref_number: string; date: string; city: string; confirm_url: string };
   followup_reminder: { ref_number: string; client_name?: string; scheduled_date: string; notes?: string | null; is_overdue?: boolean };
   job_reminder: { ref_number: string; client_name?: string; type_label: string; days_before: number | string; target_date: string };
+  /** Staff alert when a site visit is scheduled, carrying the form link. */
+  site_visit_assigned: {
+    ref_number: string; assignee_name: string; visit_date: string;
+    client_name?: string | null; site_address?: string | null; city?: string | null;
+    client_phone?: string | null; form_url: string;
+  };
   /** Staff alert when a mobilisation is assigned. Goes to the shared team inbox,
    *  so the assignee's name is in the subject and body rather than the address. */
   mobilisation_assigned: {
@@ -324,6 +330,29 @@ const TEMPLATES: { [K in TemplateKey]: (p: TemplateParams[K]) => RenderedEmail }
           ${detailRow('Target Date', esc(p.target_date))}
         </table>
         <p style="color:${BRAND.muted};font-size:12px;margin-top:18px;">This is an automated reminder from QMS.</p>`,
+    }),
+  }),
+
+  site_visit_assigned: (p) => ({
+    subject: `Site visit assigned to ${p.assignee_name} — ${p.ref_number} — ${p.visit_date}`,
+    html: layout({
+      heading: 'Site Visit Scheduled',
+      subheading: p.ref_number,
+      body: `
+        <p style="margin:0 0 12px;">A site visit has been assigned to
+          <strong>${esc(p.assignee_name)}</strong>.</p>
+        <table style="width:100%;border-collapse:collapse;">
+          ${detailRow('Assigned To', esc(p.assignee_name))}
+          ${detailRow('Enquiry', esc(p.ref_number))}
+          ${detailRow('Visit Date', esc(p.visit_date))}
+          ${p.client_name ? detailRow('Client', esc(p.client_name)) : ''}
+          ${p.site_address ? detailRow('Site', esc(p.site_address)) : ''}
+          ${p.city ? detailRow('City', esc(p.city)) : ''}
+          ${p.client_phone ? detailRow('Client Phone', esc(p.client_phone)) : ''}
+        </table>
+        <p style="margin:18px 0 8px;">Open this link on site to fill in the observations:</p>
+        <p style="margin:0 0 12px;"><a href="${esc(p.form_url)}" style="color:${BRAND.blue};">${esc(p.form_url)}</a></p>
+        <p style="color:${BRAND.muted};font-size:12px;margin-top:18px;">Automated notification from QMS.</p>`,
     }),
   }),
 

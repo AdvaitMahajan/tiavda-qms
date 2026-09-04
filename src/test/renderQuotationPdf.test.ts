@@ -36,7 +36,7 @@ const LINE_ITEMS = [
 
 const TERMS = [
   "The provision of water for drilling purposes at borehole location to be made by the client.",
-  "Clean place to make hutment or room for labour's accomodation (at site) should be arranged by client.",
+  "Clean place to make hutment or room for labour's accommodation (at site) should be arranged by client.",
   "If the height of the proposed structure exceeds 120 meters, the investigation is required to be carried out in accordance with HRC norms. In this regard, the borehole depth shall be maintained at a minimum of 50 meters.",
   "Upon approval of the quotation, work will commence within three to four days, contingent upon receipt of the formal work order, advance payment, and site clearance. Please be advised that the final report will be issued only upon receipt of the final payment.",
   "Clear access to the borehole location provided by client.",
@@ -44,7 +44,7 @@ const TERMS = [
   "Permission from authorities to work in project area shall be taken by client",
   "Any disturbance due to local problems shall be tackled by the client. Additional charges shall be applied for demobilisation of equipment",
   "The rates presented herewith are valid only for a period of 30 days from the date of quotation",
-  "The quantities presented herewith are assumed on the basis of working in the general project area. Actual quantites may vary and the final billing shall be done on the basis of actual quantities only.",
+  "The quantities presented herewith are assumed on the basis of working in the general project area. Actual quantities may vary and the final billing shall be done on the basis of actual quantities only.",
 ];
 
 describe("QuotationPDF", () => {

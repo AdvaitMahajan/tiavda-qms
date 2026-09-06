@@ -734,9 +734,12 @@ export default function EnquiryDetail() {
           mime_type: "application/pdf",
         })
         .then((r) => {
-          if (!r?.success && r?.error) toast.warning("Saved, but not copied to Drive: " + r.error);
+          if (r?.success) toast.success("Copied to Google Drive");
+          else toast.warning("Saved, but not copied to Drive: " + (r?.error ?? "unknown reason"));
         })
-        .catch(() => {/* Drive is a convenience copy, not the system of record */});
+        // Surface transport failures too — swallowing them made a not-yet-deployed
+        // route or a network error indistinguishable from nothing happening.
+        .catch((e) => toast.warning("Saved, but the Drive copy failed: " + ((e as Error)?.message ?? "request failed")));
     } catch (err: any) {
       await apiClient.patch(`/quotations/${q.id}`, { pdf_status: "failed" });
       toast.error("PDF generation failed: " + (err.message || "Unknown error"));

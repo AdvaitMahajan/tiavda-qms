@@ -121,9 +121,17 @@ export async function authenticate(req: Request, res: Response, next: NextFuncti
 
     try {
       await client.query('RESET ROLE; RESET ALL');
-      if (req.auth.orgId) {
-        await client.query("select set_config('app.current_org_id', $1, false)", [req.auth.orgId]);
-      }
+      // Always set the GUC, even with no org. RESET ALL leaves a custom GUC as
+      // the empty string rather than unsetting it, and every org_isolation policy
+      // casts it with `current_setting(...)::uuid` — so ''::uuid raises "invalid
+      // input syntax for type uuid" and fails the query. Postgres evaluates that
+      // cast even when the platform-admin branch of the OR already matched, which
+      // made every RLS-protected read 500 for a platform admin with no org. The
+      // all-zero uuid matches no row, and platform admins are allowed by the
+      // policy's other branch.
+      await client.query("select set_config('app.current_org_id', $1, false)", [
+        req.auth.orgId ?? '00000000-0000-0000-0000-000000000000',
+      ]);
       if (req.auth.isPlatformAdmin) {
         await client.query("select set_config('app.platform_admin', 'true', false)");
       }

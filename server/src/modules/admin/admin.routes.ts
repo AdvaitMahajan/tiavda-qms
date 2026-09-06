@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { z } from 'zod';
+import { env } from '../../env';
 import { authenticate, getAuth } from '../../middleware/auth';
 import { requirePlatformAdmin } from '../../middleware/roles';
 import { asyncHandler, getParam } from '../../lib/http';
@@ -180,6 +181,13 @@ adminRouter.put(
         is_active: z.boolean().optional(),
       })
       .parse(req.body);
+    // Secrets are encrypted at rest; without ENCRYPTION_KEY the encrypt throws and
+    // the console shows a bare "internal server error". Say what is actually wrong.
+    if (body.secrets !== undefined && !env.ENCRYPTION_KEY) {
+      throw badRequest(
+        'ENCRYPTION_KEY is not set on the API. Set it in the server environment (a long random string) and redeploy before saving integration secrets.',
+      );
+    }
     await upsertOrgIntegration(getParam(req, 'id'), provider, body, getAuth(req).userId);
     res.json({ success: true });
   }),

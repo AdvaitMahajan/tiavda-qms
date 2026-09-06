@@ -41,6 +41,10 @@ const schema = z.object({
   ADMIN_EMAIL: z.string().optional(),
   ADMIN_WHATSAPP: z.string().optional(),
   APP_URL: z.string().optional(),
+  // OAuth client for "Connect Google Drive" (scope drive.file — the app only
+  // ever touches files it created, so no Google verification is needed).
+  GOOGLE_OAUTH_CLIENT_ID: z.string().optional(),
+  GOOGLE_OAUTH_CLIENT_SECRET: z.string().optional(),
   COMPANY_STATE: z.string().optional(),
 });
 

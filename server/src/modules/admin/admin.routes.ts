@@ -5,9 +5,13 @@ import { authenticate, getAuth } from '../../middleware/auth';
 import { requirePlatformAdmin } from '../../middleware/roles';
 import { asyncHandler, getParam } from '../../lib/http';
 import { badRequest, notFound } from '../../lib/errors';
+import {
+  buildConsentUrl, exchangeCode, accessTokenFromRefresh, accountEmail, oauthConfigured,
+} from '../../integrations/google-oauth';
 import { supabaseAdmin } from '../../lib/supabase';
 import {
   upsertOrgIntegration,
+  getOrgIntegration,
   listOrgIntegrationStatus,
   type IntegrationProvider,
 } from '../../lib/org-integrations';
@@ -163,6 +167,96 @@ adminRouter.post(
 );
 
 // ── Per-org integrations (status + provisioning; secrets never read back) ──
+
+// ── Google Drive: connect a real account by OAuth ────────────────────────────
+// A service account has no My Drive storage of its own, so uploads it owns are
+// rejected. Connecting a real account makes that account the owner, using its
+// quota. The redirect URI is supplied by the caller and must match one
+// registered on the OAuth client.
+
+adminRouter.post(
+  '/orgs/:id/drive/oauth-url',
+  asyncHandler(async (req, res) => {
+    if (!oauthConfigured()) {
+      throw badRequest(
+        'Google OAuth is not set up on the API. Set GOOGLE_OAUTH_CLIENT_ID and GOOGLE_OAUTH_CLIENT_SECRET and redeploy.',
+      );
+    }
+    const { redirect_uri } = z.object({ redirect_uri: z.string().url() }).parse(req.body);
+    res.json({ url: buildConsentUrl(redirect_uri, getParam(req, 'id')) });
+  }),
+);
+
+adminRouter.post(
+  '/orgs/:id/drive/connect',
+  asyncHandler(async (req, res) => {
+    if (!env.ENCRYPTION_KEY) {
+      throw badRequest('ENCRYPTION_KEY is not set on the API. Set it and redeploy before connecting Drive.');
+    }
+    const { code, redirect_uri } = z
+      .object({ code: z.string().min(1), redirect_uri: z.string().url() })
+      .parse(req.body);
+    const orgId = getParam(req, 'id');
+
+    const { refresh_token, access_token } = await exchangeCode(code, redirect_uri);
+    const email = await accountEmail(access_token);
+
+    const existing = await getOrgIntegration(orgId, 'drive');
+    await upsertOrgIntegration(
+      orgId,
+      'drive',
+      {
+        // Drop any root folder from a previous connection: drive.file cannot see
+        // folders it did not create, and a new account has none of them.
+        config: { ...(existing?.config ?? {}), oauth_account_email: email ?? null, root_folder_id: null },
+        secrets: { ...(existing?.secrets ?? {}), oauth_refresh_token: refresh_token },
+        is_active: true,
+      },
+      getAuth(req).userId,
+    );
+    res.json({ success: true, account_email: email ?? null });
+  }),
+);
+
+adminRouter.post(
+  '/orgs/:id/drive/disconnect',
+  asyncHandler(async (req, res) => {
+    const orgId = getParam(req, 'id');
+    const existing = await getOrgIntegration(orgId, 'drive');
+    const secrets = { ...(existing?.secrets ?? {}) };
+    delete secrets.oauth_refresh_token;
+    const config = { ...(existing?.config ?? {}) };
+    delete config.oauth_account_email;
+    config.root_folder_id = null;
+    await upsertOrgIntegration(orgId, 'drive', { config, secrets }, getAuth(req).userId);
+    res.json({ success: true });
+  }),
+);
+
+// Confirms the stored refresh token still works, rather than reporting
+// "connected" for a connection the user has since revoked in their Google account.
+adminRouter.get(
+  '/orgs/:id/drive/status',
+  asyncHandler(async (req, res) => {
+    const row = await getOrgIntegration(getParam(req, 'id'), 'drive');
+    const refresh = row?.secrets?.oauth_refresh_token as string | undefined;
+    if (!refresh) {
+      res.json({ connected: false, oauth_available: oauthConfigured() });
+      return;
+    }
+    try {
+      await accessTokenFromRefresh(refresh);
+      res.json({
+        connected: true,
+        account_email: (row?.config?.oauth_account_email as string) ?? null,
+        oauth_available: oauthConfigured(),
+      });
+    } catch (e) {
+      res.json({ connected: false, error: (e as Error).message, oauth_available: oauthConfigured() });
+    }
+  }),
+);
+
 adminRouter.get(
   '/orgs/:id/integrations',
   asyncHandler(async (req, res) => {

@@ -1,7 +1,8 @@
 import { SignJWT, importPKCS8 } from 'jose';
 import { currentOrgId } from '../db';
 import { supabaseAdmin } from '../lib/supabase';
-import { resolveDriveCreds } from '../lib/org-integrations';
+import { resolveDriveCreds, setDriveRootFolder, type DriveCreds } from '../lib/org-integrations';
+import { accessTokenFromRefresh } from './google-oauth';
 
 export interface CreateDriveFolderInput {
   enquiry_id: string;
@@ -83,18 +84,42 @@ async function findOrCreateFolder(name: string, parentId: string, accessToken: s
   return createData.id;
 }
 
+
+/** Root folder name created in a connected account (drive.file cannot see
+ *  folders it did not create, so the app owns its own root). */
+const OAUTH_ROOT_FOLDER_NAME = 'Global Geotechnics QMS';
+
+/**
+ * An access token plus the root folder to work under, for whichever auth the org
+ * has configured. OAuth wins when present: files are then owned by a real
+ * account with real storage, where a service account has none.
+ */
+async function driveContext(orgId: string | null): Promise<{ accessToken: string; rootFolderId: string }> {
+  const creds: DriveCreds = await resolveDriveCreds(orgId);
+
+  if (creds.oauth_refresh_token) {
+    const accessToken = await accessTokenFromRefresh(creds.oauth_refresh_token);
+    if (creds.root_folder_id) return { accessToken, rootFolderId: creds.root_folder_id };
+    // First use after connecting: make the root folder and remember it.
+    const rootFolderId = await findOrCreateFolder(OAUTH_ROOT_FOLDER_NAME, 'root', accessToken);
+    if (orgId) await setDriveRootFolder(orgId, rootFolderId);
+    return { accessToken, rootFolderId };
+  }
+
+  if (!creds.service_account_b64 || !creds.root_folder_id) {
+    throw new Error('Google Drive is not configured for this organization');
+  }
+  const sa = JSON.parse(Buffer.from(creds.service_account_b64, 'base64').toString('utf8')) as ServiceAccount;
+  return { accessToken: await getGoogleAccessToken(sa), rootFolderId: creds.root_folder_id };
+}
+
 // Faithful port of the create-drive-folder edge function.
 export async function createDriveFolder(input: CreateDriveFolderInput): Promise<CreateDriveFolderResult> {
   const { enquiry_id, ref_number, client_name, city } = input;
   try {
-    const creds = await resolveDriveCreds(input.orgId ?? currentOrgId());
-    if (!creds.service_account_b64 || !creds.root_folder_id) {
-      throw new Error('Google Drive is not configured for this organization');
-    }
-    const sa = JSON.parse(Buffer.from(creds.service_account_b64, 'base64').toString('utf8')) as ServiceAccount;
-    const accessToken = await getGoogleAccessToken(sa);
+    const { accessToken, rootFolderId } = await driveContext(input.orgId ?? currentOrgId());
     const year = new Date().getFullYear().toString();
-    const yearFolderId = await findOrCreateFolder(year, creds.root_folder_id, accessToken);
+    const yearFolderId = await findOrCreateFolder(year, rootFolderId, accessToken);
     const projectFolderId = await findOrCreateFolder(`${ref_number} — ${client_name} — ${city}`, yearFolderId, accessToken);
     const projectFolderUrl = `https://drive.google.com/drive/folders/${projectFolderId}`;
 
@@ -150,15 +175,10 @@ export interface UploadToDriveResult {
  */
 export async function uploadToDrive(input: UploadToDriveInput): Promise<UploadToDriveResult> {
   try {
-    const creds = await resolveDriveCreds(input.orgId ?? currentOrgId());
-    if (!creds.service_account_b64 || !creds.root_folder_id) {
-      throw new Error('Google Drive is not configured for this organization');
-    }
-    const sa = JSON.parse(Buffer.from(creds.service_account_b64, 'base64').toString('utf8')) as ServiceAccount;
-    const accessToken = await getGoogleAccessToken(sa);
+    const { accessToken, rootFolderId } = await driveContext(input.orgId ?? currentOrgId());
 
     const year = new Date().getFullYear().toString();
-    const yearFolderId = await findOrCreateFolder(year, creds.root_folder_id, accessToken);
+    const yearFolderId = await findOrCreateFolder(year, rootFolderId, accessToken);
     const jobFolderId = await findOrCreateFolder(
       `${input.ref_number} — ${input.client_name} — ${input.city}`,
       yearFolderId,

@@ -47,6 +47,7 @@ import ConfirmMobilization from "./pages/ConfirmMobilization";
 import ResetPassword from "./pages/ResetPassword";
 import SiteVisitForm from "./pages/SiteVisitForm";
 import Mobilisation from "./pages/Mobilisation";
+import GoogleOAuthCallback from "./pages/GoogleOAuthCallback";
 import AdminConsole from "./pages/AdminConsole";
 import AuditLog from "./pages/AuditLog";
 
@@ -102,6 +103,7 @@ const App = () => (
               <Route path="/audit-log" element={<AdminRoute><AuditLog /></AdminRoute>} />
               <Route path="/settings" element={<AdminRoute><SettingsPage /></AdminRoute>} />
               <Route path="/admin" element={<PlatformAdminRoute><AdminConsole /></PlatformAdminRoute>} />
+              <Route path="/oauth/google/callback" element={<PlatformAdminRoute><GoogleOAuthCallback /></PlatformAdminRoute>} />
             </Route>
 
             {/* Redirects */}

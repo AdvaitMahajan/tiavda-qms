@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiClient } from "@/lib/apiClient";
+import { DriveConnect } from "@/components/settings/DriveConnect";
 import { formatDate } from "@/lib/utils";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -346,9 +347,7 @@ function ManageOrgSheet({ org, onClose }: { org: Org; onClose: () => void }) {
               <IntegrationForm orgId={org.id} provider="whatsapp" label="WhatsApp (WATI)" icon={MessageSquare} status={integrations?.whatsapp}
                 configFields={[{ key: "base_url", label: "WATI Base URL" }]}
                 secretFields={[{ key: "api_token", label: "WATI API Token" }]} />
-              <IntegrationForm orgId={org.id} provider="drive" label="Google Drive" icon={FolderOpen} status={integrations?.drive}
-                configFields={[{ key: "root_folder_id", label: "Root Folder ID" }]}
-                secretFields={[{ key: "service_account_b64", label: "Service Account (base64 JSON)" }]} />
+              <DriveConnect orgId={org.id} />
             </div>
           </section>
         </div>

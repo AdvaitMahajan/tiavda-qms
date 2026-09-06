@@ -115,17 +115,37 @@ export async function resolveWhatsAppCreds(
   return { api_token, base_url };
 }
 
-export async function resolveDriveCreds(
-  orgId: string | null,
-): Promise<{ service_account_b64?: string; root_folder_id?: string }> {
+export interface DriveCreds {
+  /** OAuth: the org connected a real Google account. Preferred when present —
+   *  files are owned by that account, which has actual storage, unlike a
+   *  service account's My Drive. */
+  oauth_refresh_token?: string;
+  oauth_account_email?: string;
+  service_account_b64?: string;
+  root_folder_id?: string;
+}
+
+export async function resolveDriveCreds(orgId: string | null): Promise<DriveCreds> {
   let service_account_b64 = env.GOOGLE_SERVICE_ACCOUNT_B64;
   let root_folder_id = env.GOOGLE_DRIVE_ROOT_FOLDER_ID;
+  let oauth_refresh_token: string | undefined;
+  let oauth_account_email: string | undefined;
   if (orgId) {
     const row = await getOrgIntegration(orgId, 'drive');
     if (row && row.is_active) {
       service_account_b64 = (row.secrets.service_account_b64 as string) || service_account_b64;
       root_folder_id = (row.config.root_folder_id as string) || root_folder_id;
+      oauth_refresh_token = (row.secrets.oauth_refresh_token as string) || undefined;
+      oauth_account_email = (row.config.oauth_account_email as string) || undefined;
     }
   }
-  return { service_account_b64, root_folder_id };
+  return { service_account_b64, root_folder_id, oauth_refresh_token, oauth_account_email };
+}
+
+/** Remember the app-created root folder so it is found again next time. */
+export async function setDriveRootFolder(orgId: string, folderId: string): Promise<void> {
+  const row = await getOrgIntegration(orgId, 'drive');
+  await upsertOrgIntegration(orgId, 'drive', {
+    config: { ...(row?.config ?? {}), root_folder_id: folderId },
+  });
 }

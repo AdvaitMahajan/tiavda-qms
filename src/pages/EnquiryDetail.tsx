@@ -719,6 +719,24 @@ export default function EnquiryDetail() {
       await uploadToStorage("quotation-pdfs", path, blob, { upsert: true, contentType: "application/pdf" });
       await apiClient.patch(`/quotations/${q.id}`, { pdf_url: path, pdf_status: "ready" });
       toast.success("PDF generated successfully");
+
+      // File a copy into the job's Google Drive folder. Non-blocking and never
+      // fatal: the PDF is already saved, and Drive may not be configured.
+      apiClient
+        .post<{ success: boolean; error?: string }>("/integrations/drive-file", {
+          ref_number: enquiry.ref_number,
+          client_name: clientDisplayName(client),
+          city: enquiry.site_city ?? client.city ?? "",
+          bucket: "quotation-pdfs",
+          path,
+          subfolder: "Quotations",
+          file_name: filename,
+          mime_type: "application/pdf",
+        })
+        .then((r) => {
+          if (!r?.success && r?.error) toast.warning("Saved, but not copied to Drive: " + r.error);
+        })
+        .catch(() => {/* Drive is a convenience copy, not the system of record */});
     } catch (err: any) {
       await apiClient.patch(`/quotations/${q.id}`, { pdf_status: "failed" });
       toast.error("PDF generation failed: " + (err.message || "Unknown error"));

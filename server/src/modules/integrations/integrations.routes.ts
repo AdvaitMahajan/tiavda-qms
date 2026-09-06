@@ -5,7 +5,9 @@ import { requireNotViewer, requireFeature } from '../../middleware/roles';
 import { asyncHandler } from '../../lib/http';
 import { sendEmail } from '../../integrations/email';
 import { sendWhatsApp } from '../../integrations/whatsapp';
-import { createDriveFolder } from '../../integrations/drive';
+import { createDriveFolder, uploadToDrive } from '../../integrations/drive';
+import { supabaseAdmin } from '../../lib/supabase';
+import { currentOrgId } from '../../db';
 
 const emailSchema = z.object({
   to: z.union([z.string(), z.array(z.string())]),
@@ -33,6 +35,18 @@ const driveSchema = z.object({
   city: z.string(),
 });
 
+/** Copy a file already in Supabase Storage into the job's Drive folder. */
+const driveFileSchema = z.object({
+  ref_number: z.string(),
+  client_name: z.string(),
+  city: z.string(),
+  bucket: z.enum(['quotation-pdfs', 'receipts', 'reports', 'site-visit-photos', 'intake-uploads']),
+  path: z.string().min(1),
+  subfolder: z.string().min(1),
+  file_name: z.string().min(1).optional(),
+  mime_type: z.string().optional(),
+});
+
 // All integration sends require a non-viewer. Results are returned as structured
 // JSON (200) so the client can read { success | error | whatsapp_invalid }.
 export const integrationsRouter = Router();
@@ -44,6 +58,38 @@ integrationsRouter.post(
   asyncHandler(async (req, res) => {
     const body = emailSchema.parse(req.body);
     res.json(await sendEmail(body as Parameters<typeof sendEmail>[0]));
+  }),
+);
+
+integrationsRouter.post(
+  '/drive-file',
+  requireNotViewer,
+  asyncHandler(async (req, res) => {
+    const body = driveFileSchema.parse(req.body);
+    const orgId = currentOrgId();
+
+    // Storage objects are namespaced by org_id while the DB keeps the logical
+    // path, so scope it here the way the email attachment path does.
+    const scoped =
+      orgId && body.path !== orgId && !body.path.startsWith(`${orgId}/`) ? `${orgId}/${body.path}` : body.path;
+    const { data, error } = await supabaseAdmin.storage.from(body.bucket).download(scoped);
+    if (error || !data) {
+      res.json({ success: false, error: `Could not read ${body.bucket}/${scoped}` });
+      return;
+    }
+
+    res.json(
+      await uploadToDrive({
+        orgId,
+        ref_number: body.ref_number,
+        client_name: body.client_name,
+        city: body.city,
+        subfolder: body.subfolder,
+        file_name: body.file_name || body.path.split('/').pop() || 'file',
+        mime_type: body.mime_type || data.type || 'application/octet-stream',
+        bytes: Buffer.from(await data.arrayBuffer()),
+      }),
+    );
   }),
 );
 

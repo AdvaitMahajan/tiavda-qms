@@ -119,3 +119,110 @@ export async function createDriveFolder(input: CreateDriveFolderInput): Promise<
     return { success: false, error: (err as Error).message };
   }
 }
+
+export interface UploadToDriveInput {
+  orgId?: string | null;
+  /** Enquiry the file belongs to — decides which job folder it lands in. */
+  ref_number: string;
+  client_name: string;
+  city: string;
+  /** Sub-folder within the job folder, e.g. "Quotations". Created if absent. */
+  subfolder: string;
+  file_name: string;
+  mime_type: string;
+  bytes: Buffer;
+}
+
+export interface UploadToDriveResult {
+  success: boolean;
+  file_id?: string;
+  file_url?: string;
+  error?: string;
+}
+
+/**
+ * Put a file into a job's Drive folder, creating year / job / sub-folder as
+ * needed so it works whether or not a mobilisation has been scheduled yet.
+ *
+ * Re-uploading the same name replaces the existing file rather than piling up
+ * duplicates — a regenerated quotation should supersede the old PDF, not sit
+ * beside it.
+ */
+export async function uploadToDrive(input: UploadToDriveInput): Promise<UploadToDriveResult> {
+  try {
+    const creds = await resolveDriveCreds(input.orgId ?? currentOrgId());
+    if (!creds.service_account_b64 || !creds.root_folder_id) {
+      throw new Error('Google Drive is not configured for this organization');
+    }
+    const sa = JSON.parse(Buffer.from(creds.service_account_b64, 'base64').toString('utf8')) as ServiceAccount;
+    const accessToken = await getGoogleAccessToken(sa);
+
+    const year = new Date().getFullYear().toString();
+    const yearFolderId = await findOrCreateFolder(year, creds.root_folder_id, accessToken);
+    const jobFolderId = await findOrCreateFolder(
+      `${input.ref_number} — ${input.client_name} — ${input.city}`,
+      yearFolderId,
+      accessToken,
+    );
+    const targetId = await findOrCreateFolder(input.subfolder, jobFolderId, accessToken);
+
+    const existingId = await findFileInFolder(input.file_name, targetId, accessToken);
+
+    const boundary = `qms${Date.now()}`;
+    const metadata = existingId
+      ? { name: input.file_name }                       // update: parents cannot be re-sent
+      : { name: input.file_name, parents: [targetId] };
+    const body = Buffer.concat([
+      Buffer.from(
+        `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(metadata)}\r\n` +
+          `--${boundary}\r\nContent-Type: ${input.mime_type}\r\n\r\n`,
+        'utf8',
+      ),
+      input.bytes,
+      Buffer.from(`\r\n--${boundary}--\r\n`, 'utf8'),
+    ]);
+
+    const url = existingId
+      ? `https://www.googleapis.com/upload/drive/v3/files/${existingId}?uploadType=multipart&supportsAllDrives=true`
+      : 'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&supportsAllDrives=true';
+
+    const res = await fetch(url, {
+      method: existingId ? 'PATCH' : 'POST',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': `multipart/related; boundary=${boundary}`,
+      },
+      body: new Uint8Array(body),
+    });
+
+    if (!res.ok) {
+      const text = await res.text();
+      // A service account has no My Drive quota of its own; files it owns must
+      // live in a Shared Drive. Say so rather than passing Google's raw JSON up.
+      if (text.includes('storageQuotaExceeded')) {
+        throw new Error(
+          'Drive upload rejected: the service account has no storage of its own. Move the root folder into a Shared Drive and add the service account as Content manager.',
+        );
+      }
+      throw new Error(`Drive upload failed (HTTP ${res.status}): ${text.slice(0, 300)}`);
+    }
+
+    const data = (await res.json()) as { id?: string };
+    if (!data.id) throw new Error('Drive upload returned no file id');
+    return { success: true, file_id: data.id, file_url: `https://drive.google.com/file/d/${data.id}/view` };
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+}
+
+/** Existing file with this name in the folder, so re-uploads replace it. */
+async function findFileInFolder(name: string, parentId: string, accessToken: string): Promise<string | null> {
+  const q = `name='${name.replace(/'/g, "\'")}' and '${parentId}' in parents and trashed=false`;
+  const res = await fetch(
+    `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id)&supportsAllDrives=true&includeItemsFromAllDrives=true`,
+    { headers: { Authorization: `Bearer ${accessToken}` } },
+  );
+  if (!res.ok) return null;
+  const data = (await res.json()) as { files?: Array<{ id: string }> };
+  return data.files?.[0]?.id ?? null;
+}

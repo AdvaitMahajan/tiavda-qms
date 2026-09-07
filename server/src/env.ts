@@ -41,6 +41,9 @@ const schema = z.object({
   ADMIN_EMAIL: z.string().optional(),
   ADMIN_WHATSAPP: z.string().optional(),
   APP_URL: z.string().optional(),
+  // Set to 'false' to stop this instance running scheduled jobs (e.g. if the API
+  // is ever scaled to more than one replica and only one should schedule).
+  SCHEDULER_ENABLED: z.string().optional(),
   // OAuth client for "Connect Google Drive" (scope drive.file — the app only
   // ever touches files it created, so no Google verification is needed).
   GOOGLE_OAUTH_CLIENT_ID: z.string().optional(),

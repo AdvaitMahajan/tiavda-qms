@@ -2,11 +2,13 @@ import { createApp } from './app';
 import { env } from './env';
 import { logger } from './lib/logger';
 import { pool } from './db';
+import { startScheduler } from './lib/scheduler';
 
 const app = createApp();
 
 const server = app.listen(env.PORT, () => {
   logger.info(`QMS API listening on :${env.PORT} (${env.NODE_ENV})`);
+  startScheduler();
 });
 
 async function shutdown(signal: string): Promise<void> {

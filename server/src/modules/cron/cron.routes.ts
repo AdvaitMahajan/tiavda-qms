@@ -90,7 +90,7 @@ function makeOrgHelpers() {
  * schedule. Unlike the per-follow-up reminder it does not touch reminder_sent,
  * so the digest keeps listing an item until it is actually actioned.
  */
-async function runFollowUpDigest(): Promise<Record<string, unknown>> {
+export async function runFollowUpDigest(): Promise<Record<string, unknown>> {
   const today = new Date().toISOString().split('T')[0]!;
   const results: Record<string, unknown> = { date: today };
   const appUrl = env.APP_URL || 'https://qms.globalgeoconsultancy.com';
@@ -181,7 +181,7 @@ async function runFollowUpDigest(): Promise<Record<string, unknown>> {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-async function runDaily(): Promise<Record<string, unknown>> {
+export async function runDaily(): Promise<Record<string, unknown>> {
   const today = new Date().toISOString().split('T')[0]!;
   const results: Record<string, unknown> = { date: today };
   const appUrl = env.APP_URL || 'https://qms.globalgeoconsultancy.com';
@@ -695,7 +695,7 @@ async function runDaily(): Promise<Record<string, unknown>> {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Weekly summary — one email per active org, to that org's admin_email.
-async function runWeekly(): Promise<Record<string, unknown>> {
+export async function runWeekly(): Promise<Record<string, unknown>> {
   const now = new Date();
   const weekStart = new Date(now.getTime() - 7 * 86_400_000).toISOString();
   const todayStr = now.toISOString().split('T')[0]!;

@@ -198,7 +198,15 @@ adminRouter.post(
       .parse(req.body);
     const orgId = getParam(req, 'id');
 
-    const { refresh_token, access_token } = await exchangeCode(code, redirect_uri);
+    // Google's rejection reason (redirect_uri mismatch, bad code, consent not
+    // granted) is the only useful diagnostic here, and a bare throw surfaced as
+    // "Internal server error" with nothing to act on. Pass it through.
+    let refresh_token: string, access_token: string;
+    try {
+      ({ refresh_token, access_token } = await exchangeCode(code, redirect_uri));
+    } catch (e) {
+      throw badRequest((e as Error).message || 'Google rejected the authorization code');
+    }
     const email = await accountEmail(access_token);
 
     const existing = await getOrgIntegration(orgId, 'drive');

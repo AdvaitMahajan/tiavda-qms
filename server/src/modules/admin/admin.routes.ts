@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { env } from '../../env';
+import { runDriveBackup } from '../../lib/drive-backup';
 import { authenticate, getAuth } from '../../middleware/auth';
 import { requirePlatformAdmin } from '../../middleware/roles';
 import { asyncHandler, getParam } from '../../lib/http';
@@ -167,6 +168,16 @@ adminRouter.post(
 );
 
 // ── Per-org integrations (status + provisioning; secrets never read back) ──
+
+// Run the Drive backup for one org now, rather than waiting for 02:00 IST.
+// Useful for verifying a freshly connected account, and as an on-demand backup
+// before anything risky.
+adminRouter.post(
+  '/orgs/:id/drive/backup',
+  asyncHandler(async (req, res) => {
+    res.json(await runDriveBackup(getParam(req, 'id')));
+  }),
+);
 
 // ── Google Drive: connect a real account by OAuth ────────────────────────────
 // A service account has no My Drive storage of its own, so uploads it owns are

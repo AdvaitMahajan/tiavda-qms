@@ -10,7 +10,13 @@ export function AppLayout() {
 
   // Platform owner = pure admin console: no per-org operational screens. Keep
   // them within /admin (their account has no business org to operate).
-  if (!profileLoading && isPlatformAdmin && !pathname.startsWith("/admin")) {
+  //
+  // The Google OAuth callback is exempt: it is part of the admin flow but Google
+  // returns to a fixed path outside /admin, and redirecting away from it threw
+  // the authorization code away before the page could exchange it — so Drive
+  // could never be connected by the only role able to start the connection.
+  const isOAuthCallback = pathname.startsWith("/oauth/");
+  if (!profileLoading && isPlatformAdmin && !pathname.startsWith("/admin") && !isOAuthCallback) {
     return <Navigate to="/admin" replace />;
   }
 

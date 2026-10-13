@@ -137,5 +137,34 @@ export async function runDriveBackup(orgId: string): Promise<BackupResult> {
   }).catch(() => undefined);
 
   logger.info({ ...result, failures: result.failures.length }, 'drive backup finished');
+  await recordResult(orgId, result).catch(() => undefined);
   return result;
+}
+
+/**
+ * Last outcome per org, so a run that outlives its HTTP request — the nightly
+ * one has no request at all — can still be inspected afterwards.
+ */
+async function recordResult(orgId: string, result: BackupResult): Promise<void> {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS public.drive_backup_runs (
+      org_id uuid PRIMARY KEY,
+      ran_at timestamptz NOT NULL DEFAULT now(),
+      result jsonb NOT NULL
+    )`);
+  await pool.query(
+    `INSERT INTO public.drive_backup_runs (org_id, ran_at, result) VALUES ($1, now(), $2::jsonb)
+     ON CONFLICT (org_id) DO UPDATE SET ran_at = now(), result = EXCLUDED.result`,
+    [orgId, JSON.stringify(result)],
+  );
+}
+
+export async function lastBackupRun(orgId: string): Promise<unknown> {
+  try {
+    const { rows } = await pool.query(
+      'SELECT ran_at, result FROM public.drive_backup_runs WHERE org_id = $1', [orgId]);
+    return rows[0] ?? { note: 'no backup has completed yet' };
+  } catch {
+    return { note: 'no backup has completed yet' };
+  }
 }

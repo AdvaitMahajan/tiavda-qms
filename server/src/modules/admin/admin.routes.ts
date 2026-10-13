@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { env } from '../../env';
-import { runDriveBackup } from '../../lib/drive-backup';
+import { runDriveBackup, lastBackupRun } from '../../lib/drive-backup';
 import { authenticate, getAuth } from '../../middleware/auth';
 import { requirePlatformAdmin } from '../../middleware/roles';
 import { asyncHandler, getParam } from '../../lib/http';
@@ -175,7 +175,19 @@ adminRouter.post(
 adminRouter.post(
   '/orgs/:id/drive/backup',
   asyncHandler(async (req, res) => {
-    res.json(await runDriveBackup(getParam(req, 'id')));
+    // Copying every table and file outlives Railway's 300s request ceiling, so
+    // accept the job and let it finish in the background; the outcome is read
+    // back from /drive/backup-status.
+    const orgId = getParam(req, 'id');
+    void runDriveBackup(orgId).catch(() => undefined);
+    res.status(202).json({ started: true });
+  }),
+);
+
+adminRouter.get(
+  '/orgs/:id/drive/backup-status',
+  asyncHandler(async (req, res) => {
+    res.json(await lastBackupRun(getParam(req, 'id')));
   }),
 );
 

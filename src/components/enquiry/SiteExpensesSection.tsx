@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiClient } from "@/lib/apiClient";
+import { copyToDrive } from "@/lib/driveCopy";
 import { uploadToStorage, getSignedUrl } from "@/lib/storage";
 import { useRole } from "@/hooks/useRole";
 import { formatCurrency } from "@/lib/utils";
@@ -57,6 +58,8 @@ export function SiteExpensesSection({ enquiryId }: { enquiryId: string }) {
       if (file) {
         const path = `${enquiryId}/expenses/${Date.now()}_${file.name}`;
         await uploadToStorage("receipts", path, file, { upsert: true });
+        copyToDrive({ enquiryId, bucket: "receipts", path, subfolder: "Correspondence",
+          fileName: file.name, mimeType: file.type, label: "expense receipt" });
         receipt_url = await getSignedUrl("receipts", path, 86400 * 30);
       }
       await apiClient.post("/site-expenses", {

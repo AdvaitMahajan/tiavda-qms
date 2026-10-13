@@ -1,6 +1,7 @@
 import { useState, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiClient } from "@/lib/apiClient";
+import { copyToDrive } from "@/lib/driveCopy";
 import { uploadToStorage, getPublicStorageUrl } from "@/lib/storage";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
@@ -499,6 +500,8 @@ function CompleteDialog({
       const path = `${enquiryId}/${visit.id}/${crypto.randomUUID()}.${ext}`;
       try {
         const stored = await uploadToStorage("site-visit-photos", path, file, { contentType: file.type });
+        copyToDrive({ enquiryId, bucket: "site-visit-photos", path, subfolder: "Site Photos",
+          fileName: file.name, mimeType: file.type, label: "site photo" });
         paths.push(stored);
       } catch {
         toast.error(`Failed to upload ${file.name}`);

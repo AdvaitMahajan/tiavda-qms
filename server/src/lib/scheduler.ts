@@ -1,7 +1,7 @@
 import { logger } from './logger';
 import { pool } from '../db';
 import { env } from '../env';
-import { runDaily, runWeekly, runFollowUpDigest } from '../modules/cron/cron.routes';
+import { runDaily, runWeekly, runFollowUpDigest, runDriveBackupAll } from '../modules/cron/cron.routes';
 
 /**
  * In-process scheduler for the jobs that used to have no trigger at all.
@@ -13,7 +13,7 @@ import { runDaily, runWeekly, runFollowUpDigest } from '../modules/cron/cron.rou
  * Times are Asia/Kolkata — the business runs on IST and the reminders are read
  * by people in that timezone, so the schedule should not drift with the host.
  */
-type JobName = 'daily' | 'followup-digest' | 'weekly';
+type JobName = 'daily' | 'followup-digest' | 'weekly' | 'drive-backup';
 
 interface Job {
   name: JobName;
@@ -25,6 +25,8 @@ interface Job {
 }
 
 const JOBS: Job[] = [
+  // Before the morning jobs, so a day's work is captured while nothing writes.
+  { name: 'drive-backup', hour: 2, minute: 0, run: runDriveBackupAll },
   { name: 'daily', hour: 8, minute: 0, run: runDaily },
   { name: 'followup-digest', hour: 11, minute: 0, run: runFollowUpDigest },
   { name: 'weekly', hour: 9, minute: 0, weekday: 1, run: runWeekly },

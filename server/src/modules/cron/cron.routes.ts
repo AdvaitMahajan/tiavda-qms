@@ -5,6 +5,7 @@ import { forbidden } from '../../lib/errors';
 import { supabaseAdmin } from '../../lib/supabase';
 import { sendEmail } from '../../integrations/email';
 import { sendWhatsApp } from '../../integrations/whatsapp';
+import { runDriveBackup } from '../../lib/drive-backup';
 
 /**
  * Scheduled jobs — multi-tenant aware. Runs cross-org via the service-role client
@@ -25,6 +26,8 @@ cronRouter.use(requireCron);
 
 cronRouter.post('/daily', asyncHandler(async (_req, res) => res.json(await runDaily())));
 cronRouter.post('/weekly', asyncHandler(async (_req, res) => res.json(await runWeekly())));
+// Nightly Drive backup — also runnable by hand to verify a connection.
+cronRouter.post('/drive-backup', asyncHandler(async (_req, res) => res.json(await runDriveBackupAll())));
 // Daily follow-up digest — schedule this at 11:00 (Asia/Kolkata).
 cronRouter.post('/followup-digest', asyncHandler(async (_req, res) => res.json(await runFollowUpDigest())));
 
@@ -741,4 +744,15 @@ export async function runWeekly(): Promise<Record<string, unknown>> {
   }
 
   return { success: true, orgs: perOrg };
+}
+
+/** Back up every active org — the body of the scheduled job and of /cron/drive-backup. */
+export async function runDriveBackupAll(): Promise<Record<string, unknown>> {
+  const { data } = await sb.from('organizations').select('id, name').eq('status', 'active');
+  const out: Record<string, unknown> = {};
+  for (const org of data ?? []) {
+    try { out[org.name ?? org.id] = await runDriveBackup(org.id); }
+    catch (e) { out[org.name ?? org.id] = { error: (e as Error).message }; }
+  }
+  return out;
 }

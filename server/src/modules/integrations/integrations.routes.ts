@@ -7,7 +7,9 @@ import { sendEmail } from '../../integrations/email';
 import { sendWhatsApp } from '../../integrations/whatsapp';
 import { createDriveFolder, uploadToDrive } from '../../integrations/drive';
 import { supabaseAdmin } from '../../lib/supabase';
-import { currentOrgId } from '../../db';
+import { currentOrgId, db } from '../../db';
+import { eq } from 'drizzle-orm';
+import { enquiries, clients } from '../../db/schema';
 
 const emailSchema = z.object({
   to: z.union([z.string(), z.array(z.string())]),
@@ -35,11 +37,13 @@ const driveSchema = z.object({
   city: z.string(),
 });
 
-/** Copy a file already in Supabase Storage into the job's Drive folder. */
+/**
+ * Copy a file already in Supabase Storage into the job's Drive folder. The job
+ * is named by enquiry_id and its ref/client/city resolved here, so a caller only
+ * has to know which enquiry a file belongs to.
+ */
 const driveFileSchema = z.object({
-  ref_number: z.string(),
-  client_name: z.string(),
-  city: z.string(),
+  enquiry_id: z.string().uuid(),
   bucket: z.enum(['quotation-pdfs', 'receipts', 'reports', 'site-visit-photos', 'intake-uploads']),
   path: z.string().min(1),
   subfolder: z.string().min(1),
@@ -68,6 +72,21 @@ integrationsRouter.post(
     const body = driveFileSchema.parse(req.body);
     const orgId = currentOrgId();
 
+    const [enq] = await db
+      .select({ ref_number: enquiries.ref_number, site_city: enquiries.site_city, client_id: enquiries.client_id })
+      .from(enquiries)
+      .where(eq(enquiries.id, body.enquiry_id))
+      .limit(1);
+    if (!enq) {
+      res.json({ success: false, error: 'Enquiry not found' });
+      return;
+    }
+    const [client] = enq.client_id
+      ? await db.select({ name: clients.name, company: clients.company })
+          .from(clients).where(eq(clients.id, enq.client_id)).limit(1)
+      : [];
+    const clientName = (client?.company || client?.name || 'Unknown').trim();
+
     // Storage objects are namespaced by org_id while the DB keeps the logical
     // path, so scope it here the way the email attachment path does.
     const scoped =
@@ -81,9 +100,9 @@ integrationsRouter.post(
     res.json(
       await uploadToDrive({
         orgId,
-        ref_number: body.ref_number,
-        client_name: body.client_name,
-        city: body.city,
+        ref_number: enq.ref_number,
+        client_name: clientName,
+        city: enq.site_city || 'Unknown',
         subfolder: body.subfolder,
         file_name: body.file_name || body.path.split('/').pop() || 'file',
         mime_type: body.mime_type || data.type || 'application/octet-stream',

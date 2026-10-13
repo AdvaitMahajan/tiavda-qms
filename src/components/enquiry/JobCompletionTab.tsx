@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { apiClient } from "@/lib/apiClient";
+import { copyToDrive } from "@/lib/driveCopy";
 import { uploadToStorage, getSignedUrl } from "@/lib/storage";
 import { useAuth } from "@/hooks/useAuth";
 import { sendClientTouchpoint } from "@/lib/clientTouchpoints";
@@ -226,6 +227,8 @@ export function JobCompletionTab({ enquiryId }: { enquiryId: string }) {
     const path = `${enquiryId}/${file.name}`;
     try {
       await uploadToStorage("reports", path, file, { upsert: true });
+      copyToDrive({ enquiryId, bucket: "reports", path, subfolder: "Reports",
+        fileName: file.name, mimeType: file.type, label: "report" });
       const signedUrl = await getSignedUrl("reports", path, 86400 * 30);
       await updateField("report_file_url", signedUrl);
       toast.success("Report uploaded!");

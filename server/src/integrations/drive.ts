@@ -175,16 +175,35 @@ export interface UploadToDriveResult {
  */
 export async function uploadToDrive(input: UploadToDriveInput): Promise<UploadToDriveResult> {
   try {
+    const year = new Date().getFullYear().toString();
+    return await uploadToDriveAtPath({
+      orgId: input.orgId,
+      folders: [year, `${input.ref_number} — ${input.client_name} — ${input.city}`, input.subfolder],
+      file_name: input.file_name,
+      mime_type: input.mime_type,
+      bytes: input.bytes,
+    });
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+}
+
+export interface UploadAtPathInput {
+  orgId?: string | null;
+  /** Folder names under the root, created in order if absent. */
+  folders: string[];
+  file_name: string;
+  mime_type: string;
+  bytes: Buffer;
+}
+
+/** Upload into an arbitrary folder path under the org's Drive root. */
+export async function uploadToDriveAtPath(input: UploadAtPathInput): Promise<UploadToDriveResult> {
+  try {
     const { accessToken, rootFolderId } = await driveContext(input.orgId ?? currentOrgId());
 
-    const year = new Date().getFullYear().toString();
-    const yearFolderId = await findOrCreateFolder(year, rootFolderId, accessToken);
-    const jobFolderId = await findOrCreateFolder(
-      `${input.ref_number} — ${input.client_name} — ${input.city}`,
-      yearFolderId,
-      accessToken,
-    );
-    const targetId = await findOrCreateFolder(input.subfolder, jobFolderId, accessToken);
+    let targetId = rootFolderId;
+    for (const name of input.folders) targetId = await findOrCreateFolder(name, targetId, accessToken);
 
     const existingId = await findFileInFolder(input.file_name, targetId, accessToken);
 

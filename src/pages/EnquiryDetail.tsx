@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { apiClient } from "@/lib/apiClient";
+import { copyToDrive } from "@/lib/driveCopy";
 import { uploadToStorage, downloadFromStorage } from "@/lib/storage";
 import { useAuth } from "@/hooks/useAuth";
 import { useRole } from "@/hooks/useRole";
@@ -720,29 +721,15 @@ export default function EnquiryDetail() {
       await apiClient.patch(`/quotations/${q.id}`, { pdf_url: path, pdf_status: "ready" });
       toast.success("PDF generated successfully");
 
-      // File a copy into the job's Google Drive folder. Non-blocking and never
-      // fatal: the PDF is already saved, and Drive may not be configured.
-      apiClient
-        .post<{ success: boolean; error?: string }>("/integrations/drive-file", {
-          ref_number: enquiry.ref_number,
-          client_name: clientDisplayName(client),
-          city: enquiry.site_city ?? client.city ?? "",
-          bucket: "quotation-pdfs",
-          path,
-          subfolder: "Quotations",
-          file_name: filename,
-          mime_type: "application/pdf",
-        })
-        .then((r) => {
-          if (r?.success) toast.success("Copied to Google Drive");
-          else toast.warning("Saved, but not copied to Drive: " + (r?.error ?? "unknown reason"));
-        })
-        // Surface transport failures too — swallowing them made a not-yet-deployed
-        // route or a network error indistinguishable from nothing happening.
-        .catch((e) => toast.warning("Saved, but the Drive copy failed: " + ((e as Error)?.message ?? "request failed")));
-    } catch (err: any) {
+      // File a copy into the job's Google Drive folder.
+      copyToDrive({
+        enquiryId: enquiry.id, bucket: "quotation-pdfs", path,
+        subfolder: "Quotations", fileName: filename,
+        mimeType: "application/pdf", label: "quotation PDF",
+      });
+    } catch (err) {
       await apiClient.patch(`/quotations/${q.id}`, { pdf_status: "failed" });
-      toast.error("PDF generation failed: " + (err.message || "Unknown error"));
+      toast.error("PDF generation failed: " + (err instanceof Error ? err.message : "Unknown error"));
     } finally {
       setPdfLoading(null);
       fetchAll({ silent: true });

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiClient } from "@/lib/apiClient";
+import { copyToDrive } from "@/lib/driveCopy";
 import { uploadToStorage, getSignedUrl } from "@/lib/storage";
 import { sendNotification } from "@/lib/notifications";
 import { sendClientTouchpoint } from "@/lib/clientTouchpoints";
@@ -238,6 +239,8 @@ export function PaymentsTab({ enquiryId, onStatusChange }: { enquiryId: string; 
       if (recFile) {
         const path = `${enquiryId}/${recFile.name}`;
         await uploadToStorage("receipts", path, recFile, { upsert: true });
+        copyToDrive({ enquiryId, bucket: "receipts", path, subfolder: "Correspondence",
+          fileName: recFile.name, mimeType: recFile.type, label: "receipt" });
         receipt_url = await getSignedUrl("receipts", path, 86400 * 30);
       }
       await apiClient.patch(`/payments/${showReceive.id}`, {

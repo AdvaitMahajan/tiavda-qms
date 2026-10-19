@@ -111,7 +111,21 @@ function ClientCombobox({
   );
 }
 
-export function AddLeadDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
+/**
+ * `mode="quotation"` is the manual shortcut: same client capture, but the enquiry
+ * is created straight into Quotation Prep (no intake link) and the user lands in
+ * the quotation builder.
+ */
+export function AddLeadDialog({
+  open,
+  onOpenChange,
+  mode = "lead",
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  mode?: "lead" | "quotation";
+}) {
+  const isQuotation = mode === "quotation";
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [leadForm, setLeadForm] = useState<LeadForm>({ ...EMPTY_LEAD });
@@ -223,7 +237,7 @@ export function AddLeadDialog({ open, onOpenChange }: { open: boolean; onOpenCha
       if (!resolvedClient) throw new Error("Could not resolve the client for this lead.");
 
       // Create enquiry record so it appears in Kanban immediately
-      const initialStatus = serviceType === "soil_investigation" ? "intake_pending" : "new";
+      const initialStatus = isQuotation ? "pending" : serviceType === "soil_investigation" ? "intake_pending" : "new";
       const newEnquiry = await apiClient.post<{ id: string; ref_number: string }>("/enquiries", {
         client_id: resolvedClient.id,
         site_city: city.trim(),
@@ -236,7 +250,7 @@ export function AddLeadDialog({ open, onOpenChange }: { open: boolean; onOpenCha
       // Auto-send intake link for SI leads. Addressed from the resolved client
       // record, not the form — when attaching (or picking an existing client)
       // the form's name/email/phone are blank or belong to the new contact.
-      if (serviceType === "soil_investigation") {
+      if (!isQuotation && serviceType === "soil_investigation") {
         try {
           const token = await createIntakeToken(resolvedClient.id, "", newEnquiry.id);
           const intakeUrl = getIntakeUrl(token);
@@ -284,14 +298,15 @@ export function AddLeadDialog({ open, onOpenChange }: { open: boolean; onOpenCha
         }
       }
 
-      toast.success(`Lead ${newEnquiry.ref_number} captured!`);
+      toast.success(isQuotation ? `${newEnquiry.ref_number} created — build the quotation` : `Lead ${newEnquiry.ref_number} captured!`);
       queryClient.invalidateQueries({ queryKey: ["clients"] });
       queryClient.invalidateQueries({ queryKey: ["clients-for-new-enquiry"] });
       queryClient.invalidateQueries({ queryKey: ["enquiries-list"] });
+      queryClient.invalidateQueries({ queryKey: ["dashboard-stats"] });
       handleClose(false);
-      navigate(`/enquiries/${newEnquiry.id}`);
+      navigate(isQuotation ? `/enquiries/${newEnquiry.id}/quotation` : `/enquiries/${newEnquiry.id}`);
     } catch (err) {
-      toast.error(err instanceof Error && err.message ? err.message : "Failed to add lead");
+      toast.error(err instanceof Error && err.message ? err.message : isQuotation ? "Failed to create quotation" : "Failed to add lead");
     } finally {
       setLeadSaving(false);
     }
@@ -306,10 +321,12 @@ export function AddLeadDialog({ open, onOpenChange }: { open: boolean; onOpenCha
       >
         <DialogHeader className="px-8 pt-8 pb-6" style={{ borderBottom: "1px solid #F1F5F9" }}>
           <DialogTitle style={{ fontFamily: "Sora, sans-serif", fontSize: "22px", fontWeight: 700, color: "#0F172A" }}>
-            Add Lead
+            {isQuotation ? "New Quotation" : "Add Lead"}
           </DialogTitle>
           <p style={{ fontSize: "14px", color: "#94A3B8", marginTop: "4px" }}>
-            Capture a new business lead — send intake form later
+            {isQuotation
+              ? "Pick or add the client, then price the job by hand — no intake form needed"
+              : "Capture a new business lead — send intake form later"}
           </p>
         </DialogHeader>
 
@@ -469,7 +486,7 @@ export function AddLeadDialog({ open, onOpenChange }: { open: boolean; onOpenCha
             disabled={leadSaving}
             onClick={() => void submitLead(null)}
           >
-            {leadSaving ? "Saving…" : "Add Lead"}
+            {leadSaving ? "Saving…" : isQuotation ? "Create & Open Builder" : "Add Lead"}
           </Button>
         </div>
       </DialogContent>

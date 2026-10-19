@@ -32,8 +32,10 @@ import { Label } from "@/components/ui/label";
 import {
   Loader2, ChevronDown, ChevronUp, Download, Send, AlertTriangle, RefreshCw,
   ArrowLeft, CheckCircle2, MapPin, Phone, Mail, MessageCircle, XCircle,
-  UserCircle, Pencil, Save, Trophy, Eye, EyeOff,
+  UserCircle, Pencil, Save, Trophy, Eye, EyeOff, Trash2,
 } from "lucide-react";
+import { ConfirmDeleteDialog } from "@/components/ConfirmDeleteDialog";
+import { useQueryClient } from "@tanstack/react-query";
 import type { Tables } from "@/integrations/supabase/types";
 import { createFollowUpCadence, cancelPendingFollowUps } from "@/lib/followUpCadence";
 
@@ -483,7 +485,9 @@ export default function EnquiryDetail() {
   const hasPayments = orgFeatures.payments !== false;
   const hasSiteVisits = orgFeatures.site_visits !== false;
   const hasComms = orgFeatures.comms !== false;
-  const { canAssignEnquiry, canEditEnquiry, canEditQuotation } = useRole();
+  const { canAssignEnquiry, canEditEnquiry, canEditQuotation, isAdmin } = useRole();
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const queryClient = useQueryClient();
   const [enquiry, setEnquiry] = useState<Enquiry | null>(null);
   const [client, setClient] = useState<Client | null>(null);
   const [quotations, setQuotations] = useState<Quotation[]>([]);
@@ -1104,15 +1108,45 @@ export default function EnquiryDetail() {
             flexShrink: 0,
           }}
         >
-          {/* Back arrow */}
-          <button
-            onClick={() => navigate("/enquiries")}
-            className="flex items-center gap-1.5 mb-4 transition-opacity hover:opacity-80"
-            style={{ color: "rgba(255,255,255,0.7)", fontSize: "13px", fontWeight: 500 }}
-          >
-            <ArrowLeft style={{ width: "15px", height: "15px" }} />
-            Back
-          </button>
+          {/* Back arrow + delete */}
+          <div className="flex items-center justify-between mb-4">
+            <button
+              onClick={() => navigate("/enquiries")}
+              className="flex items-center gap-1.5 transition-opacity hover:opacity-80"
+              style={{ color: "rgba(255,255,255,0.7)", fontSize: "13px", fontWeight: 500 }}
+            >
+              <ArrowLeft style={{ width: "15px", height: "15px" }} />
+              Back
+            </button>
+            {isAdmin && (
+              <button
+                onClick={() => setDeleteOpen(true)}
+                className="flex items-center gap-1.5 rounded-lg px-2.5 py-1 transition-colors hover:bg-white/10"
+                style={{ color: "#FECACA", fontSize: "13px", fontWeight: 500, border: "1px solid rgba(254,202,202,0.4)" }}
+              >
+                <Trash2 style={{ width: "14px", height: "14px" }} />
+                Delete
+              </button>
+            )}
+          </div>
+          <ConfirmDeleteDialog
+            open={deleteOpen}
+            onOpenChange={setDeleteOpen}
+            title="Delete lead?"
+            description={
+              <>
+                Lead <strong>{enquiry.ref_number}</strong> and its quotations will be removed from all lists.
+                The client record is kept. This cannot be undone from the app.
+              </>
+            }
+            onConfirm={async () => {
+              await apiClient.del(`/enquiries/${enquiry.id}`);
+              toast.success(`${enquiry.ref_number} deleted`);
+              queryClient.invalidateQueries({ queryKey: ["enquiries-list"] });
+              queryClient.invalidateQueries({ queryKey: ["dashboard-stats"] });
+              navigate("/enquiries");
+            }}
+          />
           {/* Ref number */}
           <p
             className="font-bold mb-2"

@@ -13,8 +13,10 @@ import {
   Popover, PopoverContent, PopoverTrigger,
 } from "@/components/ui/popover";
 import {
-  Search, List, LayoutGrid, Download, Filter, FileQuestion, Plus,
+  Search, List, LayoutGrid, Download, Filter, FileQuestion, Plus, Trash2,
 } from "lucide-react";
+import { ConfirmDeleteDialog } from "@/components/ConfirmDeleteDialog";
+import { useRole } from "@/hooks/useRole";
 import { EnquiryKanban, VALID_TRANSITIONS } from "@/components/EnquiryKanban";
 import { AddLeadDialog } from "@/components/AddLeadDialog";
 import { StatusBadge } from "@/components/ui/StatusBadge";
@@ -465,6 +467,8 @@ function StatusFilterPopover({ selected, onChange }: { selected: LeadStatus[]; o
 
 function EnquiryListView({ rows, isLoading, onRowClick }: { rows: EnquiryRow[]; isLoading: boolean; onRowClick: (id: string) => void }) {
   const queryClient = useQueryClient();
+  const { isAdmin } = useRole();
+  const [deleteTarget, setDeleteTarget] = useState<EnquiryRow | null>(null);
 
   const handleStatusChange = async (row: EnquiryRow, toStatus: LeadStatus) => {
     try {
@@ -542,6 +546,7 @@ function EnquiryListView({ rows, isLoading, onRowClick }: { rows: EnquiryRow[]; 
             <TableHead className="text-right" style={{ fontSize: "12px", color: "#546E7A", textTransform: "uppercase", letterSpacing: "0.08em", fontWeight: 600 }}>Quote</TableHead>
             <TableHead style={{ fontSize: "12px", color: "#546E7A", textTransform: "uppercase", letterSpacing: "0.08em", fontWeight: 600 }}>Follow-up</TableHead>
             <TableHead style={{ fontSize: "12px", color: "#546E7A", textTransform: "uppercase", letterSpacing: "0.08em", fontWeight: 600 }}>Created</TableHead>
+            {isAdmin && <TableHead className="w-12" />}
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -605,11 +610,43 @@ function EnquiryListView({ rows, isLoading, onRowClick }: { rows: EnquiryRow[]; 
                 <FollowUpCell date={r.next_follow_up} />
               </TableCell>
               <TableCell className="text-sm" style={{ color: "#546E7A" }}>{relativeTime(r.created_at)}</TableCell>
+              {isAdmin && (
+                <TableCell onClick={(e) => e.stopPropagation()}>
+                  <button
+                    title="Delete lead"
+                    aria-label={`Delete ${r.ref_number}`}
+                    className="inline-flex items-center justify-center rounded-lg p-1.5 transition-colors hover:bg-red-50"
+                    style={{ color: "#B91C1C" }}
+                    onClick={() => setDeleteTarget(r)}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </TableCell>
+              )}
             </TableRow>
           ))}
         </TableBody>
       </Table>
       </div>
+
+      <ConfirmDeleteDialog
+        open={!!deleteTarget}
+        onOpenChange={(o) => { if (!o) setDeleteTarget(null); }}
+        title="Delete lead?"
+        description={
+          <>
+            Lead <strong>{deleteTarget?.ref_number}</strong> ({deleteTarget?.client_name}) and its quotations will
+            be removed from all lists. The client record is kept. This cannot be undone from the app.
+          </>
+        }
+        onConfirm={async () => {
+          if (!deleteTarget) return;
+          await apiClient.del(`/enquiries/${deleteTarget.id}`);
+          toast.success(`${deleteTarget.ref_number} deleted`);
+          queryClient.invalidateQueries({ queryKey: ["enquiries-list"] });
+          queryClient.invalidateQueries({ queryKey: ["dashboard-stats"] });
+        }}
+      />
     </div>
   );
 }

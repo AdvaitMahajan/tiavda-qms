@@ -4,7 +4,7 @@ import { and, desc, eq, inArray, isNull, type SQL } from 'drizzle-orm';
 import { db, requireOrgId } from '../../db';
 import { clients, enquiries, enquiry_events, quotations } from '../../db/schema';
 import { authenticate } from '../../middleware/auth';
-import { requireNotViewer } from '../../middleware/roles';
+import { requireEditor, requireNotViewer } from '../../middleware/roles';
 import { asyncHandler, getParam } from '../../lib/http';
 import { notFound } from '../../lib/errors';
 
@@ -197,6 +197,22 @@ enquiriesRouter.patch(
     const rows = await db.update(enquiries).set(body).where(eq(enquiries.id, getParam(req, 'id'))).returning();
     if (!rows[0]) throw notFound('Enquiry not found');
     res.json(rows[0]);
+  }),
+);
+
+// Soft delete (deleted_at), admin-only — mirrors DELETE /clients/:id. The row and
+// its quotations/payments stay in the database; it just drops out of every list.
+enquiriesRouter.delete(
+  '/:id',
+  requireEditor,
+  asyncHandler(async (req, res) => {
+    const rows = await db
+      .update(enquiries)
+      .set({ deleted_at: new Date().toISOString() })
+      .where(and(eq(enquiries.id, getParam(req, 'id')), isNull(enquiries.deleted_at)))
+      .returning({ id: enquiries.id });
+    if (!rows[0]) throw notFound('Enquiry not found');
+    res.json({ success: true });
   }),
 );
 

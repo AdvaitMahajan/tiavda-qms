@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { AddLeadDialog } from "@/components/AddLeadDialog";
 import { useQuery } from "@tanstack/react-query";
 import { apiClient } from "@/lib/apiClient";
+import { useRole } from "@/hooks/useRole";
 import { formatCurrency, relativeTime } from "@/lib/utils";
 import { Skeleton } from "@/components/ui/skeleton";
 import { SkeletonCard } from "@/components/ui/SkeletonLoader";
@@ -10,7 +11,7 @@ import {
   FileText, Send, CalendarClock, CreditCard, Briefcase,
   CheckCircle, Bell, Activity, Hammer, Receipt,
   Plus, Users, Settings, TrendingUp, IndianRupee, ClipboardList, BarChart3, ClipboardCheck,
-  UserCheck, UserX,
+  UserCheck, UserX, FilePlus2,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -403,6 +404,8 @@ export default function Dashboard() {
   const activity = useActivityFeed();
 
   const [showAddLead, setShowAddLead] = useState(false);
+  const [showNewQuotation, setShowNewQuotation] = useState(false);
+  const { canQuote } = useRole();
 
   const formattedDate = new Date().toLocaleDateString("en-GB", {
     weekday: "long", day: "numeric", month: "long", year: "numeric",
@@ -421,6 +424,7 @@ export default function Dashboard() {
   return (
     <div className="space-y-6">
       {/* Page header */}
+      <div className="flex flex-wrap items-start justify-between gap-4">
       <div>
         <h1
           className="font-bold text-3xl"
@@ -431,6 +435,17 @@ export default function Dashboard() {
         <p className="mt-1 text-sm" style={{ color: "#546E7A" }}>
           Here's what needs your attention today — {formattedDate}
         </p>
+      </div>
+        {canQuote && (
+          <button
+            onClick={() => setShowNewQuotation(true)}
+            className="flex items-center gap-2 px-5 py-3 rounded-xl text-white text-sm font-semibold whitespace-nowrap transition-all hover:scale-105 hover:shadow-md"
+            style={{ background: "linear-gradient(90deg,#B7791F,#D4930A)" }}
+          >
+            <FilePlus2 className="h-4 w-4" />
+            New Quotation
+          </button>
+        )}
       </div>
 
       {/* ── Section 1: Stat Cards, grouped so they read as a story ── */}
@@ -546,6 +561,7 @@ export default function Dashboard() {
       <div className="flex items-center gap-3 overflow-x-auto pb-1">
         {[
           { label: "Add Lead", icon: Plus, href: "", gradient: "linear-gradient(90deg,#1565C0,#2979FF)" },
+          ...(canQuote ? [{ label: "New Quotation", icon: FilePlus2, href: "", gradient: "linear-gradient(90deg,#B7791F,#D4930A)" }] : []),
           { label: "Clients", icon: Users, href: "/clients", gradient: "linear-gradient(90deg,#6A1B9A,#AB47BC)" },
           { label: "Quotation Config", icon: BarChart3, href: "/quotation-config", gradient: "linear-gradient(90deg,#E65100,#FF8F00)" },
           { label: "Settings", icon: Settings, href: "/settings", gradient: "linear-gradient(90deg,#546E7A,#78909C)" },
@@ -554,7 +570,10 @@ export default function Dashboard() {
           return (
             <button
               key={qa.label}
-              onClick={() => qa.label === "Add Lead" ? setShowAddLead(true) : navigate(qa.href)}
+              onClick={() =>
+                qa.label === "Add Lead" ? setShowAddLead(true)
+                  : qa.label === "New Quotation" ? setShowNewQuotation(true)
+                  : navigate(qa.href)}
               className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-white text-sm font-semibold whitespace-nowrap transition-all hover:scale-105 hover:shadow-md"
               style={{ background: qa.gradient }}
             >
@@ -705,6 +724,7 @@ export default function Dashboard() {
       </div>
 
       <AddLeadDialog open={showAddLead} onOpenChange={setShowAddLead} />
+      <AddLeadDialog mode="quotation" open={showNewQuotation} onOpenChange={setShowNewQuotation} />
     </div>
   );
 }

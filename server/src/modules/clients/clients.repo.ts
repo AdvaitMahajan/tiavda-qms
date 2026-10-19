@@ -1,6 +1,6 @@
 import { and, asc, desc, eq, ilike, isNull, or, sql, type SQL } from 'drizzle-orm';
 import { db, requireOrgId } from '../../db';
-import { clients } from '../../db/schema';
+import { clients, enquiries } from '../../db/schema';
 import { phoneKey } from '../../lib/phone';
 import type { CreateClientInput, UpdateClientInput, ListClientsQuery } from './clients.schema';
 
@@ -57,12 +57,24 @@ export const clientsRepo = {
     return rows[0] ?? null;
   },
 
-  async softDelete(id: string) {
-    const rows = await db
-      .update(clients)
-      .set({ deleted_at: new Date().toISOString() })
-      .where(eq(clients.id, id))
-      .returning();
-    return rows[0] ?? null;
+  /**
+   * Soft-delete the client and its open enquiries together — otherwise the
+   * client's leads stay on the board pointing at a client nobody can see.
+   */
+  softDelete(id: string) {
+    const now = new Date().toISOString();
+    return db.transaction(async (tx) => {
+      const rows = await tx
+        .update(clients)
+        .set({ deleted_at: now })
+        .where(and(eq(clients.id, id), isNull(clients.deleted_at)))
+        .returning();
+      if (!rows[0]) return null;
+      await tx
+        .update(enquiries)
+        .set({ deleted_at: now })
+        .where(and(eq(enquiries.client_id, id), isNull(enquiries.deleted_at)));
+      return rows[0];
+    });
   },
 };

@@ -5,13 +5,15 @@ import { apiClient } from "@/lib/apiClient";
 import { clientDisplayName } from "@/lib/utils";
 import type { Tables } from "@/integrations/supabase/types";
 import { toast } from "sonner";
-import { Search, Users, Plus, Phone, Mail, MapPin, UserPlus, Link2, CheckCircle2, XCircle, Activity } from "lucide-react";
+import { Search, Users, Plus, Phone, Mail, MapPin, UserPlus, Link2, CheckCircle2, XCircle, Activity, Trash2 } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { SkeletonRow } from "@/components/ui/SkeletonLoader";
 import { DuplicateClientPrompt } from "@/components/DuplicateClientPrompt";
 import { normalizePhone, validateIndianMobile, phoneKey } from "@/lib/phone";
+import { ConfirmDeleteDialog } from "@/components/ConfirmDeleteDialog";
+import { useRole } from "@/hooks/useRole";
 
 function avatarGradient(name: string): string {
   const c = (name?.[0] ?? "?").toUpperCase();
@@ -35,6 +37,8 @@ export default function Clients() {
   const [viewHover, setViewHover] = useState<string | null>(null);
   // Clients sharing the phone being saved. Non-empty ⇒ duplicate prompt is open.
   const [dupMatches, setDupMatches] = useState<Tables<"clients">[]>([]);
+  const [deleteTarget, setDeleteTarget] = useState<Tables<"clients"> | null>(null);
+  const { canEditClients } = useRole();
 
   const { data: clients = [], isLoading } = useQuery({
     queryKey: ["clients"],
@@ -380,6 +384,17 @@ export default function Clients() {
                     >
                       View
                     </button>
+                    {canEditClients && (
+                      <button
+                        title="Delete client"
+                        aria-label={`Delete ${clientDisplayName(c)}`}
+                        className="ml-2 inline-flex items-center justify-center rounded-lg transition-colors hover:bg-red-50"
+                        style={{ border: "1px solid #FECACA", color: "#B91C1C", padding: "5px 8px", verticalAlign: "middle" }}
+                        onClick={(e) => { e.stopPropagation(); setDeleteTarget(c); }}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    )}
                   </td>
                 </tr>
               ))}
@@ -446,6 +461,26 @@ export default function Clients() {
           </div>
         </SheetContent>
       </Sheet>
+
+      <ConfirmDeleteDialog
+        open={!!deleteTarget}
+        onOpenChange={(o) => { if (!o) setDeleteTarget(null); }}
+        title="Delete client?"
+        description={
+          <>
+            <strong>{deleteTarget ? clientDisplayName(deleteTarget) : ""}</strong> and all of their leads will be
+            removed from the system. This cannot be undone from the app.
+          </>
+        }
+        onConfirm={async () => {
+          if (!deleteTarget) return;
+          await apiClient.del(`/clients/${deleteTarget.id}`);
+          toast.success(`${clientDisplayName(deleteTarget)} deleted`);
+          queryClient.invalidateQueries({ queryKey: ["clients"] });
+          queryClient.invalidateQueries({ queryKey: ["clients-enquiry-segments"] });
+          queryClient.invalidateQueries({ queryKey: ["enquiries-list"] });
+        }}
+      />
 
       <DuplicateClientPrompt
         matches={dupMatches}

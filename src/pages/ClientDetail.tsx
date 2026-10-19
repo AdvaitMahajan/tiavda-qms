@@ -9,7 +9,7 @@ import { cn, formatDate, relativeTime, clientDisplayName } from "@/lib/utils";
 import { createIntakeToken } from "@/lib/intakeTokenUtils";
 import {
   Phone, Mail, MapPin, AlertTriangle, Link2, Copy, Check,
-  RefreshCw, ArrowLeft, Pencil, Clock, BarChart2, Send, CheckCircle2,
+  RefreshCw, ArrowLeft, Pencil, Clock, BarChart2, Send, CheckCircle2, Trash2,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -17,6 +17,8 @@ import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { normalizePhone, validateIndianMobile } from "@/lib/phone";
+import { ConfirmDeleteDialog } from "@/components/ConfirmDeleteDialog";
+import { useRole } from "@/hooks/useRole";
 
 function avatarGradient(name: string): string {
   const c = (name?.[0] ?? "?").toUpperCase();
@@ -33,6 +35,8 @@ export default function ClientDetail() {
   const queryClient = useQueryClient();
 
   const [editOpen, setEditOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const { canEditClients } = useRole();
   const [editForm, setEditForm] = useState<Record<string, string>>({});
   const [editErrors, setEditErrors] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
@@ -223,11 +227,26 @@ export default function ClientDetail() {
           <ArrowLeft className="w-4 h-4" /> Clients
         </button>
 
-        {/* Edit button */}
+        {/* Edit / Delete buttons */}
+        <div style={{ position: "absolute", top: "24px", right: "24px", display: "flex", gap: "8px" }}>
+        {canEditClients && (
+          <button
+            onClick={() => setDeleteOpen(true)}
+            style={{
+              background: "rgba(185,28,28,0.25)", color: "white",
+              border: "1px solid rgba(254,202,202,0.45)",
+              borderRadius: "10px", padding: "7px 16px",
+              fontSize: "13px", fontWeight: 500,
+              backdropFilter: "blur(10px)", cursor: "pointer",
+              display: "flex", alignItems: "center", gap: "6px",
+            }}
+          >
+            <Trash2 className="w-3.5 h-3.5" /> Delete
+          </button>
+        )}
         <button
           onClick={() => setEditOpen(true)}
           style={{
-            position: "absolute", top: "24px", right: "24px",
             background: "rgba(255,255,255,0.12)", color: "white",
             border: "1px solid rgba(255,255,255,0.2)",
             borderRadius: "10px", padding: "7px 16px",
@@ -240,6 +259,7 @@ export default function ClientDetail() {
         >
           <Pencil className="w-3.5 h-3.5" /> Edit
         </button>
+        </div>
 
         {/* Avatar + name */}
         <div style={{ display: "flex", alignItems: "center", gap: "16px", marginTop: "16px" }}>
@@ -607,6 +627,25 @@ export default function ClientDetail() {
       </div>
 
       {/* Edit Panel */}
+      <ConfirmDeleteDialog
+        open={deleteOpen}
+        onOpenChange={setDeleteOpen}
+        title="Delete client?"
+        description={
+          <>
+            <strong>{clientDisplayName(client)}</strong> and all of their leads will be removed from the
+            system. This cannot be undone from the app.
+          </>
+        }
+        onConfirm={async () => {
+          await apiClient.del(`/clients/${client.id}`);
+          toast.success(`${clientDisplayName(client)} deleted`);
+          queryClient.invalidateQueries({ queryKey: ["clients"] });
+          queryClient.invalidateQueries({ queryKey: ["enquiries-list"] });
+          navigate("/clients");
+        }}
+      />
+
       <Sheet open={editOpen} onOpenChange={setEditOpen}>
         <SheetContent
           className="overflow-y-auto sm:max-w-md"

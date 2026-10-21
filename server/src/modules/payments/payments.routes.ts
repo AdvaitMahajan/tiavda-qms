@@ -1,12 +1,12 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { desc, eq } from 'drizzle-orm';
+import { and, desc, eq, like, ne } from 'drizzle-orm';
 import { db, requireOrgId } from '../../db';
 import { payments } from '../../db/schema';
 import { authenticate } from '../../middleware/auth';
 import { requireBilling, requireFeature } from '../../middleware/roles';
 import { asyncHandler, getParam } from '../../lib/http';
-import { notFound } from '../../lib/errors';
+import { conflict, notFound } from '../../lib/errors';
 
 const PAYMENT_STATUS = z.enum(['pending_request', 'request_sent', 'received', 'partial', 'refunded']);
 
@@ -32,7 +32,12 @@ const updateSchema = z.object({
   request_sent_at: z.string().nullable().optional(),
   received_at: z.string().nullable().optional(),
   notes: z.string().nullable().optional(),
+  invoice_number: z.string().trim().min(1).max(60).nullable().optional(),
+  invoice_ref: z.string().trim().max(60).nullable().optional(),
 });
+
+/** Year series for invoice numbers: GG-INV-2026-001, GG-INV-2026-002, … */
+const invoicePrefix = (year: string) => `GG-INV-${year}-`;
 
 // RLS parity: select = all; insert/update/delete = is_editor.
 export const paymentsRouter = Router();
@@ -51,6 +56,26 @@ paymentsRouter.get(
   }),
 );
 
+// Next free number in the year's series (scoped to the caller's org by RLS).
+// Only a suggestion: the user can change it before the invoice is generated.
+paymentsRouter.get(
+  '/next-invoice-number',
+  asyncHandler(async (req, res) => {
+    const year = z.string().regex(/^\d{4}$/).parse(req.query.year ?? String(new Date().getFullYear()));
+    const prefix = invoicePrefix(year);
+    const rows = await db
+      .select({ invoice_number: payments.invoice_number })
+      .from(payments)
+      .where(like(payments.invoice_number, `${prefix}%`));
+    let max = 0;
+    for (const r of rows) {
+      const n = Number((r.invoice_number ?? '').slice(prefix.length));
+      if (Number.isInteger(n) && n > max) max = n;
+    }
+    res.json({ invoice_number: `${prefix}${String(max + 1).padStart(3, '0')}` });
+  }),
+);
+
 paymentsRouter.post(
   '/',
   requireBilling,
@@ -66,7 +91,17 @@ paymentsRouter.patch(
   requireBilling,
   asyncHandler(async (req, res) => {
     const body = updateSchema.parse(req.body);
-    const rows = await db.update(payments).set(body).where(eq(payments.id, getParam(req, 'id'))).returning();
+    const id = getParam(req, 'id');
+    if (body.invoice_number) {
+      // Friendly message ahead of the unique index (org_id, invoice_number).
+      const taken = await db
+        .select({ id: payments.id })
+        .from(payments)
+        .where(and(eq(payments.invoice_number, body.invoice_number), ne(payments.id, id)))
+        .limit(1);
+      if (taken[0]) throw conflict(`Invoice number ${body.invoice_number} is already used on another invoice`);
+    }
+    const rows = await db.update(payments).set(body).where(eq(payments.id, id)).returning();
     if (!rows[0]) throw notFound('Payment not found');
     res.json(rows[0]);
   }),

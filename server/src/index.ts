@@ -3,16 +3,23 @@ import { env } from './env';
 import { logger } from './lib/logger';
 import { pool } from './db';
 import { startScheduler } from './lib/scheduler';
+import { ensureSchema } from './lib/ensure-schema';
 
 const app = createApp();
 
-const server = app.listen(env.PORT, () => {
-  logger.info(`QMS API listening on :${env.PORT} (${env.NODE_ENV})`);
-  startScheduler();
+let server: ReturnType<typeof app.listen> | undefined;
+
+// Schema first: the routes select columns that ensureSchema may be adding.
+void ensureSchema().finally(() => {
+  server = app.listen(env.PORT, () => {
+    logger.info(`QMS API listening on :${env.PORT} (${env.NODE_ENV})`);
+    startScheduler();
+  });
 });
 
 async function shutdown(signal: string): Promise<void> {
   logger.info(`${signal} received — shutting down gracefully`);
+  if (!server) process.exit(0);
   server.close(async () => {
     try {
       await pool.end();

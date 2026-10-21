@@ -187,7 +187,7 @@ export default function InvoicePDF({
             <Text style={s.label}>Invoice Details</Text>
             <Text style={s.value}><Text style={s.bold}>Invoice No: </Text>{invoiceNumber}</Text>
             <Text style={s.value}><Text style={s.bold}>Date: </Text>{fmtDate(invoiceDate)}</Text>
-            <Text style={s.value}><Text style={s.bold}>Enquiry Ref: </Text>{refNumber}</Text>
+            <Text style={s.value}><Text style={s.bold}>Reference No: </Text>{refNumber}</Text>
           </View>
         </View>
 

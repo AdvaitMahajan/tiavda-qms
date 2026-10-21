@@ -395,6 +395,10 @@ export const payments = pgTable('payments', {
   request_sent_at: timestamp('request_sent_at', { withTimezone: true, mode: 'string' }),
   received_at: timestamp('received_at', { withTimezone: true, mode: 'string' }),
   notes: text('notes'),
+  /** Set when the invoice is generated (GG-INV-YYYY-NNN, user-editable). */
+  invoice_number: text('invoice_number'),
+  /** Reference printed on the invoice; defaults to the enquiry ref. */
+  invoice_ref: text('invoice_ref'),
   created_at: timestamp('created_at', { withTimezone: true, mode: 'string' }).notNull().defaultNow(),
   updated_at: timestamp('updated_at', { withTimezone: true, mode: 'string' }).notNull().defaultNow(),
 });

@@ -972,6 +972,8 @@ export type Database = {
           enquiry_id: string
           id: string
           notes: string | null
+          invoice_number: string | null
+          invoice_ref: string | null
           payment_method: string | null
           payment_type: string
           quotation_id: string | null
@@ -990,6 +992,8 @@ export type Database = {
           enquiry_id: string
           id?: string
           notes?: string | null
+          invoice_number?: string | null
+          invoice_ref?: string | null
           payment_method?: string | null
           payment_type: string
           quotation_id?: string | null
@@ -1008,6 +1012,8 @@ export type Database = {
           enquiry_id?: string
           id?: string
           notes?: string | null
+          invoice_number?: string | null
+          invoice_ref?: string | null
           payment_method?: string | null
           payment_type?: string
           quotation_id?: string | null

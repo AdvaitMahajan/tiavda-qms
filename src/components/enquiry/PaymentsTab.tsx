@@ -356,8 +356,58 @@ export function PaymentsTab({ enquiryId, onStatusChange }: { enquiryId: string; 
   };
 
   const [generatingInvoice, setGeneratingInvoice] = useState<string | null>(null);
+  // Invoice details confirmed (and editable) before the PDF is made.
+  const [invoiceTarget, setInvoiceTarget] = useState<Payment | null>(null);
+  const [invoiceForm, setInvoiceForm] = useState({ number: "", ref: "" });
 
-  const handleGenerateInvoice = async (p: Payment) => {
+  const invoiceDateFor = (p: Payment) =>
+    p.received_at ? new Date(p.received_at).toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10);
+
+  /** Open the invoice dialog: reuse the stored number, else suggest the next one in the series. */
+  const openInvoiceDialog = async (p: Payment) => {
+    setGeneratingInvoice(p.id);
+    try {
+      let number = p.invoice_number ?? "";
+      if (!number) {
+        const next = await apiClient.get<{ invoice_number: string }>("/payments/next-invoice-number", {
+          year: invoiceDateFor(p).slice(0, 4),
+        });
+        number = next.invoice_number;
+      }
+      setInvoiceForm({ number, ref: p.invoice_ref ?? enquiry?.ref_number ?? "" });
+      setInvoiceTarget(p);
+    } catch (err) {
+      toast.error(err instanceof Error && err.message ? err.message : "Could not prepare the invoice");
+    } finally {
+      setGeneratingInvoice(null);
+    }
+  };
+
+  const confirmInvoice = async () => {
+    if (!invoiceTarget) return;
+    const number = invoiceForm.number.trim();
+    const ref = invoiceForm.ref.trim();
+    if (!number) {
+      toast.error("Invoice number is required");
+      return;
+    }
+    try {
+      // Save first so the number is reserved (the API rejects duplicates) and a
+      // re-download prints the same invoice.
+      if (number !== invoiceTarget.invoice_number || ref !== (invoiceTarget.invoice_ref ?? "")) {
+        await apiClient.patch(`/payments/${invoiceTarget.id}`, { invoice_number: number, invoice_ref: ref || null });
+        queryClient.invalidateQueries({ queryKey: ["payments", enquiryId] });
+      }
+    } catch (err) {
+      toast.error(err instanceof Error && err.message ? err.message : "Could not save the invoice number");
+      return;
+    }
+    const target = invoiceTarget;
+    setInvoiceTarget(null);
+    await handleGenerateInvoice(target, number, ref);
+  };
+
+  const handleGenerateInvoice = async (p: Payment, invNum: string, refNumber: string) => {
     if (!enquiry || !client) {
       toast.error("Missing enquiry or client details");
       return;
@@ -395,14 +445,13 @@ export function PaymentsTab({ enquiryId, onStatusChange }: { enquiryId: string; 
       const isSameState = companyState !== "" && companyState === clientCity;
       const gstType = isSameState ? "cgst_sgst" as const : "igst" as const;
 
-      const invDate = p.received_at ? new Date(p.received_at).toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10);
-      const invNum = `GG-INV-${invDate.slice(0, 4)}-${p.id.slice(0, 6).toUpperCase()}`;
+      const invDate = invoiceDateFor(p);
 
       const blob = await pdf(
         <InvoicePDF
           invoiceNumber={invNum}
           invoiceDate={invDate}
-          refNumber={enquiry.ref_number ?? ""}
+          refNumber={refNumber}
           client={{
             name: client.name,
             company: (client as any).company ?? null,
@@ -412,7 +461,7 @@ export function PaymentsTab({ enquiryId, onStatusChange }: { enquiryId: string; 
             gst_number: (client as any).gst_number ?? null,
           }}
           payments={[{
-            description: `${p.payment_type === "advance" ? "Advance" : "Final"} payment for ${enquiry.ref_number}`,
+            description: `${p.payment_type === "advance" ? "Advance" : "Final"} payment for ${refNumber || enquiry.ref_number}`,
             amount: baseAmount,
           }]}
           subtotal={baseAmount}
@@ -426,7 +475,7 @@ export function PaymentsTab({ enquiryId, onStatusChange }: { enquiryId: string; 
         />
       ).toBlob();
 
-      downloadBlob(blob, `${invNum}.pdf`);
+      downloadBlob(blob, `${invNum.replace(/[\\/:*?"<>|]/g, "-")}.pdf`);
       toast.success("Invoice PDF downloaded");
     } catch (err: any) {
       console.error("Invoice generation error:", err);
@@ -506,11 +555,11 @@ export function PaymentsTab({ enquiryId, onStatusChange }: { enquiryId: string; 
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={() => handleGenerateInvoice(p)}
+                      onClick={() => void openInvoiceDialog(p)}
                       disabled={generatingInvoice === p.id}
                     >
                       {generatingInvoice === p.id ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <FileText className="h-3 w-3 mr-1" />}
-                      Invoice
+                      {p.invoice_number ? `Invoice ${p.invoice_number}` : "Invoice"}
                     </Button>
                   )}
                   {canEditPayments && (p.status === "pending_request" || p.status === "request_sent") && (
@@ -537,6 +586,44 @@ export function PaymentsTab({ enquiryId, onStatusChange }: { enquiryId: string; 
           </Card>
         ))
       )}
+
+      {/* Invoice details — editable before the PDF is generated */}
+      <Dialog open={!!invoiceTarget} onOpenChange={(o) => !o && setInvoiceTarget(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader><DialogTitle>Generate Invoice</DialogTitle></DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label htmlFor="invoice-number">Invoice Number</Label>
+              <Input
+                id="invoice-number"
+                className="font-mono"
+                value={invoiceForm.number}
+                onChange={(e) => setInvoiceForm((f) => ({ ...f, number: e.target.value }))}
+              />
+              <p className="text-xs text-muted-foreground mt-1">
+                {invoiceTarget?.invoice_number ? "Number already issued for this payment." : "Next number in the series — change it if needed."}
+              </p>
+            </div>
+            <div>
+              <Label htmlFor="invoice-ref">Reference Number</Label>
+              <Input
+                id="invoice-ref"
+                className="font-mono"
+                value={invoiceForm.ref}
+                onChange={(e) => setInvoiceForm((f) => ({ ...f, ref: e.target.value }))}
+                placeholder={enquiry?.ref_number ?? ""}
+              />
+              <p className="text-xs text-muted-foreground mt-1">Printed as the reference on the invoice.</p>
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <Button variant="outline" onClick={() => setInvoiceTarget(null)}>Cancel</Button>
+              <Button onClick={() => void confirmInvoice()}>
+                <FileText className="h-4 w-4 mr-1" /> Generate PDF
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Request Payment Dialog */}
       <Dialog open={showRequest} onOpenChange={setShowRequest}>

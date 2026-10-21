@@ -487,6 +487,9 @@ export default function EnquiryDetail() {
   const hasComms = orgFeatures.comms !== false;
   const { canAssignEnquiry, canEditEnquiry, canEditQuotation, isAdmin } = useRole();
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [editingRef, setEditingRef] = useState(false);
+  const [refDraft, setRefDraft] = useState("");
+  const [savingRef, setSavingRef] = useState(false);
   const queryClient = useQueryClient();
   const [enquiry, setEnquiry] = useState<Enquiry | null>(null);
   const [client, setClient] = useState<Client | null>(null);
@@ -665,15 +668,6 @@ export default function EnquiryDetail() {
 
       const boqTemplate = isBoq ? getTemplateById(qTemplateType) : null;
 
-      // A reference number set in the quotation builder overrides the enquiry's.
-      let pdfEnquiry = enquiry;
-      try {
-        const vn = (q as any).variant_notes ? JSON.parse((q as any).variant_notes) : {};
-        if (typeof vn.refNumber === "string" && vn.refNumber.trim()) {
-          pdfEnquiry = { ...enquiry, ref_number: vn.refNumber.trim() };
-        }
-      } catch {}
-
       let pdfElement: React.ReactElement;
       if (boqTemplate) {
         let projectHeader;
@@ -685,7 +679,7 @@ export default function EnquiryDetail() {
           <BOQTemplatePDF
             quotation={q}
             client={client}
-            enquiry={pdfEnquiry}
+            enquiry={enquiry}
             template={boqTemplate}
             companyInfo={getCompanyInfoFromSettings(pdfSettingsMap)}
             projectHeader={projectHeader}
@@ -701,7 +695,7 @@ export default function EnquiryDetail() {
           <ConsultancyPDF
             quotation={q}
             client={client}
-            enquiry={pdfEnquiry}
+            enquiry={enquiry}
             companyInfo={getCompanyInfoFromSettings(pdfSettingsMap)}
             projectScope={projectScope}
             validityDays={validityDays}
@@ -716,7 +710,7 @@ export default function EnquiryDetail() {
           <QuotationPDF
             quotation={q}
             client={client}
-            enquiry={pdfEnquiry}
+            enquiry={enquiry}
             companyInfo={getCompanyInfoFromSettings(pdfSettingsMap)}
             validityDays={validityDays}
             terms={notes.length > 0 ? notes : undefined}
@@ -1156,13 +1150,63 @@ export default function EnquiryDetail() {
               navigate("/enquiries");
             }}
           />
-          {/* Ref number */}
-          <p
-            className="font-bold mb-2"
-            style={{ fontFamily: "JetBrains Mono, monospace", fontSize: "22px", color: "white", letterSpacing: "0.02em" }}
-          >
-            {enquiry.ref_number}
-          </p>
+          {/* Ref number — generated automatically, renameable by admins */}
+          {editingRef ? (
+            <form
+              className="flex items-center gap-2 mb-2"
+              onSubmit={async (e) => {
+                e.preventDefault();
+                const next = refDraft.trim();
+                if (!next || next === enquiry.ref_number) { setEditingRef(false); return; }
+                setSavingRef(true);
+                try {
+                  await apiClient.patch(`/enquiries/${enquiry.id}`, { ref_number: next });
+                  setEnquiry({ ...enquiry, ref_number: next });
+                  queryClient.invalidateQueries({ queryKey: ["enquiries-list"] });
+                  toast.success(`Reference changed to ${next}`);
+                  setEditingRef(false);
+                } catch (err) {
+                  toast.error(err instanceof Error && err.message ? err.message : "Could not change the reference");
+                } finally {
+                  setSavingRef(false);
+                }
+              }}
+            >
+              <input
+                autoFocus
+                value={refDraft}
+                onChange={(e) => setRefDraft(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Escape") setEditingRef(false); }}
+                className="min-w-0 flex-1 rounded-md px-2 py-1"
+                style={{ fontFamily: "JetBrains Mono, monospace", fontSize: "16px", color: "#0A1929" }}
+              />
+              <button type="submit" disabled={savingRef} title="Save" className="rounded p-1 hover:bg-white/10" style={{ color: "white" }}>
+                {savingRef ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+              </button>
+              <button type="button" onClick={() => setEditingRef(false)} title="Cancel" className="rounded p-1 hover:bg-white/10" style={{ color: "rgba(255,255,255,0.7)" }}>
+                <XCircle className="h-4 w-4" />
+              </button>
+            </form>
+          ) : (
+            <div className="flex items-center gap-2 mb-2">
+              <p
+                className="font-bold"
+                style={{ fontFamily: "JetBrains Mono, monospace", fontSize: "22px", color: "white", letterSpacing: "0.02em" }}
+              >
+                {enquiry.ref_number}
+              </p>
+              {canEditEnquiry && (
+                <button
+                  onClick={() => { setRefDraft(enquiry.ref_number); setEditingRef(true); }}
+                  title="Change reference number"
+                  className="rounded p-1 transition-colors hover:bg-white/10"
+                  style={{ color: "rgba(255,255,255,0.7)" }}
+                >
+                  <Pencil className="h-3.5 w-3.5" />
+                </button>
+              )}
+            </div>
+          )}
           {/* Status badge — glass style */}
           <div className="flex items-center gap-2 flex-wrap">
             <span

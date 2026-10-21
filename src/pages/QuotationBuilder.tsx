@@ -301,7 +301,7 @@ export default function QuotationBuilder() {
   const [lumpSumAmount, setLumpSumAmount] = useState("");
   const [clientFormat, setClientFormat] = useState(false);
   const [clientFormatNotes, setClientFormatNotes] = useState("");
-  /** Reference printed on this quotation's PDF. Blank = the enquiry's ref number. */
+  /** The enquiry's reference number, editable here; saved back to the enquiry. */
   const [refNumber, setRefNumber] = useState("");
 
   // Site conditions & site visit
@@ -350,6 +350,7 @@ export default function QuotationBuilder() {
         return;
       }
       setEnquiry(enq as any);
+      setRefNumber(enq.ref_number ?? "");
 
       const cl = await apiClient.get(`/clients/${enq.client_id}`);
       setClient(cl as any);
@@ -444,7 +445,6 @@ export default function QuotationBuilder() {
             try {
               const vn = JSON.parse((quot as any).variant_notes);
               if (vn.projectHeader) setProjectHeaderData(vn.projectHeader);
-              if (typeof vn.refNumber === "string") setRefNumber(vn.refNumber);
             } catch {}
           }
           if (enq.service_type === "consultancy") {
@@ -652,6 +652,12 @@ export default function QuotationBuilder() {
     if (!enquiry || !client) return;
     setSaving(true);
     try {
+      // Renaming the reference applies to the whole enquiry (lists, emails, PDFs).
+      const newRef = refNumber.trim();
+      if (newRef && newRef !== enquiry.ref_number) {
+        await apiClient.patch(`/enquiries/${enquiry.id}`, { ref_number: newRef });
+        setEnquiry({ ...enquiry, ref_number: newRef });
+      }
       const existing = await apiClient.get<Array<{ version: number; id: string; status: string }>>(
         "/quotations",
         { enquiry_id: enquiry.id },
@@ -693,9 +699,7 @@ export default function QuotationBuilder() {
       if (isBoq && templateType === TEMPLATE_IDS.BOQ_TYPE_2) {
         variantNotesObj.projectHeader = projectHeaderData;
       }
-      if (refNumber.trim() && refNumber.trim() !== enquiry.ref_number) {
-        variantNotesObj.refNumber = refNumber.trim();
-      }
+
       const variantNotes = Object.keys(variantNotesObj).length > 0 ? JSON.stringify(variantNotesObj) : null;
 
       await apiClient.post("/quotations", {
@@ -1393,7 +1397,7 @@ export default function QuotationBuilder() {
                   value={refNumber}
                   onChange={setRefNumber}
                   placeholder={enquiry.ref_number}
-                  helper={`Printed as "Ref:" on the quotation. Leave blank to use ${enquiry.ref_number}.`}
+                  helper="Generated automatically — type your own to rename this enquiry everywhere. Saved with the draft."
                 />
               </div>
 

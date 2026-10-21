@@ -30,6 +30,8 @@ type LeadForm = {
   source: string;
   city: string;
   requirement: string;
+  /** Optional custom reference; blank ⇒ auto GG-YYYY-NNNN. */
+  refNumber: string;
 };
 
 const EMPTY_LEAD: LeadForm = {
@@ -43,6 +45,7 @@ const EMPTY_LEAD: LeadForm = {
   source: "phone_call",
   city: "",
   requirement: "",
+  refNumber: "",
 };
 
 /** How the user chose to resolve a duplicate phone number. */
@@ -171,7 +174,7 @@ export function AddLeadDialog({
   const submitLead = async (resolution: DupResolution | null) => {
     setLeadSaving(true);
     try {
-      const { clientMode, clientId, name, phone, email, company, serviceType, source, city, requirement } = leadForm;
+      const { clientMode, clientId, name, phone, email, company, serviceType, source, city, requirement, refNumber } = leadForm;
 
       if (clientMode === "new" && (!name.trim() || !phone.trim() || !company.trim())) {
         throw new Error("Client name, company name and phone are required.");
@@ -239,6 +242,7 @@ export function AddLeadDialog({
       // Create enquiry record so it appears in Kanban immediately
       const initialStatus = isQuotation ? "pending" : serviceType === "soil_investigation" ? "intake_pending" : "new";
       const newEnquiry = await apiClient.post<{ id: string; ref_number: string }>("/enquiries", {
+        ref_number: refNumber.trim() || undefined,
         client_id: resolvedClient.id,
         site_city: city.trim(),
         service_type: serviceType,
@@ -456,6 +460,18 @@ export function AddLeadDialog({
                 style={{ fontSize: "14px" }}
               />
             </div>
+          </div>
+
+          {/* Reference number — automatic unless overridden */}
+          <div>
+            <label className="block text-[13px] font-medium mb-2" style={{ color: "#64748B" }}>Reference No.</label>
+            <Input
+              value={leadForm.refNumber}
+              onChange={(e) => setLeadForm((p) => ({ ...p, refNumber: e.target.value }))}
+              placeholder="Automatic (GG-YYYY-NNNN) — or type your own"
+              className="h-11 font-mono"
+              style={{ fontSize: "14px" }}
+            />
           </div>
 
           {/* Requirement */}

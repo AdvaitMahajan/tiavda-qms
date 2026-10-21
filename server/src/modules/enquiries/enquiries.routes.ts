@@ -1,12 +1,12 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { and, desc, eq, inArray, isNull, type SQL } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNull, ne, type SQL } from 'drizzle-orm';
 import { db, requireOrgId } from '../../db';
 import { clients, enquiries, enquiry_events, quotations } from '../../db/schema';
 import { authenticate } from '../../middleware/auth';
 import { requireEditor, requireNotViewer } from '../../middleware/roles';
 import { asyncHandler, getParam } from '../../lib/http';
-import { notFound } from '../../lib/errors';
+import { conflict, notFound } from '../../lib/errors';
 
 const STRUCTURE = z.enum(['residential', 'commercial', 'industrial', 'infrastructure', 'other']);
 const SOIL = z.enum(['soil', 'rock', 'mixed']);
@@ -15,7 +15,11 @@ const LEAD_STATUS = z.enum([
   'payment_received', 'mobilization_scheduled', 'job_active', 'confirmed', 'lost', 'inactive', 'completed',
 ]);
 
+// A custom reference number. Omitted/blank ⇒ the DB trigger generates GG-YYYY-NNNN.
+const REF_NUMBER = z.string().trim().min(1).max(40);
+
 const createSchema = z.object({
+  ref_number: REF_NUMBER.optional().or(z.literal('').transform(() => undefined)),
   client_id: z.string().uuid(),
   site_city: z.string().min(1),
   service_type: z.string().optional(),
@@ -33,6 +37,7 @@ const createSchema = z.object({
 
 // Whitelisted updatable columns (unknown keys are stripped by zod).
 const updateSchema = z.object({
+  ref_number: REF_NUMBER.optional(),
   status: LEAD_STATUS.optional(),
   assigned_to: z.string().uuid().nullable().optional(),
   service_type: z.string().optional(),
@@ -93,6 +98,14 @@ const eventSchema = z.object({
   to_status: LEAD_STATUS.nullish(),
   metadata: z.any().optional(),
 });
+
+/** Friendly 409 ahead of the unique index (org_id, ref_number); RLS scopes it to the org. */
+async function assertRefNumberFree(ref: string, exceptId?: string): Promise<void> {
+  const conds: SQL[] = [eq(enquiries.ref_number, ref)];
+  if (exceptId) conds.push(ne(enquiries.id, exceptId));
+  const taken = await db.select({ id: enquiries.id }).from(enquiries).where(and(...conds)).limit(1);
+  if (taken[0]) throw conflict(`Reference number ${ref} is already used by another enquiry`);
+}
 
 export const enquiriesRouter = Router();
 enquiriesRouter.use(authenticate);
@@ -182,6 +195,7 @@ enquiriesRouter.post(
   requireNotViewer,
   asyncHandler(async (req, res) => {
     const body = createSchema.parse(req.body);
+    if (body.ref_number) await assertRefNumberFree(body.ref_number);
     const rows = await db.insert(enquiries).values({ ...body, org_id: requireOrgId() }).returning();
     res.status(201).json(rows[0]);
   }),
@@ -194,6 +208,7 @@ enquiriesRouter.patch(
   requireNotViewer,
   asyncHandler(async (req, res) => {
     const body = updateSchema.parse(req.body);
+    if (body.ref_number) await assertRefNumberFree(body.ref_number, getParam(req, 'id'));
     const rows = await db.update(enquiries).set(body).where(eq(enquiries.id, getParam(req, 'id'))).returning();
     if (!rows[0]) throw notFound('Enquiry not found');
     res.json(rows[0]);

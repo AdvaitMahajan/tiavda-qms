@@ -301,6 +301,8 @@ export default function QuotationBuilder() {
   const [lumpSumAmount, setLumpSumAmount] = useState("");
   const [clientFormat, setClientFormat] = useState(false);
   const [clientFormatNotes, setClientFormatNotes] = useState("");
+  /** Reference printed on this quotation's PDF. Blank = the enquiry's ref number. */
+  const [refNumber, setRefNumber] = useState("");
 
   // Site conditions & site visit
   const [siteVisit, setSiteVisit] = useState<any>(null);
@@ -442,6 +444,7 @@ export default function QuotationBuilder() {
             try {
               const vn = JSON.parse((quot as any).variant_notes);
               if (vn.projectHeader) setProjectHeaderData(vn.projectHeader);
+              if (typeof vn.refNumber === "string") setRefNumber(vn.refNumber);
             } catch {}
           }
           if (enq.service_type === "consultancy") {
@@ -690,6 +693,9 @@ export default function QuotationBuilder() {
       if (isBoq && templateType === TEMPLATE_IDS.BOQ_TYPE_2) {
         variantNotesObj.projectHeader = projectHeaderData;
       }
+      if (refNumber.trim() && refNumber.trim() !== enquiry.ref_number) {
+        variantNotesObj.refNumber = refNumber.trim();
+      }
       const variantNotes = Object.keys(variantNotesObj).length > 0 ? JSON.stringify(variantNotesObj) : null;
 
       await apiClient.post("/quotations", {
@@ -773,7 +779,7 @@ export default function QuotationBuilder() {
         city: client.city,
       };
 
-      const enqObj = { ref_number: enquiry.ref_number };
+      const enqObj = { ref_number: refNumber.trim() || enquiry.ref_number };
 
       const validityDays = parseInt(allSettings.quotation_validity_days ?? "30", 10) || 30;
       const footerText = allSettings.quotation_footer_text || undefined;
@@ -1377,6 +1383,17 @@ export default function QuotationBuilder() {
                   value={variantLabel}
                   onChange={setVariantLabel}
                   placeholder="e.g. Standard, Budget, Premium"
+                />
+              </div>
+
+              {/* Reference number printed on the PDF */}
+              <div style={{ borderTop: "1px solid #F0F4F8", paddingTop: "12px" }}>
+                <FieldInput
+                  label="Reference No."
+                  value={refNumber}
+                  onChange={setRefNumber}
+                  placeholder={enquiry.ref_number}
+                  helper={`Printed as "Ref:" on the quotation. Leave blank to use ${enquiry.ref_number}.`}
                 />
               </div>
 

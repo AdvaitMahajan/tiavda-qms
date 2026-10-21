@@ -665,6 +665,15 @@ export default function EnquiryDetail() {
 
       const boqTemplate = isBoq ? getTemplateById(qTemplateType) : null;
 
+      // A reference number set in the quotation builder overrides the enquiry's.
+      let pdfEnquiry = enquiry;
+      try {
+        const vn = (q as any).variant_notes ? JSON.parse((q as any).variant_notes) : {};
+        if (typeof vn.refNumber === "string" && vn.refNumber.trim()) {
+          pdfEnquiry = { ...enquiry, ref_number: vn.refNumber.trim() };
+        }
+      } catch {}
+
       let pdfElement: React.ReactElement;
       if (boqTemplate) {
         let projectHeader;
@@ -676,7 +685,7 @@ export default function EnquiryDetail() {
           <BOQTemplatePDF
             quotation={q}
             client={client}
-            enquiry={enquiry}
+            enquiry={pdfEnquiry}
             template={boqTemplate}
             companyInfo={getCompanyInfoFromSettings(pdfSettingsMap)}
             projectHeader={projectHeader}
@@ -692,7 +701,7 @@ export default function EnquiryDetail() {
           <ConsultancyPDF
             quotation={q}
             client={client}
-            enquiry={enquiry}
+            enquiry={pdfEnquiry}
             companyInfo={getCompanyInfoFromSettings(pdfSettingsMap)}
             projectScope={projectScope}
             validityDays={validityDays}
@@ -707,7 +716,7 @@ export default function EnquiryDetail() {
           <QuotationPDF
             quotation={q}
             client={client}
-            enquiry={enquiry}
+            enquiry={pdfEnquiry}
             companyInfo={getCompanyInfoFromSettings(pdfSettingsMap)}
             validityDays={validityDays}
             terms={notes.length > 0 ? notes : undefined}

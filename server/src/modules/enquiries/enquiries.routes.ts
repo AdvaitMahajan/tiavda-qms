@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { and, desc, eq, inArray, isNull, ne, type SQL } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNull, ne, sql, type SQL } from 'drizzle-orm';
 import { db, requireOrgId } from '../../db';
 import { clients, enquiries, enquiry_events, quotations } from '../../db/schema';
 import { authenticate } from '../../middleware/auth';
@@ -107,6 +107,43 @@ async function assertRefNumberFree(ref: string, exceptId?: string): Promise<void
   if (taken[0]) throw conflict(`Reference number ${ref} is already used by another enquiry`);
 }
 
+// Statuses at or beyond "Won". Normally reached only through 'approved', but a
+// super_admin may jump straight past it, and that must still get an SI number.
+const WON_STATUSES = new Set([
+  'approved', 'payment_received', 'mobilization_scheduled', 'job_active', 'confirmed', 'completed',
+]);
+
+/**
+ * Give a Won enquiry its SI number (SI-YYYY-NNN, per org, IST year) — once.
+ * The per-org advisory lock serialises concurrent wins so two sites can't draw
+ * the same number; the unique index (org_id, si_number) is the backstop.
+ * Numbers are never reused: soft-deleted enquiries still count towards max().
+ */
+async function assignSiNumber(enquiryId: string): Promise<string | null> {
+  return db.transaction(async (tx) => {
+    const [row] = await tx
+      .select({ si: enquiries.si_number, org: enquiries.org_id })
+      .from(enquiries)
+      .where(eq(enquiries.id, enquiryId))
+      .for('update');
+    if (!row) return null;
+    if (row.si) return row.si;
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`si_number:${row.org}`}))`);
+    const year = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric' }).format(new Date());
+    const prefix = `SI-${year}-`;
+    const res = await tx.execute<{ next: number }>(sql`
+      select coalesce(max(substring(si_number from ${`^${prefix}(\\d+)$`})::int), 0) + 1 as next
+      from enquiries where org_id = ${row.org} and si_number like ${`${prefix}%`}`);
+    const next = Number(res.rows[0]?.next ?? 1);
+    const si = `${prefix}${String(next).padStart(3, '0')}`;
+    await tx
+      .update(enquiries)
+      .set({ si_number: si, si_assigned_at: new Date().toISOString() })
+      .where(eq(enquiries.id, enquiryId));
+    return si;
+  });
+}
+
 export const enquiriesRouter = Router();
 enquiriesRouter.use(authenticate);
 
@@ -211,6 +248,11 @@ enquiriesRouter.patch(
     if (body.ref_number) await assertRefNumberFree(body.ref_number, getParam(req, 'id'));
     const rows = await db.update(enquiries).set(body).where(eq(enquiries.id, getParam(req, 'id'))).returning();
     if (!rows[0]) throw notFound('Enquiry not found');
+    if (WON_STATUSES.has(rows[0].status) && !rows[0].si_number) {
+      const si = await assignSiNumber(rows[0].id);
+      res.json({ ...rows[0], si_number: si });
+      return;
+    }
     res.json(rows[0]);
   }),
 );

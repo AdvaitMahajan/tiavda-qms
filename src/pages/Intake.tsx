@@ -5,11 +5,7 @@ import { publicApi } from "@/lib/apiClient";
 import { getPublicStorageUrl } from "@/lib/storage";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import { motion, AnimatePresence } from "framer-motion";
-import {
-  Home, Building2, Factory, Landmark, HelpCircle, CheckCircle, AlertTriangle,
-  Loader2, ArrowLeft, Upload, X, FileIcon,
-} from "lucide-react";
+import { CheckCircle, AlertTriangle, Loader2, ArrowLeft, Upload, X, FileIcon } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 
@@ -20,43 +16,20 @@ type TokenData = {
   client_id: string | null;
 };
 
+type YesNo = "" | "yes" | "no";
+
 type FormData = {
-  contact_person: string;
-  gst_number: string;
+  client_name: string;
+  contact_phone: string;
   site_address: string;
   site_city: string;
-  site_state: string;
-  site_pincode: string;
-  google_maps_url: string;
+  google_location: string;
   structure_type: string;
-  num_bores: number;
-  expected_depth_m: string;
-  num_floors: number;
-  basement_floors: number;
-  height_of_basements: string;
-  num_podiums: number;
-  plot_fenced: string;
-  soil_type_hint: string;
-  distance_km: string;
-  site_access_types: string[];
-  water_available: string;
-  electricity_available: string;
-  security_arrangement: string;
-  permissions_obtained: string;
-  labour_accommodation_available: string;
-  labour_accommodation_permission: string;
-  water_quantity: string;
-  safety_required: boolean;
-  safety_requirements: string;
-  architect_name: string;
-  architect_phone: string;
-  architect_address: string;
-  rcc_consultant_name: string;
-  rcc_consultant_phone: string;
-  rcc_consultant_address: string;
-  remarks: string;
+  water_available: YesNo;
+  electricity_available: YesNo;
+  labour_accommodation: YesNo;
+  demobilisation_concerns: string;
   demobilization_consent: boolean;
-  site_access: string;
 };
 
 type SubmitIntakeRpcResult = {
@@ -66,42 +39,25 @@ type SubmitIntakeRpcResult = {
   error?: string | null;
 };
 
+// Values are the DB's structure_type enum.
 const STRUCTURE_TYPES = [
-  { value: "residential", label: "Residential", icon: Home },
-  { value: "commercial", label: "Commercial", icon: Building2 },
-  { value: "industrial", label: "Industrial", icon: Factory },
-  { value: "infrastructure", label: "Infrastructure", icon: Landmark },
-  { value: "other", label: "Other", icon: HelpCircle },
+  { value: "residential", label: "Residential (house / bungalow / apartment)" },
+  { value: "commercial", label: "Commercial (office / shop / mall)" },
+  { value: "industrial", label: "Industrial (factory / warehouse / plant)" },
+  { value: "infrastructure", label: "Infrastructure (bridge / road / tank / tower)" },
+  { value: "other", label: "Other" },
 ] as const;
 
 const initialForm: FormData = {
-  contact_person: "", gst_number: "",
-  site_address: "", site_city: "", site_state: "", site_pincode: "", google_maps_url: "",
-  structure_type: "", num_bores: 1, expected_depth_m: "",
-  num_floors: 0, basement_floors: 0, height_of_basements: "", num_podiums: 0, plot_fenced: "",
-  soil_type_hint: "",
-  distance_km: "",
-  site_access: "", site_access_types: [], water_available: "", electricity_available: "",
-  security_arrangement: "", permissions_obtained: "",
-  labour_accommodation_available: "", labour_accommodation_permission: "", water_quantity: "",
-  safety_required: false, safety_requirements: "",
-  architect_name: "", architect_phone: "", architect_address: "",
-  rcc_consultant_name: "", rcc_consultant_phone: "", rcc_consultant_address: "",
-  remarks: "", demobilization_consent: false,
+  client_name: "", contact_phone: "",
+  site_address: "", site_city: "", google_location: "",
+  structure_type: "",
+  water_available: "", electricity_available: "", labour_accommodation: "",
+  demobilisation_concerns: "", demobilization_consent: false,
 };
 
-const SITE_ACCESS_OPTIONS = [
-  "Main road access", "Internal road only", "Narrow lane",
-  "Unpaved/kutcha road", "Requires crane entry", "Restricted hours",
-];
-
-const WATER_QUANTITY_OPTIONS = [
-  { value: "sufficient", label: "Sufficient (500+ liters/day)" },
-  { value: "limited", label: "Limited (needs tanker backup)" },
-  { value: "none", label: "No water available on site" },
-];
-
 const MAPS_URL_PATTERN = /^https?:\/\/(www\.)?(google\.(com|co\.\w+)\/maps|goo\.gl\/maps|maps\.app\.goo\.gl|maps\.google\.com)/;
+const COORDS_PATTERN = /^\s*(-?\d{1,2}(?:\.\d+)?)\s*,\s*(-?\d{1,3}(?:\.\d+)?)\s*$/;
 
 function isValidMapsUrl(url: string): boolean {
   return MAPS_URL_PATTERN.test(url.trim());
@@ -126,44 +82,24 @@ function extractCoordsFromMapsUrl(url: string): { lat: number; lng: number } | n
   return null;
 }
 
-function getPublicClientDebugContext() {
-  return { client: PUBLIC_SUPABASE_CLIENT_NAME };
+/**
+ * "Google Location" accepts either a Maps link or raw "lat, lng". Returns the
+ * link to store and any coordinates found, or null if it is neither.
+ */
+function parseLocation(input: string): { url: string; coords: { lat: number; lng: number } | null } | null {
+  const v = input.trim();
+  const c = v.match(COORDS_PATTERN);
+  if (c) {
+    const lat = parseFloat(c[1]), lng = parseFloat(c[2]);
+    if (Math.abs(lat) > 90 || Math.abs(lng) > 180) return null;
+    return { url: `https://www.google.com/maps?q=${lat},${lng}`, coords: { lat, lng } };
+  }
+  if (isValidMapsUrl(v)) return { url: v, coords: extractCoordsFromMapsUrl(v) };
+  return null;
 }
 
-function ProgressIndicator({ current, completed }: { current: number; completed: number[] }) {
-  return (
-    <div className="flex items-center justify-center gap-0 mb-8">
-      {[1, 2, 3, 4].map((s, i) => {
-        const isActive = s === current;
-        const isComplete = completed.includes(s) && s !== current;
-        return (
-          <div key={s} className="flex items-center">
-            <div
-              className="flex h-10 w-10 items-center justify-center rounded-full text-sm font-semibold transition-all"
-              style={{
-                background: isActive
-                  ? "linear-gradient(135deg,#1565C0,#2979FF)"
-                  : isComplete
-                  ? "linear-gradient(135deg,#00897B,#26A69A)"
-                  : "#FFFFFF",
-                color: isActive || isComplete ? "white" : "#546E7A",
-                border: isActive || isComplete ? "none" : "2px solid #E0E7EF",
-                boxShadow: isActive ? "0 4px 16px rgba(21,101,192,0.35)" : isComplete ? "0 4px 12px rgba(0,137,123,0.25)" : "none",
-              }}
-            >
-              {isComplete ? <CheckCircle style={{ width: "16px", height: "16px" }} /> : s}
-            </div>
-            {i < 3 && (
-              <div
-                className="h-0.5 w-14 sm:w-20 transition-all"
-                style={{ background: completed.includes(s) ? "#00897B" : "#E0E7EF" }}
-              />
-            )}
-          </div>
-        );
-      })}
-    </div>
-  );
+function getPublicClientDebugContext() {
+  return { client: PUBLIC_SUPABASE_CLIENT_NAME };
 }
 
 function ErrorCard({ title, message }: { title: string; message: string }) {
@@ -199,8 +135,6 @@ export default function Intake() {
   const [tokenData, setTokenData] = useState<TokenData | null>(null);
   const [tokenError, setTokenError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [step, setStep] = useState(1);
-  const [direction, setDirection] = useState(1);
   const [form, setForm] = useState<FormData>(initialForm);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
@@ -208,9 +142,7 @@ export default function Intake() {
   const [refNumber, setRefNumber] = useState("");
   const [submittedEnquiryId, setSubmittedEnquiryId] = useState<string | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
-  const [files, setFiles] = useState<File[]>([]);
   const [layoutFiles, setLayoutFiles] = useState<File[]>([]);
-  const [uploading, setUploading] = useState(false);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
@@ -248,104 +180,76 @@ export default function Intake() {
     setForm((prev) => ({ ...prev, ...patch }));
   }, []);
 
-  const validateStep = (s: number): boolean => {
+  const validate = (): boolean => {
     const errs: Record<string, string> = {};
-    if (s === 1) {
-      if (!form.contact_person.trim()) errs.contact_person = "Contact person is required";
-      // GST is optional (residential / individual clients often have no GSTIN);
-      // validate the format only when provided.
-      if (form.gst_number.trim() && !/^\d{2}[A-Z]{5}\d{4}[A-Z][A-Z\d][Z][A-Z\d]$/.test(form.gst_number.trim())) {
-        errs.gst_number = "Invalid GST format (e.g. 22AAAAA0000A1Z5)";
-      }
-      if (!form.site_address.trim()) errs.site_address = "Site address is required";
-      // Site location (Google Maps link) is OPTIONAL — only validate the format
-      // when the client actually provides one.
-      if (form.google_maps_url.trim() && !isValidMapsUrl(form.google_maps_url)) {
-        errs.google_maps_url = "Please enter a valid Google Maps link";
-      }
-      if (!form.site_city.trim()) errs.site_city = "City is required";
-      if (form.site_pincode && !/^\d*$/.test(form.site_pincode)) errs.site_pincode = "Pincode must be numeric";
+    if (!form.client_name.trim()) errs.client_name = "Client name is required";
+    if (form.contact_phone.replace(/\D/g, "").length < 10) errs.contact_phone = "Enter a valid contact number";
+    if (!form.site_address.trim()) errs.site_address = "Site address is required";
+    if (!form.site_city.trim()) errs.site_city = "City is required";
+    if (form.google_location.trim() && !parseLocation(form.google_location)) {
+      errs.google_location = "Paste a Google Maps link, or coordinates like 18.5204, 73.8567";
     }
-    if (s === 2) {
-      if (!form.structure_type) errs.structure_type = "Please select a structure type";
-      if (form.num_bores < 1) errs.num_bores = "Enter at least 1 bore";
-    }
-    // Step 4 attachments (site photographs + layout plan) are all OPTIONAL.
+    if (!form.structure_type) errs.structure_type = "Select the type of structure";
+    if (!form.water_available) errs.water_available = "Please choose Yes or No";
+    if (!form.electricity_available) errs.electricity_available = "Please choose Yes or No";
+    if (!form.labour_accommodation) errs.labour_accommodation = "Please choose Yes or No";
+    if (!form.demobilization_consent) errs.demobilization_consent = "Please confirm to continue";
     setErrors(errs);
-    return Object.keys(errs).length === 0;
+    if (Object.keys(errs).length) {
+      toast.error("Please complete the highlighted fields");
+      return false;
+    }
+    return true;
   };
 
-  const goNext = () => { if (!validateStep(step)) return; setDirection(1); setStep((s) => Math.min(4, s + 1)); };
-  const goBack = () => { setDirection(-1); setStep((s) => Math.max(1, s - 1)); };
-
   const handleSubmit = async () => {
-    if (!validateStep(step) || !tokenData || !tokenStr) return;
+    if (!validate() || !tokenData || !tokenStr) return;
     setSubmitting(true);
     try {
       const clientDebug = getPublicClientDebugContext();
-      const extendedData: Record<string, any> = {};
-      if (form.distance_km) extendedData.distance_km = Number(form.distance_km);
-      if (form.site_access) extendedData.site_access = form.site_access;
-      if (form.water_available) extendedData.water_available = form.water_available === "yes";
-      if (form.electricity_available) extendedData.electricity_available = form.electricity_available === "yes";
-      if (form.security_arrangement) extendedData.security_arrangement = form.security_arrangement === "yes";
-      if (form.permissions_obtained) extendedData.permissions_obtained = form.permissions_obtained === "yes";
-      if (form.labour_accommodation_available) {
-        const hasSpace = form.labour_accommodation_available === "yes";
-        extendedData.labour_accommodation_available = hasSpace;
-        // Permission only applies when space exists; otherwise leave it unanswered.
-        if (hasSpace && form.labour_accommodation_permission) {
-          extendedData.labour_accommodation_permission = form.labour_accommodation_permission === "yes";
+      const name = form.client_name.trim();
+      const phone = form.contact_phone.trim();
+      // No separate column for the contact's number — keep it with the name so
+      // it shows wherever the contact person does.
+      const extendedData: Record<string, unknown> = {
+        contact_person: phone ? `${name} — ${phone}` : name,
+        water_available: form.water_available === "yes",
+        electricity_available: form.electricity_available === "yes",
+        // One question covers both space and permission.
+        labour_accommodation_available: form.labour_accommodation === "yes",
+        labour_accommodation_permission: form.labour_accommodation === "yes",
+        demobilization_consent: form.demobilization_consent,
+      };
+      const loc = form.google_location.trim() ? parseLocation(form.google_location) : null;
+      if (loc) {
+        extendedData.google_maps_url = loc.url;
+        if (loc.coords) {
+          extendedData.latitude = loc.coords.lat;
+          extendedData.longitude = loc.coords.lng;
         }
       }
-      if (form.contact_person.trim()) extendedData.contact_person = form.contact_person.trim();
-      if (form.gst_number.trim()) extendedData.gst_number = form.gst_number.trim();
-      extendedData.safety_required = form.safety_required;
-      if (form.safety_required && form.safety_requirements.trim()) extendedData.safety_requirements = form.safety_requirements.trim();
-      if (form.architect_name.trim()) extendedData.architect_name = form.architect_name.trim();
-      if (form.architect_phone.trim()) extendedData.architect_phone = form.architect_phone.trim();
-      if (form.architect_address.trim()) extendedData.architect_address = form.architect_address.trim();
-      if (form.rcc_consultant_name.trim()) extendedData.rcc_consultant_name = form.rcc_consultant_name.trim();
-      if (form.rcc_consultant_phone.trim()) extendedData.rcc_consultant_phone = form.rcc_consultant_phone.trim();
-      if (form.rcc_consultant_address.trim()) extendedData.rcc_consultant_address = form.rcc_consultant_address.trim();
-      if (form.google_maps_url.trim()) {
-        extendedData.google_maps_url = form.google_maps_url.trim();
-        const coords = extractCoordsFromMapsUrl(form.google_maps_url);
-        if (coords) {
-          extendedData.latitude = coords.lat;
-          extendedData.longitude = coords.lng;
-        }
-      }
-      if (form.height_of_basements) extendedData.height_of_basements = Number(form.height_of_basements);
-      if (form.num_podiums) extendedData.num_podiums = form.num_podiums;
-      if (form.plot_fenced) extendedData.plot_fenced = form.plot_fenced;
-      if (form.site_access_types.length > 0) extendedData.site_access_types = form.site_access_types;
-      if (form.water_quantity) extendedData.water_quantity = form.water_quantity;
-      extendedData.demobilization_consent = form.demobilization_consent;
 
-      let remarksPayload = form.remarks.trim();
-      if (Object.keys(extendedData).length > 0) {
-        remarksPayload = (remarksPayload ? remarksPayload + "\n" : "") +
-          "---EXTENDED_DATA---\n" + JSON.stringify(extendedData);
-      }
+      const concerns = form.demobilisation_concerns.trim();
+      const remarksPayload =
+        (concerns ? `Demobilisation concerns: ${concerns}\n` : "") +
+        "---EXTENDED_DATA---\n" + JSON.stringify(extendedData);
 
       const submitPayload = {
         token: tokenStr,
         site_address: form.site_address.trim(),
         site_city: form.site_city.trim(),
-        site_state: form.site_state.trim() || null,
-        site_pincode: form.site_pincode.trim() || null,
+        site_state: null,
+        site_pincode: null,
         structure_type: form.structure_type,
-        num_floors: form.num_floors,
-        basement_floors: form.basement_floors,
-        num_bores: form.num_bores,
-        expected_depth_m: form.expected_depth_m ? Number(form.expected_depth_m) : null,
-        soil_type_hint: form.soil_type_hint || null,
-        remarks: remarksPayload || null,
-        // H8: send the structured data so the API/RPC can populate typed columns
-        // (the blob in remarks is kept for back-compat with older consumers).
+        num_floors: null,
+        basement_floors: null,
+        // Required by the DB; the team sets the real bore count in the quotation builder.
+        num_bores: 0,
+        expected_depth_m: null,
+        soil_type_hint: null,
+        remarks: remarksPayload,
         extended: extendedData,
-        client_name: form.contact_person || undefined,
+        client_name: name || undefined,
       };
 
       console.log("[Intake] POST /public/intake/submit", {
@@ -364,7 +268,7 @@ export default function Intake() {
 
       // Upload attachments to the public intake-uploads bucket, then attach the
       // metadata to the submission via a scoped RPC (anon-safe; no direct table write).
-      const allUploadFiles = [...files, ...layoutFiles];
+      const allUploadFiles = layoutFiles;
       if (allUploadFiles.length > 0 && result.ref_number && result.submission_id) {
         try {
           const sitePhotos: { name: string; url: string; size: number }[] = [];
@@ -383,10 +287,6 @@ export default function Intake() {
             }
           };
 
-          for (const file of files) {
-            const r = await uploadOne(file, "photos");
-            if (r) sitePhotos.push(r);
-          }
           for (const file of layoutFiles) {
             const r = await uploadOne(file, "layouts");
             if (r) layoutPlans.push(r);
@@ -479,12 +379,37 @@ export default function Intake() {
     );
   }
 
-  const completedSteps = Array.from({ length: step - 1 }, (_, i) => i + 1);
-  const slideVariants = {
-    enter: (d: number) => ({ x: d > 0 ? 300 : -300, opacity: 0 }),
-    center: { x: 0, opacity: 1 },
-    exit: (d: number) => ({ x: d > 0 ? -300 : 300, opacity: 0 }),
-  };
+  const labelStyle = { fontSize: "12px", fontWeight: 600, color: "#546E7A", textTransform: "uppercase" as const, letterSpacing: "0.05em" };
+  const fieldBorder = (key: string) => ({ borderColor: errors[key] ? "#C62828" : "#E0E7EF", borderRadius: "10px" });
+  const Err = ({ k }: { k: string }) =>
+    errors[k] ? <p className="mt-1 text-[13px]" style={{ color: "#C62828" }}>{errors[k]}</p> : null;
+  const Req = () => <span style={{ color: "#C62828" }}>*</span>;
+
+  const YesNoField = ({ k, label }: { k: "water_available" | "electricity_available" | "labour_accommodation"; label: string }) => (
+    <div>
+      <label className="mb-1.5 block" style={labelStyle}>{label} <Req /></label>
+      <div className="flex gap-2">
+        {(["yes", "no"] as const).map((v) => (
+          <button
+            key={v}
+            type="button"
+            onClick={() => updateForm({ [k]: v } as Partial<FormData>)}
+            className="flex-1 rounded-xl py-2.5 text-sm font-semibold transition-all"
+            style={{
+              border: `1.5px solid ${form[k] === v ? (v === "yes" ? "#15673A" : "#B91C1C") : errors[k] ? "#C62828" : "#E0E7EF"}`,
+              background: form[k] === v ? (v === "yes" ? "#DCFCE7" : "#FEE2E2") : "#FFFFFF",
+              color: form[k] === v ? (v === "yes" ? "#15673A" : "#B91C1C") : "#546E7A",
+            }}
+          >
+            {v === "yes" ? "Yes" : "No"}
+          </button>
+        ))}
+      </div>
+      <Err k={k} />
+    </div>
+  );
+
+  const loc = form.google_location.trim() ? parseLocation(form.google_location) : null;
 
   return (
     <div className="flex min-h-screen flex-col">
@@ -495,8 +420,6 @@ export default function Intake() {
             onClick={() => navigate(-1)}
             className="flex items-center gap-2 text-sm transition-colors"
             style={{ color: "#546E7A" }}
-            onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.color = "#0A1929"; }}
-            onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.color = "#546E7A"; }}
           >
             <ArrowLeft className="w-4 h-4" /> Back
           </button>
@@ -515,787 +438,207 @@ export default function Intake() {
         <h1 className="font-bold text-xl text-white" style={{ fontFamily: "Sora, sans-serif" }}>
           Site Investigation
         </h1>
-        <p className="text-sm" style={{ color: "rgba(255,255,255,0.6)" }}>Project Information Form</p>
+        <p className="text-sm" style={{ color: "rgba(255,255,255,0.6)" }}>Site Information Form — takes about 2 minutes</p>
       </div>
 
-      {/* Main content */}
+      {/* Main content — everything on one page */}
       <div
         className="flex flex-1 justify-center p-4 sm:p-8"
         style={{ background: "linear-gradient(135deg,#F0F4F8 0%,#E8EEF5 100%)" }}
       >
-        <div className="w-full" style={{ maxWidth: "680px" }}>
-          <ProgressIndicator current={step} completed={completedSteps} />
-
-          {/* Form card */}
-          <div
-            style={{
-              background: "#FFFFFF",
-              borderRadius: "20px",
-              padding: "32px",
-              boxShadow: "0 4px 24px rgba(0,0,0,0.08)",
-              border: "1px solid #E0E7EF",
-            }}
-          >
-            <AnimatePresence mode="wait" custom={direction}>
-              <motion.div
-                key={step}
-                custom={direction}
-                variants={slideVariants}
-                initial="enter"
-                animate="center"
-                exit="exit"
-                transition={{ duration: 0.25 }}
-              >
-                {step === 1 && (
-                  <div className="space-y-5">
-                    <h2 className="font-bold text-xl" style={{ fontFamily: "Sora, sans-serif", color: "#0A1929" }}>
-                      Site Details
-                    </h2>
-                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                      <div>
-                        <label className="mb-1.5 block" style={{ fontSize: "12px", fontWeight: 600, color: "#546E7A", textTransform: "uppercase", letterSpacing: "0.05em" }}>
-                          Contact Person <span style={{ color: "#C62828" }}>*</span>
-                        </label>
-                        <Input
-                          value={form.contact_person}
-                          onChange={(e) => updateForm({ contact_person: e.target.value })}
-                          placeholder="Site contact person name"
-                          style={{ borderColor: errors.contact_person ? "#C62828" : "#E0E7EF", borderRadius: "10px" }}
-                        />
-                        {errors.contact_person && <p className="mt-1 text-[13px]" style={{ color: "#C62828" }}>{errors.contact_person}</p>}
-                      </div>
-                      <div>
-                        <label className="mb-1.5 block" style={{ fontSize: "12px", fontWeight: 600, color: "#546E7A", textTransform: "uppercase", letterSpacing: "0.05em" }}>
-                          GST Number
-                        </label>
-                        <Input
-                          value={form.gst_number}
-                          onChange={(e) => updateForm({ gst_number: e.target.value.toUpperCase() })}
-                          placeholder="22AAAAA0000A1Z5"
-                          maxLength={15}
-                          style={{ borderColor: errors.gst_number ? "#C62828" : "#E0E7EF", borderRadius: "10px" }}
-                        />
-                        {errors.gst_number && <p className="mt-1 text-[13px]" style={{ color: "#C62828" }}>{errors.gst_number}</p>}
-                      </div>
-                    </div>
-                    <div>
-                      <label className="mb-1.5 block" style={{ fontSize: "12px", fontWeight: 600, color: "#546E7A", textTransform: "uppercase", letterSpacing: "0.05em" }}>
-                        Site Address <span style={{ color: "#C62828" }}>*</span>
-                      </label>
-                      <Textarea
-                        placeholder="Full site address including landmark"
-                        value={form.site_address}
-                        onChange={(e) => updateForm({ site_address: e.target.value })}
-                        rows={3}
-                        style={{ borderColor: "#E0E7EF", borderRadius: "10px" }}
-                      />
-                      {errors.site_address && <p className="mt-1 text-[13px]" style={{ color: "#C62828" }}>{errors.site_address}</p>}
-                    </div>
-                    <div>
-                      <label className="mb-1.5 block" style={{ fontSize: "12px", fontWeight: 600, color: "#546E7A", textTransform: "uppercase", letterSpacing: "0.05em" }}>
-                        Google Maps Link <span style={{ color: "#94A3B8", fontWeight: 500 }}>(optional)</span>
-                      </label>
-                      <Input
-                        value={form.google_maps_url}
-                        onChange={(e) => updateForm({ google_maps_url: e.target.value })}
-                        placeholder="Paste Google Maps URL of the site location"
-                        style={{
-                          borderColor: errors.google_maps_url ? "#C62828" : (form.google_maps_url.trim() && !isValidMapsUrl(form.google_maps_url) ? "#92400E" : "#E0E7EF"),
-                          borderRadius: "10px",
-                        }}
-                      />
-                      {errors.google_maps_url && <p className="mt-1 text-[13px]" style={{ color: "#C62828" }}>{errors.google_maps_url}</p>}
-                      {form.google_maps_url.trim() && !isValidMapsUrl(form.google_maps_url) && (
-                        <p className="mt-1 text-[12px]" style={{ color: "#92400E" }}>
-                          Please enter a valid Google Maps URL (google.com/maps, goo.gl/maps, or maps.app.goo.gl)
-                        </p>
-                      )}
-                      {form.google_maps_url.trim() && isValidMapsUrl(form.google_maps_url) && (() => {
-                        const coords = extractCoordsFromMapsUrl(form.google_maps_url);
-                        return coords ? (
-                          <p className="mt-1 text-[12px] font-medium" style={{ color: "#15673A" }}>
-                            Coordinates detected: {coords.lat.toFixed(6)}, {coords.lng.toFixed(6)}
-                          </p>
-                        ) : (
-                          <p className="mt-1 text-[12px]" style={{ color: "#546E7A" }}>
-                            Valid Maps link — coordinates will be resolved from the URL
-                          </p>
-                        );
-                      })()}
-                      {!form.google_maps_url.trim() && (
-                        <p className="mt-1 text-[12px]" style={{ color: "#546E7A" }}>
-                          Optional — sharing the exact pin location from Google Maps helps us identify the site accurately
-                        </p>
-                      )}
-                    </div>
-                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-                      <div>
-                        <label className="mb-1.5 block" style={{ fontSize: "12px", fontWeight: 600, color: "#546E7A", textTransform: "uppercase", letterSpacing: "0.05em" }}>
-                          City <span style={{ color: "#C62828" }}>*</span>
-                        </label>
-                        <Input value={form.site_city} onChange={(e) => updateForm({ site_city: e.target.value })} style={{ borderColor: "#E0E7EF", borderRadius: "10px" }} />
-                        {errors.site_city && <p className="mt-1 text-[13px]" style={{ color: "#C62828" }}>{errors.site_city}</p>}
-                      </div>
-                      <div>
-                        <label className="mb-1.5 block" style={{ fontSize: "12px", fontWeight: 600, color: "#546E7A", textTransform: "uppercase", letterSpacing: "0.05em" }}>
-                          State
-                        </label>
-                        <Input value={form.site_state} onChange={(e) => updateForm({ site_state: e.target.value })} style={{ borderColor: "#E0E7EF", borderRadius: "10px" }} />
-                      </div>
-                      <div>
-                        <label className="mb-1.5 block" style={{ fontSize: "12px", fontWeight: 600, color: "#546E7A", textTransform: "uppercase", letterSpacing: "0.05em" }}>
-                          Pincode
-                        </label>
-                        <Input
-                          value={form.site_pincode}
-                          onChange={(e) => updateForm({ site_pincode: e.target.value.replace(/\D/g, "").slice(0, 6) })}
-                          inputMode="numeric"
-                          style={{ borderColor: "#E0E7EF", borderRadius: "10px" }}
-                        />
-                        {errors.site_pincode && <p className="mt-1 text-[13px]" style={{ color: "#C62828" }}>{errors.site_pincode}</p>}
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {step === 2 && (
-                  <div className="space-y-5">
-                    <h2 className="font-bold text-xl" style={{ fontFamily: "Sora, sans-serif", color: "#0A1929" }}>
-                      Project Details
-                    </h2>
-                    <div>
-                      <label className="mb-2 block" style={{ fontSize: "12px", fontWeight: 600, color: "#546E7A", textTransform: "uppercase", letterSpacing: "0.05em" }}>
-                        Structure Type <span style={{ color: "#C62828" }}>*</span>
-                      </label>
-                      <div className="grid grid-cols-2 gap-3">
-                        {STRUCTURE_TYPES.map(({ value, label, icon: Icon }) => {
-                          const isSelected = form.structure_type === value;
-                          return (
-                            <button
-                              key={value}
-                              type="button"
-                              onClick={() => updateForm({ structure_type: value })}
-                              className="flex flex-col items-center gap-2 rounded-2xl p-4 transition-all relative"
-                              style={{
-                                border: isSelected ? "2px solid #1565C0" : "2px solid #E0E7EF",
-                                background: isSelected ? "#EBF2FF" : "#FFFFFF",
-                              }}
-                              onMouseEnter={(e) => {
-                                if (!isSelected) {
-                                  (e.currentTarget as HTMLElement).style.borderColor = "#1565C0";
-                                  (e.currentTarget as HTMLElement).style.background = "#F0F6FF";
-                                }
-                              }}
-                              onMouseLeave={(e) => {
-                                if (!isSelected) {
-                                  (e.currentTarget as HTMLElement).style.borderColor = "#E0E7EF";
-                                  (e.currentTarget as HTMLElement).style.background = "#FFFFFF";
-                                }
-                              }}
-                            >
-                              {isSelected && (
-                                <span
-                                  className="absolute top-2 right-2 flex items-center justify-center rounded-full w-5 h-5"
-                                  style={{ background: "#1565C0" }}
-                                >
-                                  <CheckCircle style={{ width: "12px", height: "12px", color: "white" }} />
-                                </span>
-                              )}
-                              <Icon
-                                className="h-7 w-7"
-                                style={{ color: isSelected ? "#1565C0" : "#546E7A" }}
-                              />
-                              <span
-                                className="text-sm font-medium"
-                                style={{ color: isSelected ? "#1565C0" : "#0A1929" }}
-                              >
-                                {label}
-                              </span>
-                            </button>
-                          );
-                        })}
-                      </div>
-                      {errors.structure_type && <p className="mt-1 text-[13px]" style={{ color: "#C62828" }}>{errors.structure_type}</p>}
-                    </div>
-                    <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
-                      <div>
-                        <label className="mb-2 block" style={{ fontSize: "12px", fontWeight: 600, color: "#546E7A", textTransform: "uppercase", letterSpacing: "0.05em" }}>
-                          Number of Bores <span style={{ color: "#C62828" }}>*</span>
-                        </label>
-                        <Input
-                          type="number"
-                          min={1}
-                          placeholder="e.g. 4"
-                          value={form.num_bores === 0 ? "" : String(form.num_bores)}
-                          onChange={(e) => {
-                            const raw = e.target.value;
-                            const parsed = parseInt(raw, 10);
-                            updateForm({ num_bores: raw === "" || isNaN(parsed) ? 0 : Math.max(0, parsed) });
-                          }}
-                          style={{ borderColor: errors.num_bores ? "#C62828" : "#E0E7EF", borderRadius: "10px" }}
-                        />
-                        {errors.num_bores && <p className="mt-1 text-[13px]" style={{ color: "#C62828" }}>{errors.num_bores}</p>}
-                      </div>
-                      <div>
-                        <label className="mb-1.5 block" style={{ fontSize: "12px", fontWeight: 600, color: "#546E7A", textTransform: "uppercase", letterSpacing: "0.05em" }}>
-                          Expected Depth (metres)
-                        </label>
-                        <Input
-                          type="number"
-                          min={1}
-                          max={500}
-                          placeholder="e.g. 15"
-                          value={form.expected_depth_m}
-                          onChange={(e) => updateForm({ expected_depth_m: e.target.value })}
-                          style={{ borderColor: "#E0E7EF", borderRadius: "10px" }}
-                        />
-                      </div>
-                      <div>
-                        <label className="mb-2 block" style={{ fontSize: "12px", fontWeight: 600, color: "#546E7A", textTransform: "uppercase", letterSpacing: "0.05em" }}>
-                          Floors above ground
-                        </label>
-                        <Input
-                          type="number"
-                          min={0}
-                          placeholder="e.g. 12"
-                          value={form.num_floors === 0 ? "" : String(form.num_floors)}
-                          onChange={(e) => {
-                            const raw = e.target.value;
-                            const parsed = parseInt(raw, 10);
-                            updateForm({ num_floors: raw === "" || isNaN(parsed) ? 0 : Math.max(0, parsed) });
-                          }}
-                          style={{ borderColor: "#E0E7EF", borderRadius: "10px" }}
-                        />
-                      </div>
-                      <div>
-                        <label className="mb-2 block" style={{ fontSize: "12px", fontWeight: 600, color: "#546E7A", textTransform: "uppercase", letterSpacing: "0.05em" }}>
-                          Basement floors
-                        </label>
-                        <Input
-                          type="number"
-                          min={0}
-                          placeholder="e.g. 2"
-                          value={form.basement_floors === 0 ? "" : String(form.basement_floors)}
-                          onChange={(e) => {
-                            const raw = e.target.value;
-                            const parsed = parseInt(raw, 10);
-                            updateForm({ basement_floors: raw === "" || isNaN(parsed) ? 0 : Math.max(0, parsed) });
-                          }}
-                          style={{ borderColor: "#E0E7EF", borderRadius: "10px" }}
-                        />
-                      </div>
-                      <div>
-                        <label className="mb-1.5 block" style={{ fontSize: "12px", fontWeight: 600, color: "#546E7A", textTransform: "uppercase", letterSpacing: "0.05em" }}>
-                          Height of Basements (m)
-                        </label>
-                        <Input
-                          type="number"
-                          min={0}
-                          placeholder="e.g. 3.5"
-                          value={form.height_of_basements}
-                          onChange={(e) => updateForm({ height_of_basements: e.target.value })}
-                          style={{ borderColor: "#E0E7EF", borderRadius: "10px" }}
-                        />
-                      </div>
-                      <div>
-                        <label className="mb-2 block" style={{ fontSize: "12px", fontWeight: 600, color: "#546E7A", textTransform: "uppercase", letterSpacing: "0.05em" }}>
-                          Number of Podiums
-                        </label>
-                        <Input
-                          type="number"
-                          min={0}
-                          placeholder="e.g. 1"
-                          value={form.num_podiums === 0 ? "" : String(form.num_podiums)}
-                          onChange={(e) => {
-                            const raw = e.target.value;
-                            const parsed = parseInt(raw, 10);
-                            updateForm({ num_podiums: raw === "" || isNaN(parsed) ? 0 : Math.max(0, parsed) });
-                          }}
-                          style={{ borderColor: "#E0E7EF", borderRadius: "10px" }}
-                        />
-                      </div>
-                      <div>
-                        <label className="mb-2 block" style={{ fontSize: "12px", fontWeight: 600, color: "#546E7A", textTransform: "uppercase", letterSpacing: "0.05em" }}>
-                          Is the plot fenced?
-                        </label>
-                        <div className="flex gap-2">
-                          {["yes", "no", "partial"].map((opt) => (
-                            <button
-                              key={opt}
-                              type="button"
-                              onClick={() => updateForm({ plot_fenced: opt })}
-                              className="px-4 py-2 rounded-lg text-[13px] font-semibold capitalize transition-all"
-                              style={{
-                                background: form.plot_fenced === opt ? "#DBEAFE" : "#F0F4F8",
-                                color: form.plot_fenced === opt ? "#1565C0" : "#546E7A",
-                                border: form.plot_fenced === opt ? "1.5px solid #93C5FD" : "1.5px solid #E0E7EF",
-                              }}
-                            >
-                              {opt}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                      <div>
-                        <label className="mb-1.5 block" style={{ fontSize: "12px", fontWeight: 600, color: "#546E7A", textTransform: "uppercase", letterSpacing: "0.05em" }}>
-                          Distance from Pune (km)
-                        </label>
-                        <Input
-                          type="number"
-                          min={0}
-                          max={2000}
-                          placeholder="e.g. 50"
-                          value={form.distance_km}
-                          onChange={(e) => updateForm({ distance_km: e.target.value })}
-                          style={{ borderColor: "#E0E7EF", borderRadius: "10px" }}
-                        />
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {step === 3 && (
-                  <div className="space-y-5">
-                    <h2 className="font-bold text-xl" style={{ fontFamily: "Sora, sans-serif", color: "#0A1929" }}>
-                      Site Conditions
-                    </h2>
-                    <div>
-                      <label className="mb-2 block" style={{ fontSize: "12px", fontWeight: 600, color: "#546E7A", textTransform: "uppercase", letterSpacing: "0.05em" }}>
-                        Soil Type (optional)
-                      </label>
-                      <div className="flex gap-2">
-                        {(["soil", "rock", "mixed"] as const).map((t) => {
-                          const isSelected = form.soil_type_hint === t;
-                          return (
-                            <button
-                              key={t}
-                              type="button"
-                              onClick={() => updateForm({ soil_type_hint: form.soil_type_hint === t ? "" : t })}
-                              className="rounded-xl px-5 py-2 text-sm font-medium capitalize transition-all"
-                              style={{
-                                border: isSelected ? "none" : "1.5px solid #E0E7EF",
-                                background: isSelected ? "linear-gradient(135deg,#0A1929,#1565C0)" : "#FFFFFF",
-                                color: isSelected ? "white" : "#0A1929",
-                              }}
-                              onMouseEnter={(e) => {
-                                if (!isSelected) {
-                                  (e.currentTarget as HTMLElement).style.borderColor = "#1565C0";
-                                  (e.currentTarget as HTMLElement).style.background = "#EBF2FF";
-                                }
-                              }}
-                              onMouseLeave={(e) => {
-                                if (!isSelected) {
-                                  (e.currentTarget as HTMLElement).style.borderColor = "#E0E7EF";
-                                  (e.currentTarget as HTMLElement).style.background = "#FFFFFF";
-                                }
-                              }}
-                            >
-                              {t}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-                    <div>
-                      <label className="mb-2 block" style={{ fontSize: "12px", fontWeight: 600, color: "#546E7A", textTransform: "uppercase", letterSpacing: "0.05em" }}>
-                        Site Access (select all that apply)
-                      </label>
-                      <div className="flex flex-wrap gap-2">
-                        {SITE_ACCESS_OPTIONS.map((opt) => {
-                          const isSelected = form.site_access_types.includes(opt);
-                          return (
-                            <button
-                              key={opt}
-                              type="button"
-                              onClick={() => {
-                                const updated = isSelected
-                                  ? form.site_access_types.filter((a) => a !== opt)
-                                  : [...form.site_access_types, opt];
-                                updateForm({ site_access_types: updated });
-                              }}
-                              className="px-3 py-1.5 rounded-lg text-[13px] font-medium transition-all"
-                              style={{
-                                background: isSelected ? "#DBEAFE" : "#F0F4F8",
-                                color: isSelected ? "#1565C0" : "#546E7A",
-                                border: isSelected ? "1.5px solid #93C5FD" : "1.5px solid #E0E7EF",
-                              }}
-                            >
-                              {opt}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-                    <div className="grid grid-cols-2 gap-4">
-                      {([
-                        ["water_available", "Water Available"],
-                        ["electricity_available", "Electricity Available"],
-                        ["security_arrangement", "Security Arrangement"],
-                        ["permissions_obtained", "Permissions Obtained"],
-                        ["labour_accommodation_available", "Space for Labour Accommodation"],
-                      ] as const).map(([key, label]) => (
-                        <div key={key}>
-                          <label className="mb-1.5 block" style={{ fontSize: "12px", fontWeight: 600, color: "#546E7A", textTransform: "uppercase", letterSpacing: "0.05em" }}>
-                            {label}
-                          </label>
-                          <div className="flex gap-2">
-                            {["yes", "no"].map((v) => {
-                              const isSelected = form[key] === v;
-                              return (
-                                <button
-                                  key={v}
-                                  type="button"
-                                  onClick={() => updateForm({ [key]: form[key] === v ? "" : v })}
-                                  className="flex-1 rounded-xl py-2 text-sm font-medium capitalize transition-all"
-                                  style={{
-                                    border: isSelected ? "none" : "1.5px solid #E0E7EF",
-                                    background: isSelected
-                                      ? v === "yes" ? "linear-gradient(135deg,#00897B,#26A69A)" : "linear-gradient(135deg,#C62828,#E53935)"
-                                      : "#FFFFFF",
-                                    color: isSelected ? "white" : "#0A1929",
-                                  }}
-                                >
-                                  {v}
-                                </button>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-
-                    {/* Only meaningful once space is confirmed available. */}
-                    {form.labour_accommodation_available === "yes" && (
-                      <div>
-                        <label className="mb-1.5 block" style={{ fontSize: "12px", fontWeight: 600, color: "#546E7A", textTransform: "uppercase", letterSpacing: "0.05em" }}>
-                          Is permission confirmed for labour accommodation?
-                        </label>
-                        <div className="flex gap-2" style={{ maxWidth: "50%" }}>
-                          {["yes", "no"].map((v) => {
-                            const isSelected = form.labour_accommodation_permission === v;
-                            return (
-                              <button
-                                key={v}
-                                type="button"
-                                onClick={() =>
-                                  updateForm({
-                                    labour_accommodation_permission:
-                                      form.labour_accommodation_permission === v ? "" : v,
-                                  })
-                                }
-                                className="flex-1 rounded-xl py-2 text-sm font-medium capitalize transition-all"
-                                style={{
-                                  border: isSelected ? "none" : "1.5px solid #E0E7EF",
-                                  background: isSelected
-                                    ? v === "yes" ? "linear-gradient(135deg,#00897B,#26A69A)" : "linear-gradient(135deg,#C62828,#E53935)"
-                                    : "#FFFFFF",
-                                  color: isSelected ? "white" : "#0A1929",
-                                }}
-                              >
-                                {v}
-                              </button>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    )}
-
-                    <div>
-                      <label className="mb-1.5 block" style={{ fontSize: "12px", fontWeight: 600, color: "#546E7A", textTransform: "uppercase", letterSpacing: "0.05em" }}>
-                        Water Quantity on Site
-                      </label>
-                      <select
-                        value={form.water_quantity}
-                        onChange={(e) => updateForm({ water_quantity: e.target.value })}
-                        className="w-full rounded-[10px] text-sm"
-                        style={{ border: "1.5px solid #E0E7EF", padding: "8px 12px", background: "#FAFBFC", color: "#0A1929" }}
-                      >
-                        <option value="">Select...</option>
-                        {WATER_QUANTITY_OPTIONS.map((opt) => (
-                          <option key={opt.value} value={opt.value}>{opt.label}</option>
-                        ))}
-                      </select>
-                    </div>
-                    <div>
-                      <label className="mb-1.5 block" style={{ fontSize: "12px", fontWeight: 600, color: "#546E7A", textTransform: "uppercase", letterSpacing: "0.05em" }}>
-                        Are there specific safety requirements?
-                      </label>
-                      <div className="flex gap-2">
-                        {[
-                          { value: true, label: "Yes" },
-                          { value: false, label: "No" },
-                        ].map((opt) => (
-                          <button
-                            key={String(opt.value)}
-                            type="button"
-                            onClick={() => updateForm({ safety_required: opt.value, ...(opt.value ? {} : { safety_requirements: "" }) })}
-                            className="px-4 py-2 rounded-lg text-[13px] font-semibold transition-all"
-                            style={{
-                              background: form.safety_required === opt.value ? "#DBEAFE" : "#F0F4F8",
-                              color: form.safety_required === opt.value ? "#1565C0" : "#546E7A",
-                              border: form.safety_required === opt.value ? "1.5px solid #93C5FD" : "1.5px solid #E0E7EF",
-                            }}
-                          >
-                            {opt.label}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                    {form.safety_required && (
-                      <div>
-                        <label className="mb-1.5 block" style={{ fontSize: "12px", fontWeight: 600, color: "#546E7A", textTransform: "uppercase", letterSpacing: "0.05em" }}>
-                          Safety Requirements Details
-                        </label>
-                        <Textarea
-                          placeholder="Describe specific safety requirements or hazards"
-                          value={form.safety_requirements}
-                          onChange={(e) => updateForm({ safety_requirements: e.target.value })}
-                          rows={2}
-                          style={{ borderColor: "#E0E7EF", borderRadius: "10px" }}
-                        />
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {step === 4 && (
-                  <div className="space-y-5">
-                    <h2 className="font-bold text-xl" style={{ fontFamily: "Sora, sans-serif", color: "#0A1929" }}>
-                      Contacts & Notes
-                    </h2>
-                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                      <div>
-                        <label className="mb-1.5 block" style={{ fontSize: "12px", fontWeight: 600, color: "#546E7A", textTransform: "uppercase", letterSpacing: "0.05em" }}>
-                          Architect Name
-                        </label>
-                        <Input value={form.architect_name} onChange={(e) => updateForm({ architect_name: e.target.value })} placeholder="Optional" style={{ borderColor: "#E0E7EF", borderRadius: "10px" }} />
-                      </div>
-                      <div>
-                        <label className="mb-1.5 block" style={{ fontSize: "12px", fontWeight: 600, color: "#546E7A", textTransform: "uppercase", letterSpacing: "0.05em" }}>
-                          Architect Phone
-                        </label>
-                        <Input value={form.architect_phone} onChange={(e) => updateForm({ architect_phone: e.target.value })} placeholder="+91..." style={{ borderColor: "#E0E7EF", borderRadius: "10px" }} />
-                      </div>
-                    </div>
-                    {(form.architect_name || form.architect_phone) && (
-                      <div>
-                        <label className="mb-1.5 block" style={{ fontSize: "12px", fontWeight: 600, color: "#546E7A", textTransform: "uppercase", letterSpacing: "0.05em" }}>
-                          Architect Address
-                        </label>
-                        <Textarea
-                          value={form.architect_address}
-                          onChange={(e) => updateForm({ architect_address: e.target.value })}
-                          placeholder="Office address of the architect"
-                          rows={2}
-                          style={{ borderColor: "#E0E7EF", borderRadius: "10px" }}
-                        />
-                      </div>
-                    )}
-                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                      <div>
-                        <label className="mb-1.5 block" style={{ fontSize: "12px", fontWeight: 600, color: "#546E7A", textTransform: "uppercase", letterSpacing: "0.05em" }}>
-                          RCC Consultant Name
-                        </label>
-                        <Input value={form.rcc_consultant_name} onChange={(e) => updateForm({ rcc_consultant_name: e.target.value })} placeholder="Optional" style={{ borderColor: "#E0E7EF", borderRadius: "10px" }} />
-                      </div>
-                      <div>
-                        <label className="mb-1.5 block" style={{ fontSize: "12px", fontWeight: 600, color: "#546E7A", textTransform: "uppercase", letterSpacing: "0.05em" }}>
-                          RCC Consultant Phone
-                        </label>
-                        <Input value={form.rcc_consultant_phone} onChange={(e) => updateForm({ rcc_consultant_phone: e.target.value })} placeholder="+91..." style={{ borderColor: "#E0E7EF", borderRadius: "10px" }} />
-                      </div>
-                    </div>
-                    {(form.rcc_consultant_name || form.rcc_consultant_phone) && (
-                      <div>
-                        <label className="mb-1.5 block" style={{ fontSize: "12px", fontWeight: 600, color: "#546E7A", textTransform: "uppercase", letterSpacing: "0.05em" }}>
-                          RCC Consultant Address
-                        </label>
-                        <Textarea
-                          value={form.rcc_consultant_address}
-                          onChange={(e) => updateForm({ rcc_consultant_address: e.target.value })}
-                          placeholder="Office address of the RCC consultant"
-                          rows={2}
-                          style={{ borderColor: "#E0E7EF", borderRadius: "10px" }}
-                        />
-                      </div>
-                    )}
-                    {/* File Attachments */}
-                    <div>
-                      <label className="mb-2 block" style={{ fontSize: "12px", fontWeight: 600, color: "#546E7A", textTransform: "uppercase", letterSpacing: "0.05em" }}>
-                        Site Photographs <span style={{ color: "#94A3B8", fontWeight: 500 }}>(optional)</span>
-                      </label>
-                      {errors.files && <p className="mb-1.5 text-[13px]" style={{ color: "#C62828" }}>{errors.files}</p>}
-                      <label
-                        className="flex flex-col items-center gap-2 rounded-xl p-4 cursor-pointer transition-all"
-                        style={{ border: "2px dashed #E0E7EF", background: "#FAFBFC" }}
-                        onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.borderColor = "#1565C0"; (e.currentTarget as HTMLElement).style.background = "#F0F6FF"; }}
-                        onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.borderColor = "#E0E7EF"; (e.currentTarget as HTMLElement).style.background = "#FAFBFC"; }}
-                      >
-                        <Upload style={{ width: "20px", height: "20px", color: "#546E7A" }} />
-                        <span className="text-[13px]" style={{ color: "#546E7A" }}>Upload site photos (JPG, PNG, HEIC — max 5 files, 10MB each)</span>
-                        <input
-                          type="file"
-                          multiple
-                          accept="image/jpeg,image/png,image/heic,image/heif,image/webp"
-                          className="hidden"
-                          onChange={(e) => {
-                            const newFiles = Array.from(e.target.files ?? []);
-                            const valid = newFiles.filter((f) => f.size <= 10 * 1024 * 1024);
-                            if (valid.length < newFiles.length) toast.error("Some files exceed 10MB and were skipped.");
-                            setFiles((prev) => [...prev, ...valid].slice(0, 5));
-                            e.target.value = "";
-                          }}
-                        />
-                      </label>
-                      {files.length > 0 && (
-                        <div className="mt-2 space-y-1.5">
-                          {files.map((f, i) => (
-                            <div key={i} className="flex items-center gap-3 rounded-lg px-3 py-2" style={{ background: "#F0F4F8", border: "1px solid #E0E7EF" }}>
-                              <FileIcon style={{ width: "14px", height: "14px", color: "#546E7A", flexShrink: 0 }} />
-                              <span className="text-[13px] flex-1 truncate" style={{ color: "#0A1929" }}>{f.name}</span>
-                              <span className="text-[12px]" style={{ color: "#546E7A" }}>{(f.size / 1024).toFixed(0)}KB</span>
-                              <button type="button" onClick={() => setFiles((prev) => prev.filter((_, j) => j !== i))} style={{ color: "#94A3B8" }}>
-                                <X style={{ width: "12px", height: "12px" }} />
-                              </button>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                    <div>
-                      <label className="mb-2 block" style={{ fontSize: "12px", fontWeight: 600, color: "#546E7A", textTransform: "uppercase", letterSpacing: "0.05em" }}>
-                        Layout Plan / Drawing
-                      </label>
-                      <label
-                        className="flex flex-col items-center gap-2 rounded-xl p-4 cursor-pointer transition-all"
-                        style={{ border: "2px dashed #E0E7EF", background: "#FAFBFC" }}
-                        onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.borderColor = "#15673A"; (e.currentTarget as HTMLElement).style.background = "#F0FFF4"; }}
-                        onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.borderColor = "#E0E7EF"; (e.currentTarget as HTMLElement).style.background = "#FAFBFC"; }}
-                      >
-                        <Upload style={{ width: "20px", height: "20px", color: "#546E7A" }} />
-                        <span className="text-[13px]" style={{ color: "#546E7A" }}>Upload layout plans (PDF, JPG, PNG — max 3 files, 10MB each)</span>
-                        <input
-                          type="file"
-                          multiple
-                          accept="image/jpeg,image/png,.pdf"
-                          className="hidden"
-                          onChange={(e) => {
-                            const newFiles = Array.from(e.target.files ?? []);
-                            const valid = newFiles.filter((f) => f.size <= 10 * 1024 * 1024);
-                            if (valid.length < newFiles.length) toast.error("Some files exceed 10MB and were skipped.");
-                            setLayoutFiles((prev) => [...prev, ...valid].slice(0, 3));
-                            e.target.value = "";
-                          }}
-                        />
-                      </label>
-                      {layoutFiles.length > 0 && (
-                        <div className="mt-2 space-y-1.5">
-                          {layoutFiles.map((f, i) => (
-                            <div key={i} className="flex items-center gap-3 rounded-lg px-3 py-2" style={{ background: "#F0F4F8", border: "1px solid #E0E7EF" }}>
-                              <FileIcon style={{ width: "14px", height: "14px", color: "#15673A", flexShrink: 0 }} />
-                              <span className="text-[13px] flex-1 truncate" style={{ color: "#0A1929" }}>{f.name}</span>
-                              <span className="text-[12px]" style={{ color: "#546E7A" }}>{(f.size / 1024).toFixed(0)}KB</span>
-                              <button type="button" onClick={() => setLayoutFiles((prev) => prev.filter((_, j) => j !== i))} style={{ color: "#94A3B8" }}>
-                                <X style={{ width: "12px", height: "12px" }} />
-                              </button>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-
-                    <div>
-                      <label className="mb-1.5 block" style={{ fontSize: "12px", fontWeight: 600, color: "#546E7A", textTransform: "uppercase", letterSpacing: "0.05em" }}>
-                        Remarks
-                      </label>
-                      <Textarea
-                        placeholder="Any additional notes about the site or project"
-                        value={form.remarks}
-                        onChange={(e) => updateForm({ remarks: e.target.value })}
-                        rows={4}
-                        style={{ borderColor: "#E0E7EF", borderRadius: "10px" }}
-                      />
-                    </div>
-                    <div
-                      className="rounded-xl p-4"
-                      style={{
-                        background: form.demobilization_consent ? "#DCFCE7" : "#FEF2F2",
-                        border: form.demobilization_consent ? "1.5px solid #86EFAC" : "1.5px solid #FECACA",
-                      }}
-                    >
-                      <label className="flex items-start gap-3 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={form.demobilization_consent}
-                          onChange={(e) => updateForm({ demobilization_consent: e.target.checked })}
-                          className="mt-0.5 h-4 w-4 rounded"
-                          style={{ accentColor: "#15673A" }}
-                        />
-                        <div>
-                          <p className="text-sm font-semibold" style={{ color: "#0A1929" }}>
-                            Demobilization Charges Consent <span style={{ color: "#C62828" }}>*</span>
-                          </p>
-                          <p className="text-[13px] mt-1" style={{ color: "#546E7A" }}>
-                            I confirm that the site information provided above is accurate and the site will be ready for work on the agreed mobilization date. I understand and agree that if our team is mobilized to site and work cannot commence due to incorrect information, site not being ready, missing permissions, or access/water/security not being arranged as stated, then the resulting <strong>demobilization and re-mobilization costs will be charged to me/us</strong>. I also consent to the standard demobilization process (site restoration, clearing of temporary structures, boreholes, and equipment staging areas) upon completion of field work.
-                          </p>
-                        </div>
-                      </label>
-                    </div>
-                    <button
-                      onClick={handleSubmit}
-                      disabled={submitting || !form.demobilization_consent}
-                      className="w-full py-3 rounded-xl text-sm font-semibold transition-all disabled:opacity-60 flex items-center justify-center gap-2"
-                      style={{
-                        background: "linear-gradient(135deg,#FF8F00,#FFB300)",
-                        color: "white",
-                        boxShadow: "0 4px 16px rgba(255,143,0,0.35)",
-                      }}
-                      onMouseEnter={(e) => { if (!submitting) (e.currentTarget as HTMLElement).style.transform = "translateY(-1px)"; }}
-                      onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.transform = "translateY(0)"; }}
-                    >
-                      {submitting
-                        ? <><Loader2 className="h-4 w-4 animate-spin" />Submitting…</>
-                        : "Submit Project Information"
-                      }
-                    </button>
-                  </div>
-                )}
-              </motion.div>
-            </AnimatePresence>
-
-            {/* Navigation buttons */}
-            <div className="mt-6 flex justify-between">
-              {step > 1 ? (
-                <button
-                  onClick={goBack}
-                  className="px-4 py-2 rounded-xl text-sm font-medium transition-all"
-                  style={{ border: "1.5px solid #E0E7EF", color: "#546E7A", background: "transparent" }}
-                  onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = "#F0F4F8"; }}
-                  onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = "transparent"; }}
-                >
-                  Back
-                </button>
-              ) : (
-                <div />
-              )}
-              {step < 4 && (
-                <button
-                  onClick={goNext}
-                  className="ml-auto px-6 py-2.5 rounded-xl text-sm font-semibold transition-all"
-                  style={{
-                    background: "linear-gradient(135deg,#1565C0,#2979FF)",
-                    color: "white",
-                    boxShadow: "0 4px 12px rgba(21,101,192,0.3)",
-                  }}
-                  onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.transform = "translateY(-1px)"; }}
-                  onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.transform = "translateY(0)"; }}
-                >
-                  Next
-                </button>
-              )}
+        <form
+          className="w-full space-y-5"
+          style={{
+            maxWidth: "680px",
+            background: "#FFFFFF",
+            borderRadius: "20px",
+            padding: "28px",
+            boxShadow: "0 4px 24px rgba(0,0,0,0.08)",
+            border: "1px solid #E0E7EF",
+          }}
+          onSubmit={(e) => { e.preventDefault(); void handleSubmit(); }}
+        >
+          {/* Contact details */}
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div>
+              <label className="mb-1.5 block" style={labelStyle}>Client Name <Req /></label>
+              <Input
+                value={form.client_name}
+                onChange={(e) => updateForm({ client_name: e.target.value })}
+                placeholder="Your name or company"
+                style={fieldBorder("client_name")}
+              />
+              <Err k="client_name" />
+            </div>
+            <div>
+              <label className="mb-1.5 block" style={labelStyle}>Contact Number <Req /></label>
+              <Input
+                value={form.contact_phone}
+                onChange={(e) => updateForm({ contact_phone: e.target.value })}
+                placeholder="+91 98765 43210"
+                inputMode="tel"
+                style={fieldBorder("contact_phone")}
+              />
+              <Err k="contact_phone" />
             </div>
           </div>
-        </div>
+
+          {/* Site address */}
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+            <div className="sm:col-span-2">
+              <label className="mb-1.5 block" style={labelStyle}>Site Address <Req /></label>
+              <Textarea
+                placeholder="Full site address with landmark"
+                value={form.site_address}
+                onChange={(e) => updateForm({ site_address: e.target.value })}
+                rows={2}
+                style={fieldBorder("site_address")}
+              />
+              <Err k="site_address" />
+            </div>
+            <div>
+              <label className="mb-1.5 block" style={labelStyle}>City <Req /></label>
+              <Input
+                value={form.site_city}
+                onChange={(e) => updateForm({ site_city: e.target.value })}
+                placeholder="e.g. Pune"
+                style={fieldBorder("site_city")}
+              />
+              <Err k="site_city" />
+            </div>
+          </div>
+
+          {/* Google location */}
+          <div>
+            <label className="mb-1.5 block" style={labelStyle}>
+              Google Location <span style={{ color: "#94A3B8", fontWeight: 500 }}>(optional)</span>
+            </label>
+            <Input
+              value={form.google_location}
+              onChange={(e) => updateForm({ google_location: e.target.value })}
+              placeholder="Paste Google Maps link, or coordinates e.g. 18.5204, 73.8567"
+              style={fieldBorder("google_location")}
+            />
+            <Err k="google_location" />
+            {!errors.google_location && loc?.coords && (
+              <p className="mt-1 text-[12px] font-medium" style={{ color: "#15673A" }}>
+                Location found: {loc.coords.lat.toFixed(6)}, {loc.coords.lng.toFixed(6)}
+              </p>
+            )}
+          </div>
+
+          {/* Structure type */}
+          <div>
+            <label className="mb-1.5 block" style={labelStyle}>Type of Structure <Req /></label>
+            <select
+              value={form.structure_type}
+              onChange={(e) => updateForm({ structure_type: e.target.value })}
+              className="w-full px-3 py-2.5 text-sm"
+              style={{ ...fieldBorder("structure_type"), borderWidth: "1px", borderStyle: "solid", background: "#FFFFFF", color: form.structure_type ? "#0A1929" : "#94A3B8" }}
+            >
+              <option value="" disabled>Select structure type</option>
+              {STRUCTURE_TYPES.map((t) => (
+                <option key={t.value} value={t.value}>{t.label}</option>
+              ))}
+            </select>
+            <Err k="structure_type" />
+          </div>
+
+          {/* Site facilities */}
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+            <YesNoField k="water_available" label="Water Available" />
+            <YesNoField k="electricity_available" label="Electricity Available" />
+            <YesNoField k="labour_accommodation" label="Labour Stay Space & Permission" />
+          </div>
+
+          {/* Layout plan */}
+          <div>
+            <label className="mb-1.5 block" style={labelStyle}>
+              Layout Plan <span style={{ color: "#94A3B8", fontWeight: 500 }}>(optional)</span>
+            </label>
+            <label
+              className="flex items-center justify-center gap-2 rounded-xl p-3 cursor-pointer"
+              style={{ border: "2px dashed #E0E7EF", background: "#FAFBFC" }}
+            >
+              <Upload style={{ width: "18px", height: "18px", color: "#546E7A" }} />
+              <span className="text-[13px]" style={{ color: "#546E7A" }}>Upload PDF / JPG / PNG (max 3 files, 10MB each)</span>
+              <input
+                type="file"
+                multiple
+                accept="image/jpeg,image/png,.pdf"
+                className="hidden"
+                onChange={(e) => {
+                  const newFiles = Array.from(e.target.files ?? []);
+                  const valid = newFiles.filter((f) => f.size <= 10 * 1024 * 1024);
+                  if (valid.length < newFiles.length) toast.error("Some files exceed 10MB and were skipped.");
+                  setLayoutFiles((prev) => [...prev, ...valid].slice(0, 3));
+                  e.target.value = "";
+                }}
+              />
+            </label>
+            {layoutFiles.length > 0 && (
+              <div className="mt-2 space-y-1.5">
+                {layoutFiles.map((f, i) => (
+                  <div key={i} className="flex items-center gap-3 rounded-lg px-3 py-2" style={{ background: "#F0F4F8", border: "1px solid #E0E7EF" }}>
+                    <FileIcon style={{ width: "14px", height: "14px", color: "#15673A", flexShrink: 0 }} />
+                    <span className="text-[13px] flex-1 truncate" style={{ color: "#0A1929" }}>{f.name}</span>
+                    <span className="text-[12px]" style={{ color: "#546E7A" }}>{(f.size / 1024).toFixed(0)}KB</span>
+                    <button type="button" onClick={() => setLayoutFiles((prev) => prev.filter((_, j) => j !== i))} style={{ color: "#94A3B8" }}>
+                      <X style={{ width: "12px", height: "12px" }} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Demobilisation */}
+          <div>
+            <label className="mb-1.5 block" style={labelStyle}>
+              Demobilisation Concerns <span style={{ color: "#94A3B8", fontWeight: 500 }}>(optional)</span>
+            </label>
+            <Textarea
+              placeholder="Anything we should know about removing equipment or restoring the site after work"
+              value={form.demobilisation_concerns}
+              onChange={(e) => updateForm({ demobilisation_concerns: e.target.value })}
+              rows={2}
+              style={{ borderColor: "#E0E7EF", borderRadius: "10px" }}
+            />
+            <label
+              className="mt-3 flex items-start gap-3 rounded-xl p-3 cursor-pointer"
+              style={{
+                background: form.demobilization_consent ? "#DCFCE7" : "#FEF2F2",
+                border: `1.5px solid ${form.demobilization_consent ? "#86EFAC" : "#FECACA"}`,
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={form.demobilization_consent}
+                onChange={(e) => updateForm({ demobilization_consent: e.target.checked })}
+                className="mt-0.5 h-4 w-4 rounded"
+                style={{ accentColor: "#15673A" }}
+              />
+              <span className="text-[13px]" style={{ color: "#0A1929" }}>
+                I confirm these details are correct. If our team reaches site and cannot start work because the
+                site is not ready as stated, <strong>demobilisation and re-mobilisation charges will apply</strong>. <Req />
+              </span>
+            </label>
+            <Err k="demobilization_consent" />
+          </div>
+
+          <button
+            type="submit"
+            disabled={submitting}
+            className="w-full py-3 rounded-xl text-sm font-semibold transition-all disabled:opacity-60 flex items-center justify-center gap-2"
+            style={{
+              background: "linear-gradient(135deg,#FF8F00,#FFB300)",
+              color: "white",
+              boxShadow: "0 4px 16px rgba(255,143,0,0.35)",
+            }}
+          >
+            {submitting ? <><Loader2 className="h-4 w-4 animate-spin" />Submitting…</> : "Submit Site Information"}
+          </button>
+        </form>
       </div>
     </div>
   );

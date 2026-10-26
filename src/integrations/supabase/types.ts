@@ -236,6 +236,8 @@ export type Database = {
           service_type: string
           site_address: string | null
           site_city: string
+          si_number: string | null
+          si_assigned_at: string | null
           site_visit_required: boolean | null
           soil_type_hint: Database["public"]["Enums"]["soil_type"] | null
           status: Database["public"]["Enums"]["lead_status"]
@@ -289,6 +291,8 @@ export type Database = {
           service_type?: string
           site_address?: string | null
           site_city: string
+          si_number?: string | null
+          si_assigned_at?: string | null
           site_visit_required?: boolean | null
           soil_type_hint?: Database["public"]["Enums"]["soil_type"] | null
           status?: Database["public"]["Enums"]["lead_status"]
@@ -342,6 +346,8 @@ export type Database = {
           service_type?: string
           site_address?: string | null
           site_city?: string
+          si_number?: string | null
+          si_assigned_at?: string | null
           site_visit_required?: boolean | null
           soil_type_hint?: Database["public"]["Enums"]["soil_type"] | null
           status?: Database["public"]["Enums"]["lead_status"]

@@ -174,6 +174,18 @@ export const site_expenses = pgTable('site_expenses', {
   updated_at: timestamp('updated_at', { withTimezone: true, mode: 'string' }).notNull().defaultNow(),
 });
 
+// ─── pending_work ────────────────────────────────────────────────────────────
+export const pending_work = pgTable('pending_work', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  org_id: uuid('org_id').notNull(),
+  title: text('title').notNull(),
+  status: text('status').notNull().default('open'), // open | done
+  created_by: uuid('created_by'),
+  done_by: uuid('done_by'),
+  done_at: timestamp('done_at', { withTimezone: true, mode: 'string' }),
+  created_at: timestamp('created_at', { withTimezone: true, mode: 'string' }).notNull().defaultNow(),
+});
+
 // ─── clients ─────────────────────────────────────────────────────────────────
 export const clients = pgTable('clients', {
   id: uuid('id').primaryKey().defaultRandom(),
@@ -294,6 +306,9 @@ export const enquiries = pgTable('enquiries', {
   demobilization_consent: boolean('demobilization_consent'),
   created_at: timestamp('created_at', { withTimezone: true, mode: 'string' }).notNull().defaultNow(),
   updated_at: timestamp('updated_at', { withTimezone: true, mode: 'string' }).notNull().defaultNow(),
+  /** SI-YYYY-NNN, assigned by the API when the enquiry is first marked Won. */
+  si_number: text('si_number'),
+  si_assigned_at: timestamp('si_assigned_at', { withTimezone: true, mode: 'string' }),
   deleted_at: timestamp('deleted_at', { withTimezone: true, mode: 'string' }),
 });
 

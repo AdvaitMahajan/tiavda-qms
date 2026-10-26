@@ -949,7 +949,8 @@ export default function EnquiryDetail() {
       const prevStatus = enquiry.status;
       // Mark the winning quotation as accepted so the quote status mirrors the deal.
       await apiClient.patch(`/quotations/${finalizedQuote.id}`, { status: "accepted" });
-      await apiClient.patch(`/enquiries/${enquiry.id}`, {
+      // The API assigns the site's SI number when it becomes Won.
+      const won = await apiClient.patch<{ si_number?: string | null }>(`/enquiries/${enquiry.id}`, {
         status: "approved",
         confirmed_date: new Date().toISOString().slice(0, 10),
       });
@@ -1022,7 +1023,11 @@ export default function EnquiryDetail() {
         });
       }
 
-      toast.success("Deal marked as Won! Payment record and job tracker created.");
+      toast.success(
+        won.si_number
+          ? `Deal marked as Won! SI Number ${won.si_number} generated.`
+          : "Deal marked as Won! Payment record and job tracker created.",
+      );
       setWonModalOpen(false);
       fetchAll({ silent: true });
     } catch (err: any) {
@@ -1209,6 +1214,22 @@ export default function EnquiryDetail() {
           )}
           {/* Status badge — glass style */}
           <div className="flex items-center gap-2 flex-wrap">
+            {enquiry.si_number && (
+              <span
+                title="SI Number — assigned when the site was marked Won"
+                style={{
+                  background: "#D4930A",
+                  color: "white",
+                  borderRadius: "9999px",
+                  padding: "2px 10px",
+                  fontSize: "13px",
+                  fontWeight: 700,
+                  fontFamily: "JetBrains Mono, monospace",
+                }}
+              >
+                {enquiry.si_number}
+              </span>
+            )}
             <span
               style={{
                 background: "rgba(255,255,255,0.15)",

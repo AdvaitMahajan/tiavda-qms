@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { and, asc, desc, eq, gte, isNull, lte, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, isNotNull, isNull, lte, sql } from 'drizzle-orm';
 import { db, series } from '../../db';
 import { clients, enquiries, enquiry_events, follow_ups, job_reminders } from '../../db/schema';
 import { authenticate } from '../../middleware/auth';
@@ -110,6 +110,30 @@ dashboardRouter.get(
       converted_clients: e.converted_clients ?? 0,
       lost_clients: c.lost_clients ?? 0,
     });
+  }),
+);
+
+// Latest sites that received an SI number (i.e. were marked Won).
+dashboardRouter.get(
+  '/si-sites',
+  asyncHandler(async (_req, res) => {
+    const rows = await db
+      .select({
+        id: enquiries.id,
+        si_number: enquiries.si_number,
+        si_assigned_at: enquiries.si_assigned_at,
+        ref_number: enquiries.ref_number,
+        site_city: enquiries.site_city,
+        status: enquiries.status,
+        client_name: clients.name,
+        client_company: clients.company,
+      })
+      .from(enquiries)
+      .leftJoin(clients, eq(clients.id, enquiries.client_id))
+      .where(and(isNotNull(enquiries.si_number), isNull(enquiries.deleted_at)))
+      .orderBy(desc(enquiries.si_assigned_at))
+      .limit(8);
+    res.json(rows);
   }),
 );
 

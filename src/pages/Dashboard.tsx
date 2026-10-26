@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 import { AddLeadDialog } from "@/components/AddLeadDialog";
+import { PendingWorkCard } from "@/components/PendingWorkCard";
 import { useQuery } from "@tanstack/react-query";
 import { apiClient } from "@/lib/apiClient";
 import { useRole } from "@/hooks/useRole";
@@ -11,7 +12,7 @@ import {
   FileText, Send, CalendarClock, CreditCard, Briefcase,
   CheckCircle, Bell, Activity, Hammer, Receipt,
   Plus, Users, Settings, TrendingUp, IndianRupee, ClipboardList, BarChart3, ClipboardCheck,
-  UserCheck, UserX, FilePlus2,
+  UserCheck, UserX, FilePlus2, BadgeCheck,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -346,6 +347,19 @@ function useJobReminders() {
 }
 
 
+interface SiSite {
+  id: string; si_number: string; si_assigned_at: string | null; ref_number: string;
+  site_city: string | null; client_name: string | null; client_company: string | null;
+}
+
+function useSiSites() {
+  return useQuery({
+    queryKey: ["dashboard-si-sites"],
+    queryFn: () => apiClient.get<SiSite[]>("/dashboard/si-sites"),
+    refetchInterval: 20_000,
+  });
+}
+
 interface ActivityItem {
   id: string; event_type: string; from_status: string | null; to_status: string | null;
   created_at: string; ref_number: string; enquiry_id: string; client_name: string;
@@ -402,6 +416,7 @@ export default function Dashboard() {
   const actions = useTodaysActions();
   const reminders = useJobReminders();
   const activity = useActivityFeed();
+  const siSites = useSiSites();
 
   const [showAddLead, setShowAddLead] = useState(false);
   const [showNewQuotation, setShowNewQuotation] = useState(false);
@@ -582,6 +597,45 @@ export default function Dashboard() {
             </button>
           );
         })}
+      </div>
+
+      {/* ── Pending Work + SI Numbers ── */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="lg:col-span-2">
+          <PendingWorkCard style={{ ...cardStyle, height: "100%" }} />
+        </div>
+        <div className="lg:col-span-1" style={cardStyle}>
+          <div className="flex items-center gap-3 mb-4">
+            <div
+              className="flex items-center justify-center rounded-lg"
+              style={{ width: "28px", height: "28px", background: "#FEF3C7", flexShrink: 0 }}
+            >
+              <BadgeCheck style={{ width: "14px", height: "14px", color: "#B7791F" }} />
+            </div>
+            <h2 className="font-semibold text-base" style={{ fontFamily: "Sora, sans-serif", color: "#0A1929" }}>
+              Recent SI Numbers
+            </h2>
+          </div>
+          {siSites.isLoading ? (
+            <div className="space-y-3">{Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-12 w-full rounded-lg" />)}</div>
+          ) : !siSites.data?.length ? (
+            <p className="text-sm text-center py-10" style={{ color: "#546E7A" }}>
+              SI Numbers appear here when a site is marked Won.
+            </p>
+          ) : (
+            <div className="space-y-1">
+              {siSites.data.map((s) => (
+                <ActionRow key={s.id} onClick={() => navigate(`/enquiries/${s.id}`)}>
+                  <span className="font-mono text-[13px] font-bold flex-shrink-0" style={{ color: "#B7791F" }}>{s.si_number}</span>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm truncate" style={{ color: "#0A1929" }}>{s.client_company || s.client_name || "—"}</p>
+                    <p className="text-[12px] truncate" style={{ color: "#546E7A" }}>{s.ref_number}{s.site_city ? ` · ${s.site_city}` : ""}</p>
+                  </div>
+                </ActionRow>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* ── Section 3: Two column row ── */}

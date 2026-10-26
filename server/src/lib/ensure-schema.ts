@@ -15,6 +15,30 @@ const STATEMENTS = [
   'ALTER TABLE public.payments ADD COLUMN IF NOT EXISTS invoice_ref text',
   `CREATE UNIQUE INDEX IF NOT EXISTS payments_org_invoice_number_uq
      ON public.payments (org_id, invoice_number) WHERE invoice_number IS NOT NULL`,
+
+  // 20261027000001_si_number_and_pending_work.sql
+  'ALTER TABLE public.enquiries ADD COLUMN IF NOT EXISTS si_number text',
+  'ALTER TABLE public.enquiries ADD COLUMN IF NOT EXISTS si_assigned_at timestamptz',
+  `CREATE UNIQUE INDEX IF NOT EXISTS enquiries_org_si_number_uq
+     ON public.enquiries (org_id, si_number) WHERE si_number IS NOT NULL`,
+  `CREATE TABLE IF NOT EXISTS public.pending_work (
+     id         uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+     org_id     uuid NOT NULL REFERENCES public.organizations(id) ON DELETE CASCADE,
+     title      text NOT NULL,
+     status     text NOT NULL DEFAULT 'open',
+     created_by uuid,
+     done_by    uuid,
+     done_at    timestamptz,
+     created_at timestamptz NOT NULL DEFAULT now()
+   )`,
+  'CREATE INDEX IF NOT EXISTS pending_work_org_status_idx ON public.pending_work (org_id, status, created_at DESC)',
+  'ALTER TABLE public.pending_work ENABLE ROW LEVEL SECURITY',
+  'ALTER TABLE public.pending_work FORCE ROW LEVEL SECURITY',
+  'DROP POLICY IF EXISTS org_isolation ON public.pending_work',
+  `CREATE POLICY org_isolation ON public.pending_work
+     USING (org_id = current_setting('app.current_org_id', true)::uuid)
+     WITH CHECK (org_id = current_setting('app.current_org_id', true)::uuid)`,
+  'GRANT SELECT, INSERT, UPDATE, DELETE ON public.pending_work TO app_tenant',
 ];
 
 export async function ensureSchema(): Promise<void> {

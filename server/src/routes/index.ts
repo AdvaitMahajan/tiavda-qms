@@ -26,6 +26,7 @@ import { cityRatesRouter } from '../modules/city-rates/city-rates.routes';
 import { auditRouter } from '../modules/audit/audit.routes';
 import { teamMembersRouter } from '../modules/team-members/team-members.routes';
 import { siteExpensesRouter } from '../modules/site-expenses/site-expenses.routes';
+import { pendingWorkRouter } from '../modules/pending-work/pending-work.routes';
 
 /**
  * Root API router. Domain routers are mounted here as they are implemented.
@@ -43,6 +44,7 @@ apiRouter.use('/city-rates', cityRatesRouter);
 apiRouter.use('/audit', auditRouter);
 apiRouter.use('/team-members', teamMembersRouter);
 apiRouter.use('/site-expenses', siteExpensesRouter);
+apiRouter.use('/pending-work', pendingWorkRouter);
 apiRouter.use('/settings', settingsRouter);
 apiRouter.use('/notifications', notificationsRouter);
 apiRouter.use('/enquiries', enquiriesRouter);

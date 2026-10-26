@@ -86,6 +86,7 @@ export interface EnquiryRow {
   expected_depth_m: number | null;
   soil_type_hint: string | null;
   service_type: string;
+  si_number: string | null;
 }
 
 type EnquiryListItem = Tables<"enquiries"> & {
@@ -559,7 +560,12 @@ function EnquiryListView({ rows, isLoading, onRowClick }: { rows: EnquiryRow[]; 
               onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = "#F8FAFC"; }}
               onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = "transparent"; }}
             >
-              <TableCell className="font-mono font-medium" style={{ color: "#0A1929" }}>{r.ref_number}</TableCell>
+              <TableCell className="font-mono font-medium" style={{ color: "#0A1929" }}>
+                {r.ref_number}
+                {r.si_number && (
+                  <div className="text-[12px] font-semibold" style={{ color: "#B7791F" }}>{r.si_number}</div>
+                )}
+              </TableCell>
               <TableCell>
                 <span
                   className="text-[12px] font-semibold px-1.5 py-0.5 rounded"

@@ -94,7 +94,9 @@ export function EnquiryKanban({ rows, isLoading, showClosed }: Props) {
         updates.lost_reason = null;
       }
 
-      await apiClient.patch(`/enquiries/${id}`, updates);
+      const saved = await apiClient.patch<{ si_number?: string | null }>(`/enquiries/${id}`, updates);
+      // The API assigns the site's SI number when it becomes Won.
+      if (toStatus === "approved" && saved.si_number) toast.success(`SI Number ${saved.si_number} generated`);
 
       const eventType = (fromStatus === "lost" || fromStatus === "inactive") && toStatus === "follow_up"
         ? "reactivated"
@@ -496,7 +498,10 @@ function KanbanCard({ row, onClick }: { row: EnquiryRow; onClick: () => void }) 
         }}
       >
         <div className="flex items-center justify-between mb-1">
-          <span className="text-[12px] font-mono" style={{ color: "#546E7A" }}>{row.ref_number}</span>
+          <span className="text-[12px] font-mono" style={{ color: "#546E7A" }}>
+            {row.ref_number}
+            {row.si_number && <span style={{ color: "#B7791F", fontWeight: 700 }}> · {row.si_number}</span>}
+          </span>
           {row.service_type === "consultancy" ? (
             <span style={{ background: "#EDE7F6", color: "#7B1FA2", fontSize: "12px", fontWeight: 700, padding: "1px 6px", borderRadius: "4px" }}>CONSULT</span>
           ) : (

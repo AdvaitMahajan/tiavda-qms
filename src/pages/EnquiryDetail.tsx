@@ -807,7 +807,7 @@ export default function EnquiryDetail() {
         });
         if (!ok) {
           console.error("Email send error:", emailErr);
-          toast.error("Email delivery failed — continuing.");
+          toast.error(`Email not sent: ${emailErr || "unknown error"}`, { duration: 10000 });
         } else {
           emailSent = true;
           await apiClient.post("/communications", {

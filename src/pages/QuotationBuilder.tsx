@@ -1142,9 +1142,10 @@ export default function QuotationBuilder() {
       </div>
 
       {/* Main content — two panels */}
-      <div style={{ display: "flex", gap: "20px", padding: "20px 24px", alignItems: "flex-start" }}>
+      {/* Stacked on phones/tablets; side by side from lg up. */}
+      <div className="flex flex-col gap-5 p-4 lg:flex-row lg:items-start lg:px-6 lg:py-5">
         {/* LEFT PANEL */}
-        <div style={{ width: "340px", flexShrink: 0, position: "sticky", top: "80px" }}>
+        <div className="w-full shrink-0 lg:sticky lg:top-20 lg:w-[340px]">
           {/* Template Selector */}
           {isSI && (
             <div
@@ -1501,7 +1502,7 @@ export default function QuotationBuilder() {
         </div>
 
         {/* RIGHT PANEL */}
-        <div style={{ flex: 1, minWidth: 0 }}>
+        <div className="w-full min-w-0 lg:flex-1">
           {isSI && !isBoq && <SiteVisitContext siteVisit={siteVisit} />}
           {/* Line items */}
           <div
@@ -1533,6 +1534,7 @@ export default function QuotationBuilder() {
             </div>
 
             <div style={{ overflowX: "auto" }}>
+            <div style={{ minWidth: showRemarks ? "780px" : "680px" }}>
               {isSI && sections.length > 0 ? (
                 // Sectioned table for SI
                 sections.map((sec) => {
@@ -1682,6 +1684,7 @@ export default function QuotationBuilder() {
                   </div>
                 </>
               )}
+            </div>
             </div>
           </div>
 

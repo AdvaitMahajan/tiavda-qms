@@ -186,7 +186,7 @@ export default function Clients() {
             Manage your client relationships
           </p>
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+        <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "12px" }}>
           {/* Glass search input */}
           <div style={{ position: "relative" }}>
             <Search style={{ position: "absolute", left: "12px", top: "50%", transform: "translateY(-50%)", width: "14px", height: "14px", color: "rgba(255,255,255,0.4)" }} />
@@ -214,7 +214,7 @@ export default function Clients() {
       </div>
 
       {/* Segment cards — click to filter the list below (also deep-linkable via ?segment=) */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "16px", marginBottom: "24px" }}>
+      <div className="grid grid-cols-2 lg:grid-cols-4" style={{ gap: "16px", marginBottom: "24px" }}>
         {([
           { key: "all", label: "Total Clients", value: counts.total, icon: Users, color: "#1565C0", bg: "#EBF2FF" },
           { key: "converted", label: "Converted", value: counts.converted, icon: CheckCircle2, color: "#15673A", bg: "#DCFCE7" },
@@ -285,7 +285,8 @@ export default function Clients() {
             )}
           </div>
         ) : (
-          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+          <div style={{ overflowX: "auto" }}>
+          <table style={{ width: "100%", minWidth: "760px", borderCollapse: "collapse" }}>
             <thead>
               <tr style={{ background: "#F8FAFC", borderBottom: "2px solid #E0E7EF" }}>
                 {["Name", "Phone", "Email", "City", "Source", "Actions"].map((h) => (
@@ -400,6 +401,7 @@ export default function Clients() {
               ))}
             </tbody>
           </table>
+          </div>
         )}
       </div>
 

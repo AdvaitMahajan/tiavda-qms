@@ -1005,6 +1005,8 @@ export default function QuotationBuilder() {
           background: "linear-gradient(135deg, #0A1929 0%, #1565C0 100%)",
           padding: "16px 24px",
           display: "flex",
+          flexWrap: "wrap",
+          rowGap: "12px",
           alignItems: "center",
           justifyContent: "space-between",
           position: "sticky",
@@ -1087,7 +1089,8 @@ export default function QuotationBuilder() {
             </p>
           </div>
         </div>
-        <div style={{ display: "flex", gap: "10px" }}>
+        {/* Wraps under the title on phones so Save stays reachable. */}
+        <div style={{ display: "flex", flexWrap: "wrap", gap: "10px" }}>
           <button
             onClick={handlePreviewPdf}
             disabled={generatingPdf || items.length === 0}

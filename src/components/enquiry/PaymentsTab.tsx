@@ -497,10 +497,10 @@ export function PaymentsTab({ enquiryId, onStatusChange }: { enquiryId: string; 
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 className="font-sora text-lg font-semibold text-foreground">Payments</h2>
         {canEditPayments && (
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <Button onClick={() => openRequest("advance")} className="bg-gold text-white hover:bg-gold/90">
               Request Advance
             </Button>

@@ -320,7 +320,7 @@ export default function ClientDetail() {
       )}
 
       {/* Two-column grid */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "20px", marginBottom: "20px" }}>
+      <div className="grid grid-cols-1 lg:grid-cols-2" style={{ gap: "20px", marginBottom: "20px" }}>
 
         {/* Left: Intake Form Link */}
         <div style={{
@@ -556,7 +556,8 @@ export default function ClientDetail() {
             No enquiries yet for this client.
           </p>
         ) : (
-          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+          <div style={{ overflowX: "auto" }}>
+          <table style={{ width: "100%", minWidth: "600px", borderCollapse: "collapse" }}>
             <thead>
               <tr style={{ background: "#F8FAFC", borderBottom: "2px solid #E0E7EF" }}>
                 {["Ref #", "Date", "Type", "Status", "Bores", "City", "Action"].map((h) => (
@@ -623,6 +624,7 @@ export default function ClientDetail() {
               ))}
             </tbody>
           </table>
+          </div>
         )}
       </div>
 

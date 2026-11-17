@@ -148,7 +148,7 @@ export default function FollowUps() {
         </p>
       </div>
 
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         {tabDefs.map((t) => (
           <button
             key={t.key}

@@ -1095,14 +1095,13 @@ export default function EnquiryDetail() {
   ];
 
   return (
-    <div style={{ display: "flex", minHeight: "calc(100vh - 120px)" }}>
-      {/* ── Left panel (320px) ── */}
+    // Stacked on phones/tablets (details, then tabs); side by side from lg up.
+    <div className="flex flex-col lg:flex-row" style={{ minHeight: "calc(100vh - 120px)" }}>
+      {/* ── Left panel (320px on desktop) ── */}
       <div
+        className="w-full border-b border-[#E0E7EF] lg:w-[320px] lg:shrink-0 lg:border-b-0 lg:border-r"
         style={{
-          width: "320px",
-          flexShrink: 0,
           background: "#FFFFFF",
-          borderRight: "1px solid #E0E7EF",
           display: "flex",
           flexDirection: "column",
           overflowY: "auto",
@@ -1547,7 +1546,7 @@ export default function EnquiryDetail() {
       </div>
 
       {/* ── Right panel ── */}
-      <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>
+      <div className="w-full lg:w-auto" style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>
         {/* Tabs bar */}
         <div
           style={{
@@ -1591,8 +1590,8 @@ export default function EnquiryDetail() {
 
         {/* Tab content */}
         <div
+          className="p-3 sm:p-6"
           style={{
-            padding: "24px",
             background: "#F0F4F8",
             flex: 1,
             minHeight: "400px",

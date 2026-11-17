@@ -99,9 +99,12 @@ const eventSchema = z.object({
   metadata: z.any().optional(),
 });
 
-/** Friendly 409 ahead of the unique index (org_id, ref_number); RLS scopes it to the org. */
+/**
+ * Friendly 409 ahead of the unique index (org_id, ref_number) WHERE deleted_at IS
+ * NULL; RLS scopes it to the org. Deleted enquiries release their number.
+ */
 async function assertRefNumberFree(ref: string, exceptId?: string): Promise<void> {
-  const conds: SQL[] = [eq(enquiries.ref_number, ref)];
+  const conds: SQL[] = [eq(enquiries.ref_number, ref), isNull(enquiries.deleted_at)];
   if (exceptId) conds.push(ne(enquiries.id, exceptId));
   const taken = await db.select({ id: enquiries.id }).from(enquiries).where(and(...conds)).limit(1);
   if (taken[0]) throw conflict(`Reference number ${ref} is already used by another enquiry`);

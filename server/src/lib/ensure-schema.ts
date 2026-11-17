@@ -39,6 +39,12 @@ const STATEMENTS = [
      USING (org_id = current_setting('app.current_org_id', true)::uuid)
      WITH CHECK (org_id = current_setting('app.current_org_id', true)::uuid)`,
   'GRANT SELECT, INSERT, UPDATE, DELETE ON public.pending_work TO app_tenant',
+
+  // 20261117000001_ref_number_unique_live_only.sql — new index first, so the
+  // reference number is never unprotected, then drop the all-rows one.
+  `CREATE UNIQUE INDEX IF NOT EXISTS idx_enquiries_org_ref_live
+     ON public.enquiries (org_id, ref_number) WHERE deleted_at IS NULL`,
+  'DROP INDEX IF EXISTS public.idx_enquiries_org_ref',
 ];
 
 export async function ensureSchema(): Promise<void> {

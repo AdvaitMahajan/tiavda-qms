@@ -206,6 +206,18 @@ export default function BOQTemplatePDF({
             <Text style={s.value}>{client.phone}</Text>
             {client.email && <Text style={s.value}>{client.email}</Text>}
             <Text style={s.value}>{client.city}</Text>
+            {/* Site scope under the client, set apart by a small gap. Always shown
+                on SI quotations; "—" flags a value that wasn't entered. */}
+            <View style={{ marginTop: 8 }}>
+              <Text style={s.value}>
+                <Text style={s.bold}>No. of Bores: </Text>
+                {Number(quotation.num_bores) > 0 ? quotation.num_bores : "—"}
+              </Text>
+              <Text style={s.value}>
+                <Text style={s.bold}>Depth of Bore: </Text>
+                {Number(quotation.depth_per_bore_m) > 0 ? `${quotation.depth_per_bore_m} m` : "—"}
+              </Text>
+            </View>
           </View>
           <View style={s.col}>
             <Text style={s.label}>Quotation Details</Text>
@@ -216,15 +228,6 @@ export default function BOQTemplatePDF({
             <Text style={s.value}><Text style={s.bold}>Date: </Text>{fmtDate()}</Text>
             <Text style={s.value}><Text style={s.bold}>Variant: </Text>{quotation.variant_label} (V{quotation.version})</Text>
             <Text style={s.value}><Text style={s.bold}>Validity: </Text>{validityDays} days from date of issue</Text>
-            {/* Always shown on SI quotations; "—" flags a value that wasn't entered. */}
-            <Text style={s.value}>
-              <Text style={s.bold}>No. of Bores: </Text>
-              {Number(quotation.num_bores) > 0 ? quotation.num_bores : "—"}
-            </Text>
-            <Text style={s.value}>
-              <Text style={s.bold}>Depth of Bore: </Text>
-              {Number(quotation.depth_per_bore_m) > 0 ? `${quotation.depth_per_bore_m} m` : "—"}
-            </Text>
           </View>
         </View>
       )}

@@ -240,12 +240,15 @@ export default function QuotationPDF({ quotation, client, enquiry, companyInfo, 
             <Text style={s.value}><Text style={s.bold}>Date: </Text>{fmtDate()}</Text>
             <Text style={s.value}><Text style={s.bold}>Variant: </Text>{quotation.variant_label} (V{quotation.version})</Text>
             <Text style={s.value}><Text style={s.bold}>Validity: </Text>{validityDays} days from date of issue</Text>
-            {Number(quotation.num_bores) > 0 && (
-              <Text style={s.value}><Text style={s.bold}>No. of Bores: </Text>{quotation.num_bores}</Text>
-            )}
-            {Number(quotation.depth_per_bore_m) > 0 && (
-              <Text style={s.value}><Text style={s.bold}>Depth of Bore: </Text>{quotation.depth_per_bore_m} m</Text>
-            )}
+            {/* Always shown on SI quotations; "—" flags a value that wasn't entered. */}
+            <Text style={s.value}>
+              <Text style={s.bold}>No. of Bores: </Text>
+              {Number(quotation.num_bores) > 0 ? quotation.num_bores : "—"}
+            </Text>
+            <Text style={s.value}>
+              <Text style={s.bold}>Depth of Bore: </Text>
+              {Number(quotation.depth_per_bore_m) > 0 ? `${quotation.depth_per_bore_m} m` : "—"}
+            </Text>
           </View>
         </View>
 

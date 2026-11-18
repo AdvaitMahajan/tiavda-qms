@@ -119,6 +119,9 @@ interface Props {
     total_amount: number;
     line_items: any;
     version: number;
+    /** Shown under Quotation Details; hidden when empty or 0. */
+    num_bores?: number | null;
+    depth_per_bore_m?: number | null;
     discount_type?: string | null;
     discount_value?: number | null;
     discount_amount?: number | null;
@@ -213,6 +216,12 @@ export default function BOQTemplatePDF({
             <Text style={s.value}><Text style={s.bold}>Date: </Text>{fmtDate()}</Text>
             <Text style={s.value}><Text style={s.bold}>Variant: </Text>{quotation.variant_label} (V{quotation.version})</Text>
             <Text style={s.value}><Text style={s.bold}>Validity: </Text>{validityDays} days from date of issue</Text>
+            {Number(quotation.num_bores) > 0 && (
+              <Text style={s.value}><Text style={s.bold}>No. of Bores: </Text>{quotation.num_bores}</Text>
+            )}
+            {Number(quotation.depth_per_bore_m) > 0 && (
+              <Text style={s.value}><Text style={s.bold}>Depth of Bore: </Text>{quotation.depth_per_bore_m} m</Text>
+            )}
           </View>
         </View>
       )}
